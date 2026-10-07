@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paths the diagnostics FileProvider may share.
+
+  `cache/diagnostics/` only. Exposing the whole cache would let the share sheet read anything
+  the app has cached — extension APKs, Coil's image cache, downloaded streams. Narrow scope means
+  a mis-targeted share cannot reach them.
+
+  `cache/` rather than `files/` because the bundle is transient: it is useful for a support
+  thread, not for restoring state, and the system may reclaim cache/ under storage pressure.
+-->
+<paths>
+    <cache-path name="diagnostics" path="diagnostics/" />
+</paths>

@@ -350,6 +350,130 @@ The failure surface is kept deliberately distinct — "source not installed" (pe
 "could not reach the source" (transient) vs "no episodes listed" (a real answer) — because the
 user-facing message differs and collapsing them states something false.
 
+## Logo assets
+
+`Logos/` holds the brand sources; `app/src/main/res/drawable/` holds four generated variants.
+
+### The filenames are inverted from their contents
+Worth recording because it is genuinely confusing:
+
+| File | Actually contains |
+|---|---|
+| `Auris-white.png` | **Dark ink on a light backdrop** |
+| `Auris-black.png` | **Light ink on a dark backdrop** |
+
+Both are *opaque* (logo on a solid backdrop), so neither can be composited over arbitrary
+surfaces directly. `logo_mark_light`, `logo_mark_dark`, `logo_full_light` and `logo_full_dark`
+are generated from them with the alpha channel synthesised from luminance, cropped to the ink's
+actual bounding box, and tone-lifted.
+
+Three things the generation had to get right, each found by rendering and looking:
+
+- **Crop to the ink, not the canvas.** The source art has large asymmetric margins; centring on
+  the canvas put the mark visibly off-centre and clipped its base.
+- **Split the wordmark by finding the gap**, not by guessing a percentage of canvas height.
+- **Tone-lift the light ink.** The source is a soft silver gradient on black — only 5.8% of its
+  pixels cleared 50% opacity, which reads as a faint smudge at 48dp. An exponent below 1 on the
+  alpha raises it to 35%. Shape and ink colour are untouched; this is a legibility fix.
+
+### Launcher icon
+Adaptive, with a flat near-black background and the **mark only** — the full lockup's wordmark is
+illegible below ~96dp and renders as grey mush at 48dp. The foreground is fitted to 0.565 of the
+108dp canvas rather than the theoretical 0.611, because the ribbon's flat base reaches its
+bounding-box corners and fitting the diagonal overestimates the space it needs. A `monochrome`
+layer is provided for themed icons.
+
+### In-app selection
+`AurisLogo` picks light-ink or dark-ink from the measured luminance of its backdrop, against the
+0.5 crossover. That is also the point where either ink clears WCAG AA (4.5:1), so the choice is
+the contrast requirement rather than a preference. `LocalLogoBackdrop` lets a subtree override it
+for logo drawn over artwork.
+
+## Manga reader
+
+Vertically paged chapter images (manga reads top-to-bottom), Coil-backed, with a tap-to-reveal
+progress overlay that auto-hides during playback of a *later* slice.
+
+### Page resolution is the one inferred part
+Anikku collapses manga into the anime hierarchy, so there is **no dedicated manga page API** to
+call, and Anikku's extensions repo is DMCA-blocked so no real manga extension was available to
+inspect. `AnimeSourceAdapter.pages()` therefore populates from the mechanism that does exist —
+`getHosterList` then `getVideoList` per hoster — which is what manga sources implement, and
+degrades to an empty list rather than throwing. That is the assumption to verify first against a
+real manga extension.
+
+### Pages are never cached in the model
+Manga image URLs are frequently signed or session-scoped and expire within minutes. A cached URL
+fails on the next open and looks like corruption, so pages are resolved per open and Coil's disk
+cache handles repeat views — Coil keys on the URL, so an expired URL misses cleanly rather than
+serving a stale image.
+
+The backdrop is **fixed dark** rather than sampled from the page: adapting the chrome to page
+colour would make it change on every turn, and a fixed backdrop guarantees the watermark keeps
+contrast whatever the artwork is.
+
+## Video player
+
+`EpisodePlayer` hosts ExoPlayer with hand-built controls rather than `PlayerControlView` — the
+built-in chrome is a different visual language, does not accept the app's radii or colours, and
+puts a permanent scrim over the artwork the gradient rule depends on.
+
+### One player *per episode*, which is deliberate
+media3 has **no per-item HTTP header API**: `MediaItem.RequestMetadata` carries only the media
+URI, a search query and extras, and `ExoPlayer` has no `setMediaSourceFactory`. Extension streams
+routinely need a `Referer`, a cookie or a bearer token, so headers can only be baked into the
+`HttpDataSource.Factory` at construction — meaning episode B needs a new player.
+
+The alternative, one player with headers applied globally, would send episode A's credentials to
+episode B's host. That is a correctness bug *and* a credential leak, so it was rejected. The cost
+is a codec re-initialise on episode switch, which only happens on a user action. `player` is a
+`StateFlow` so the UI follows whichever instance is current rather than capturing one.
+
+### Lifecycle
+Playback **pauses** in `onStop`, not `onPause` — `onPause` also fires for dialogs and the
+notification shade, and pausing a video for those is wrong. Paused rather than stopped, so
+returning resumes at the same position with the buffer intact.
+
+### Format handling
+`StreamTarget.mimeType` is honoured when supplied, because it distinguishes HLS from DASH from
+progressive and guessing from the URL is unreliable — many sources serve HLS behind a `.php` path.
+Inferred from the extension only as a fallback, which avoids a wasted request and the stall that
+container sniffing causes on manifests.
+
+## Diagnostics / log export
+
+`Generate Logs` collects a `.txt` bundle and hands it to the share sheet via `ACTION_SEND`.
+
+Included: device and OS build, app and database version, installed and loaded extensions with
+their sources, the app's own **in-memory log buffer**, and the last 5000 logcat lines.
+
+### Why the in-memory buffer exists
+`logcat` retains only a few thousand lines system-wide. By the time a user notices something
+wrong and taps the button, the interesting lines — the failed source load, the parse exception —
+have usually been evicted. The buffer keeps the app's own history, bounded and evicting
+oldest-first, because a logging facility that can OOM the app it is diagnosing is worse than none.
+
+The screen shows the buffered-line count and the dropped-line count **before** exporting, so a
+user can see what is about to be sent rather than discovering after the fact that the app logged
+nothing.
+
+### Redaction
+`LogRedactor` is a pure, dependency-free object — the one part that must be provably correct,
+since the file leaves the device through a share sheet. It masks Supabase URLs, JWTs, `Bearer`
+tokens and cookies, and is tested adversarially.
+
+The subtle bug the tests caught: each rule declares a capture group to **preserve**, and for a
+bare JWT or a Supabase URL group 1 *is* the secret. Preserving it produced
+`<the whole token>[redacted]` — no redaction at all, with the credential still fully present.
+
+It deliberately does **not** redact things that merely look secret: extension package names,
+class names and stack-trace file paths survive, because scrubbing them would leave most of the
+file useless.
+
+Sharing uses a `FileProvider` URI scoped to `cache/diagnostics/` only — a raw `file://` throws
+`FileUriExposedException`, and exposing the whole cache would let the share sheet read extension
+APKs and Coil's image cache.
+
 ## Tests
 
 | Suite | Location | Runs on |
@@ -363,6 +487,7 @@ user-facing message differs and collapsing them states something false.
 | `KitsuMetadataMatcherTest` — ranking, false positives/negatives, degenerate input | `app/src/test/` | JVM |
 | `KitsuIdentifierTest` — id plumbing, caching, which fields may be written | `app/src/test/` | JVM |
 | `ExtensionContentRepositoryTest` — source resolution, unit/stream fetch, persistence rules | `app/src/test/` | JVM |
+| `LogRedactionTest` — credential masking, adversarially | `app/src/test/` | JVM |
 | `MigrationsTest` — v2→v3 preserves rows, units, extensions, outbox | `app/src/androidTest/` | device |
 | `LibrarySearchTest` — `LIKE` pattern matching | `app/src/androidTest/` | device |
 | `ExtensionLoaderTest` — real APK load, id stability, parsing | `app/src/androidTest/` | device |
@@ -463,10 +588,18 @@ Result on this hardware: **release build in ~4 minutes**, previously stalling in
 
 Deliberately out of scope for this first slice; the seams are in place:
 
-- **Anime playback** — the detail screen resolves a playable stream and hands
-  `(entryId, unit, targets)` to `AurisApp(playEpisode = ...)`, which is still a no-op. The
-  ExoPlayer host and an episode route are the next slice. Manga chapters navigate to
-  `Routes.mangaReader`, which does not have a screen yet either.
+- **Manga page resolution is inferred, not verified.** `AnimeSourceAdapter.pages()` populates
+  from `getHosterList` + `getVideoList`, which is the only path available under Anikku's
+  unified hierarchy, but no real manga extension was inspectable (the repo is DMCA-blocked).
+  This is the first thing to check against a live source.
+- **Horizontal (RTL) manga paging** — the reader pages vertically; the common right-to-left
+  horizontal variant is not implemented and should not be guessed at without a preference.
+- **Reader progress persistence** — the current page is not written back to
+  `library_units.last_position_ms`, so reopening a chapter restarts at page 1.
+- **Fullscreen orientation** — the player has a fullscreen toggle that hides controls, but does
+  not yet lock orientation or drive the system bars.
+- **MediaSession service** — the player screen is complete, but nothing feeds Android Auto,
+  the notification shade or lock-screen controls yet.
 - **Genre browsing** — `KitsuClient.genres()` and the `*ByGenres` methods work but have no UI.
 - **Kitsu metadata refresh** — `kitsuIdentifier.rankCandidates` is ready for a "this match is
   wrong, pick another" affordance that has no screen yet.
@@ -476,6 +609,5 @@ Deliberately out of scope for this first slice; the seams are in place:
   not wired up yet (`onEditRepo` is a no-op).
 
 - **InnerTube client** — YouTube Music discovery and track metadata.
-- **ExoPlayer wiring** — the player screen is complete and takes a `PlayerUiState`; the
-  `MediaSession` service that feeds it is not written yet.
-- **Episodes UI / manga reader**, and the episode list on `Routes.ANIME_DETAIL`.
+- **Settings screen** — Diagnostics is currently reached from a button on the Extensions
+  screen, because no Settings screen exists yet. It should move when one lands.

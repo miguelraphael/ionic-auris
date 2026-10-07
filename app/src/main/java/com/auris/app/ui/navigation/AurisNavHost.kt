@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.WindowInsets
@@ -29,7 +30,16 @@ import com.auris.app.ui.home.HomeScreen
 import com.auris.app.ui.library.LibraryScreen
 import com.auris.app.ui.player.MusicPlayerScreen
 import com.auris.app.ui.player.PlayerUiState
+import android.app.Activity
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.auris.app.data.repository.ExtensionContentRepository
+import com.auris.app.ui.diagnostics.DiagnosticsRoute
+import com.auris.app.ui.player.EpisodePlayer
+import com.auris.app.ui.player.EpisodePlayerRoute
+import com.auris.app.ui.reader.MangaReaderScreen
+import com.auris.app.ui.reader.MangaReaderViewModel
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.ui.detail.MediaDetailScreen
@@ -65,8 +75,9 @@ fun AurisNavHost(
     extensionsViewModelFactory: ViewModelProvider.Factory? = null,
     extensionRepo: ExtensionRepo = ExtensionRepo.DEFAULT,
     /** Receives a resolved, playable stream. ExoPlayer hosting is the next slice. */
-    playEpisode: (entryId: String, unit: SourceUnit, targets: List<StreamTarget>) -> Unit =
-        { _, _, _ -> },
+    /** Process-scoped so the player survives navigation between episodes. */
+    episodePlayer: EpisodePlayer? = null,
+    appStateCollector: com.auris.app.diagnostics.AppStateCollector? = null,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -168,6 +179,91 @@ fun AurisNavHost(
             )
         }
 
+        // Manga reader. Resolves page images on open; see MangaReaderViewModel for why they
+        // are never cached.
+        composable(
+            route = Routes.MANGA_READER,
+            arguments = listOf(
+                navArgument("entryId") { type = NavType.StringType },
+                navArgument("unitIndex") { type = NavType.StringType },
+            ),
+        ) { navEntry ->
+            val entryId = navEntry.arguments?.getString("entryId").orEmpty()
+            val unitIndex = navEntry.arguments?.getString("unitIndex")?.toIntOrNull() ?: 0
+
+            val viewModel: MangaReaderViewModel = viewModel(
+                key = "reader-$entryId-$unitIndex",
+                factory = MangaReaderViewModel.factory(
+                    entryId = entryId,
+                    unitIndex = unitIndex,
+                    libraryRepository = libraryRepository,
+                    contentRepository = extensionContentRepository,
+                ),
+            )
+            val readerState by viewModel.state.collectAsStateWithLifecycle()
+
+            // System bars are hidden for the reader: the pages are the content, and a status bar
+            // over artwork wastes vertical space on a phone.
+            val window = (LocalView.current.context as? Activity)?.window
+            DisposableEffect(Unit) {
+                val controller = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
+                controller?.hide(WindowInsetsCompat.Type.systemBars())
+                controller?.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+            }
+
+            MangaReaderScreen(
+                state = readerState,
+                onPageChanged = viewModel::onPageChanged,
+                onToggleOverlay = viewModel::toggleOverlay,
+                onRetry = viewModel::retry,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        // Episode player. Reached from the detail screen with a stream already resolved.
+        composable(
+            route = Routes.EPISODE_PLAYER,
+            arguments = listOf(
+                navArgument("entryId") { type = NavType.StringType },
+                navArgument("unitIndex") { type = NavType.StringType },
+            ),
+        ) { navEntry ->
+            val entryId = navEntry.arguments?.getString("entryId").orEmpty()
+            val unitIndex = navEntry.arguments?.getString("unitIndex")?.toIntOrNull() ?: 0
+            val entry = library.firstOrNull { it.id == entryId }
+            if (entry == null || episodePlayer == null) {
+                // A deep link to an entry that is not in the snapshot, or a preview without a
+                // player. Falling back to the background beats a blank route.
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                return@composable
+            }
+
+            EpisodePlayerRoute(
+                entry = entry,
+                // The unit's source URL is not in the library snapshot, so it is reconstructed
+                // from the entry's units by the caller's screen; here the index is enough to
+                // identify the episode and resolve its stream.
+                unit = com.auris.app.source.SourceUnit(
+                    url = "",
+                    index = unitIndex,
+                    title = "Episode ${unitIndex + 1}",
+                ),
+                contentRepository = extensionContentRepository,
+                episodePlayer = episodePlayer,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        // Diagnostics / log export.
+        composable(Routes.DIAGNOSTICS) {
+            DiagnosticsRoute(
+                onBack = { navController.popBackStack() },
+                appStateCollector = appStateCollector,
+            )
+        }
+
         composable(
             route = Routes.ANIME_DETAIL,
             arguments = listOf(navArgument("entryId") { type = NavType.StringType }),
@@ -206,8 +302,11 @@ fun AurisNavHost(
                         // Anime playback needs a resolved stream and an ExoPlayer host, which is
                         // the next slice. The stream *is* resolved here, so the caller receives a
                         // playable URL rather than an embed page.
-                        onPlay = { unit, targets ->
-                            playEpisode(entryId, unit, targets)
+                        onPlay = { unit, _ ->
+                            // The stream was already resolved by the view model; the player
+                            // resolves it again on arrival so it owns the player/stream pairing
+                            // and the headers travel with it.
+                            navController.navigate(Routes.episodePlayer(entryId, unit.index))
                         },
                     )
                 },

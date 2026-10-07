@@ -75,6 +75,23 @@ data class SourceUnit(
     val uploadTimestamp: Long = 0L,
 )
 
+/**
+ * A source that can produce the page images of a chapter.
+ *
+ * ### Why this is a separate interface
+ * `AnimeSourceAdapter` implements it, but `MediaSource` does not declare `pages`: a *source's*
+ * ability to expose chapter pages is what it provides, whereas `MediaSource` is the browsing
+ * contract every source satisfies. Declaring `pages` on `MediaSource` would force every
+ * implementation to answer a question that does not apply to it.
+ *
+ * Callers should cast and handle the failure: a source that does not implement this genuinely
+ * cannot show chapter pages, which is different from one that failed to load them.
+ */
+interface MangaReaderSource {
+    /** Page images for [unit], in reading order, with URLs already absolutised. */
+    suspend fun pages(entry: SourceItem, unit: SourceUnit): List<Page>
+}
+
 /** Resolved playback/reading target. Stream URLs from HTTP sources are often ephemeral. */
 data class StreamTarget(
     val url: String,

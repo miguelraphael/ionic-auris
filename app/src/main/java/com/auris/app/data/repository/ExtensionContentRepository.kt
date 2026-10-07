@@ -5,29 +5,28 @@ import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.data.local.entity.LibraryUnitEntity
 import com.auris.app.source.ExtensionSourceRegistry
-import com.auris.app.source.MediaSource
+import com.auris.app.source.Page
 import com.auris.app.source.SourceItem
 import com.auris.app.source.SourceUnit
 import com.auris.app.source.StreamTarget
 import com.auris.app.source.toMediaSource
 
 /**
- * Resolves a library entry back to the extension it came from, and fetches its units.
+ * Resolves a library entry back to the extension it came from, and fetches its content.
  *
  * ### Why this is a repository and not a screen concern
  * A `LibraryEntryEntity` stores `sourceId` (Aniyomi's stable id, as a string) and `sourceKey`
  * (the source-relative URL, e.g. `/anime/frieren`). Turning those back into a live
- * [MediaSource] requires the loaded extension registry, which only exists in
- * registry — a process-wide singleton. A screen reaching into that directly would be
- * unable to be tested and would duplicate the lookup in every caller.
+ * `MediaSource` requires the loaded extension registry, which only exists in
+ * [ExtensionSourceRegistry] — a process-wide singleton. A screen reaching into that directly
+ * would be unable to be tested and would duplicate the lookup in every caller.
  *
  * ### Failure behaviour
  * A missing source is an expected state, not an error: the extension may have been uninstalled
  * or disabled, or the entry may have been synced from another device where it exists. Every
  * method therefore returns a [Result] and callers can render "this content is unavailable"
- * rather than an error screen. Unit fetching is failure-tolerant for the same reason, and a
- * network failure is distinct from an empty list — the source may legitimately have no units
- * yet.
+ * rather than an error screen. A network failure is likewise distinct from an empty list — a
+ * source may legitimately have no pages yet.
  */
 class ExtensionContentRepository(
     private val registry: ExtensionSourceRegistry,
@@ -54,7 +53,7 @@ class ExtensionContentRepository(
      * Matching on the source *name* instead would break whenever a source is renamed — and a
      * source renaming would otherwise silently detach every library entry using it.
      */
-    fun resolveSource(entry: LibraryEntryEntity): MediaSource? {
+    fun resolveSource(entry: LibraryEntryEntity): com.auris.app.source.MediaSource? {
         val loaded = registry.sources.firstOrNull { it.aniyomiId.toString() == entry.sourceId }
             ?: return null
 
@@ -106,13 +105,34 @@ class ExtensionContentRepository(
      * Resolves playable targets for one unit.
      *
      * Empty for manga, which exposes page images rather than a stream — matching
-     * [MediaSource.streams], so a caller cannot mistake "no stream" for "not fetched".
+     * `MediaSource.streams`, so a caller cannot mistake "no stream" for "not fetched".
      */
     suspend fun fetchStreams(entry: LibraryEntryEntity, unit: SourceUnit): Result<List<StreamTarget>> {
         val source = resolveSource(entry)
             ?: return Result.failure(UnavailableException("Source ${entry.sourceId} is not installed"))
 
         return runCatching { source.streams(entry.toSourceItem(), unit) }
+    }
+
+    /**
+     * Fetches the page images for one chapter, in reading order.
+     *
+     * Pages are resolved on every open rather than cached: image URLs on manga sites are
+     * frequently signed or session-scoped and expire within minutes, so a cached URL would be
+     * worse than no cache. Coil's own disk cache handles repeat views of the same chapter
+     * without the extension being involved again.
+     */
+    suspend fun fetchPages(entry: LibraryEntryEntity, unit: SourceUnit): Result<List<Page>> {
+        val source = resolveSource(entry)
+            ?: return Result.failure(UnavailableException("Source ${entry.sourceId} is not installed"))
+
+        val reader = source as? com.auris.app.source.MangaReaderSource
+            ?: return Result.failure(
+                UnavailableException("Source ${entry.sourceId} does not expose chapter pages"),
+            )
+
+        return runCatching { reader.pages(entry.toSourceItem(), unit) }
+            .onFailure { log(TAG, "Page fetch failed for ${entry.id}/${unit.index}: ${it.message}") }
     }
 
     /** Builds the minimal [SourceItem] the adapter needs to call back into a source. */

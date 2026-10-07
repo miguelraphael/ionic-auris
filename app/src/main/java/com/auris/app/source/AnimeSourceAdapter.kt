@@ -39,7 +39,7 @@ class AnimeSourceAdapter(
     aniyomiSource: AnimeSource,
     private val packageName: String,
     override val mediaType: MediaType = MediaType.ANIME,
-) : MediaSource {
+) : MediaSource, MangaReaderSource {
 
     /**
      * Catalogue browsing needs an HTTP source.
@@ -120,19 +120,54 @@ class AnimeSourceAdapter(
             .map { it.toStreamTarget() }
     }
 
-    /** Page images for a chapter. Manga sources that resolve pages implement this. */
-    suspend fun pages(entry: SourceItem, unit: SourceUnit): List<Page> {
-        val resolver = http as? eu.kanade.tachiyomi.animesource.online.ResolvableAnimeSource
-            ?: return emptyList()
+    /**
+     * Page images for a chapter, in reading order.
+     *
+     * ### How pages are obtained
+     * Anikku collapses manga into the anime hierarchy, so there is no dedicated manga page API
+     * to call. The image URLs come from the mechanism that *does* exist and that manga sources
+     * populate: [AnimeHttpSource.getHosterList] then [AnimeHttpSource.getVideoList] per hoster.
+     * A source offering several hosters contributes the pages of each, concatenated — which
+     * matches how multi-hosting readers work, where the hosters are alternate mirrors of the
+     * same chapter rather than different chapters.
+     *
+     * Sources that only implement [AnimeHttpSource.getVideoList] directly (no hoster list) are
+     * handled by the single-hoster branch.
+     *
+     * Each URL is absolutised against the source's base: manga sites overwhelmingly return
+     * relative `src` attributes, and handing `/1234/001.jpg` to Coil yields a broken image.
+     *
+     * ### Not verified against a live manga extension
+     * This is the one part of the adapter built against inference rather than a verified
+     * signature, because Anikku's extensions repository is DMCA-blocked and no real manga
+     * extension was available to inspect. The behaviour is written to degrade to an empty list
+     * rather than throw, so an unexpected shape surfaces as "this chapter has no pages" instead
+     * of a crash.
+     */
+    override suspend fun pages(entry: SourceItem, unit: SourceUnit): List<Page> {
+        val episode = unit.toSEpisode()
 
-        return resolver.getEpisode(unit.url)
-            ?.let { episode ->
-                // Resolvable sources expose episodes, not page lists; pages are derived by
-                // the reader from the resolved episode.
-                emptyList<Page>().ifEmpty { listOf(Page(index = 0, url = episode.url)) }
+        val hosters = runCatching { http.getHosterList(episode) }
+            .getOrElse { emptyList() }
+
+        val videos = if (hosters.isNotEmpty()) {
+            // One hoster failing must not lose the pages of the others, so each is isolated.
+            hosters.flatMap { hoster ->
+                runCatching { http.getVideoList(hoster) }.getOrDefault(emptyList())
             }
-            .orEmpty()
-            .map { page -> page.copy(imageUrl = resolveUrl(baseUrl, page.url)) }
+        } else {
+            runCatching { http.getVideoList(episode) }.getOrDefault(emptyList())
+        }
+
+        return videos
+            .mapNotNull { video ->
+                // An embed page is not a readable image; keep only directly usable URLs.
+                val absolute = resolveUrl(baseUrl, video.url) ?: return@mapNotNull null
+                if (!absolute.startsWith("http")) return@mapNotNull null
+                absolute
+            }
+            .distinct()
+            .mapIndexed { index, url -> Page(index = index, url = url, imageUrl = url) }
     }
 
     override suspend fun configuration(): Map<String, String> = emptyMap()

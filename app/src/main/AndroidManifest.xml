@@ -30,6 +30,24 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Lets the diagnostics screen hand a log bundle to the share sheet.
+
+          A FileProvider URI rather than a `file://` one: since Android 7 a raw path throws
+          FileUriExposedException, and passing one would be a sandbox escape besides. `grantUri`
+          is not set, so the provider is not discoverable by other apps — they can only read the
+          file if the user picks a share target and the grant is handed over.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

@@ -31,6 +31,8 @@ class MainActivity : ComponentActivity() {
                         libraryRepository = container.libraryRepository,
                         kitsuIdentifier = container.kitsuIdentifier,
                         extensionContentRepository = container.extensionContentRepository,
+                        episodePlayer = container.episodePlayer,
+                        appStateCollector = container.appStateCollector,
                         extensionsViewModelFactory = ExtensionsViewModel.Factory(
                             context = applicationContext,
                             client = container.extensionRepositoryClient,

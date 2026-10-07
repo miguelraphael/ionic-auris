@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive launcher icon.
+
+  The foreground is the logo *mark* (the ribbon symbol), not the full lockup. The full lockup
+  includes the AURIS wordmark, which is illegible below roughly 96dp — it renders as grey mush
+  at 48dp. The full logo is used in-app instead; see AurisLogo.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_auris_mark" />
-    <monochrome android:drawable="@drawable/ic_auris_mark" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
 </adaptive-icon>

@@ -1,0 +1,280 @@
+package com.auris.app.ui.diagnostics
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.auris.app.diagnostics.LogExporter
+import com.auris.app.ui.theme.AurisAccent
+import com.auris.app.ui.theme.AurisBackground
+import com.auris.app.ui.theme.AurisLogo
+import com.auris.app.ui.theme.AurisOnSurface
+import com.auris.app.ui.theme.AurisOnSurfaceVariant
+import com.auris.app.ui.theme.AurisOutline
+import com.auris.app.ui.theme.AurisRadii
+import com.auris.app.ui.theme.AurisSurface
+import com.auris.app.ui.theme.AurisTrack
+import kotlinx.coroutines.launch
+
+/** Everything the diagnostics screen renders. */
+data class DiagnosticsUiState(
+    val bufferedLines: Int = 0,
+    val droppedLines: Int = 0,
+    val isExporting: Boolean = false,
+    val message: String? = null,
+)
+
+/**
+ * Diagnostics screen: exports a log bundle through the share sheet.
+ *
+ * ### Why the buffer state is shown before exporting
+ * A user who taps a button and immediately gets a share sheet has no way to tell whether
+ * anything was captured. Showing the retained-line count and how many were dropped turns "it did
+ * something" into "here is what it is about to send", which is also the moment a user notices
+ * that the app has logged nothing and reports it.
+ *
+ * @param onGenerateLogs performs the export and share. Passed in rather than constructed here so
+ *   this screen holds no Android dependencies beyond composition.
+ */
+@Composable
+fun DiagnosticsScreen(
+    state: DiagnosticsUiState,
+    onGenerateLogs: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scroll = rememberScrollState()
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(AurisBackground),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scroll)
+                .padding(horizontal = 20.dp, vertical = 56.dp),
+        ) {
+            Text(
+                text = "Diagnostics",
+                style = MaterialTheme.typography.displaySmall,
+                color = AurisOnSurface,
+            )
+            Text(
+                text = "Export logs for troubleshooting",
+                style = MaterialTheme.typography.bodyMedium,
+                color = AurisOnSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(28.dp))
+
+            // Summary card
+            Surface(
+                shape = RoundedCornerShape(AurisRadii.artwork),
+                color = AurisSurface.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AurisLogo(background = AurisSurface, size = 32.dp, alpha = 0.8f)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = "${state.bufferedLines} lines buffered",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = AurisOnSurface,
+                            )
+                            Text(
+                                text = if (state.droppedLines > 0) {
+                                    // Dropped lines are stated rather than hidden: a truncated
+                                    // log that looks complete is worse than a short one that
+                                    // admits it.
+                                    "${state.droppedLines} older lines dropped (buffer full)"
+                                } else {
+                                    "Nothing dropped"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (state.droppedLines > 0) {
+                                    AurisAccent
+                                } else {
+                                    AurisOnSurfaceVariant
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Export button
+            Surface(
+                shape = RoundedCornerShape(AurisRadii.button),
+                color = if (state.isExporting) AurisTrack else AurisAccent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        enabled = !state.isExporting,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onGenerateLogs,
+                    )
+                    .padding(vertical = 16.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (state.isExporting) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = AurisOnSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = "Collecting…",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = AurisOnSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.Share,
+                                contentDescription = null,
+                                tint = AurisBackground,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = "Generate Logs",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = AurisBackground,
+                            )
+                        }
+                    }
+                }
+            }
+
+            state.message?.let { message ->
+                Spacer(Modifier.height(14.dp))
+                Surface(
+                    shape = RoundedCornerShape(AurisRadii.chip),
+                    color = AurisSurface.copy(alpha = 0.8f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AurisOnSurfaceVariant,
+                        modifier = Modifier.padding(14.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            // What the bundle contains, and the redaction notice.
+            Surface(
+                shape = RoundedCornerShape(AurisRadii.artworkSmall),
+                color = AurisTrack.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        text = "The bundle contains",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = AurisOnSurface,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    listOf(
+                        "Device and Android build",
+                        "App version, database version, installed extensions",
+                        "Recent app log buffer",
+                        "Last ${LogExporter.LOGCAT_LINES} lines of logcat",
+                    ).forEach { item ->
+                        Row(Modifier.padding(vertical = 3.dp)) {
+                            Text(
+                                text = "·",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AurisAccent,
+                                modifier = Modifier.width(12.dp),
+                            )
+                            Text(
+                                text = item,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AurisOnSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Text(
+                        text = "Supabase credentials, bearer tokens and cookies are replaced " +
+                            "with [redacted] before the file is written. The file is shared " +
+                            "from app storage, so nothing outside this app can read it except " +
+                            "the app you share it to.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AurisOnSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            Surface(
+                shape = RoundedCornerShape(AurisRadii.chip),
+                color = AurisTrack,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onBack,
+                    )
+                    .padding(horizontal = 24.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    text = "Back",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = AurisOnSurface,
+                )
+            }
+
+            Spacer(Modifier.height(40.dp))
+        }
+    }
+}

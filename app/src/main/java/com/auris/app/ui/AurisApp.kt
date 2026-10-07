@@ -28,8 +28,7 @@ import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
-import com.auris.app.source.SourceUnit
-import com.auris.app.source.StreamTarget
+import com.auris.app.ui.player.EpisodePlayer
 import androidx.lifecycle.ViewModelProvider
 import com.auris.app.source.repo.ExtensionRepo
 import com.auris.app.ui.components.FloatingNavigationBar
@@ -64,7 +63,9 @@ fun AurisApp(
     extensionContentRepository: ExtensionContentRepository,
     extensionsViewModelFactory: ViewModelProvider.Factory? = null,
     extensionRepo: ExtensionRepo = ExtensionRepo.DEFAULT,
-    playEpisode: (String, SourceUnit, List<StreamTarget>) -> Unit = { _, _, _ -> },
+    /** Process-scoped so the player survives navigation between episodes. */
+    episodePlayer: EpisodePlayer? = null,
+    appStateCollector: com.auris.app.diagnostics.AppStateCollector? = null,
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
@@ -89,7 +90,8 @@ fun AurisApp(
             libraryRepository = libraryRepository,
             kitsuIdentifier = kitsuIdentifier,
             extensionContentRepository = extensionContentRepository,
-            playEpisode = playEpisode,
+            episodePlayer = episodePlayer,
+            appStateCollector = appStateCollector,
             extensionsViewModelFactory = extensionsViewModelFactory,
             extensionRepo = extensionRepo,
             modifier = Modifier.fillMaxSize(),

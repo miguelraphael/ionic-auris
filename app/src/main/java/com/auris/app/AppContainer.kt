@@ -15,6 +15,8 @@ import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.source.ExtensionLoader
 import com.auris.app.source.repo.ExtensionRepositoryClient
 import com.auris.app.data.sync.SyncScheduler
+import com.auris.app.diagnostics.AppStateCollector
+import com.auris.app.ui.player.EpisodePlayer
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
@@ -45,6 +47,8 @@ interface AppContainer {
     val kitsuClient: KitsuClient
     val kitsuIdentifier: KitsuIdentifier
     val extensionContentRepository: ExtensionContentRepository
+    val episodePlayer: EpisodePlayer
+    val appStateCollector: AppStateCollector
     val extensionRepositoryClient: ExtensionRepositoryClient
     /** Where installed extension APKs live. Outside the DB so they survive a data reset. */
     val extensionsDir: java.io.File
@@ -158,6 +162,32 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         ExtensionContentRepository(
             registry = extensionLoader,
             persistUnits = libraryRepository::upsertUnits,
+        )
+    }
+
+    /**
+     * Episode player.
+     *
+     * Process-scoped rather than per-screen so navigating between episodes does not release and
+     * rebuild the player. It holds a codec, an audio focus request and a wake lock, so its
+     * lifetime is tied to the process, not to a composition.
+     */
+    override val episodePlayer: EpisodePlayer by lazy {
+        EpisodePlayer(context.applicationContext)
+    }
+
+    /**
+     * Gathers the state section of a diagnostic bundle.
+     *
+     * Takes [database] rather than a version integer so the reported version can never drift
+     * from the one Room actually opened.
+     */
+    override val appStateCollector: AppStateCollector by lazy {
+        AppStateCollector(
+            context = context.applicationContext,
+            databaseVersion = { database.openHelper.readableDatabase.version },
+            extensionDao = extensionDao,
+            extensionLoader = extensionLoader,
         )
     }
 

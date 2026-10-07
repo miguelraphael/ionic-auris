@@ -3,4 +3,12 @@
     <!-- Base surface pulled from the reference UI: #161B24 -->
     <color name="auris_background">#FF161B24</color>
     <color name="auris_icon_bg">#FF0B1020</color>
+
+    <!--
+      Adaptive-icon background, referenced by drawable/ic_launcher_background.xml.
+
+      Slightly darker than auris_background so the launcher tile has its own identity, while
+      staying in the same family — a lighter tile reads as a separate app on a dark home screen.
+    -->
+    <color name="auris_icon_background">#FF0A0E16</color>
 </resources>

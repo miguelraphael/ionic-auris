@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive-icon background.
+
+  A flat near-black rather than a gradient or the logo's own artwork: Android applies a
+  parallax and mask to the foreground, so a busy background competes with the mark and shows
+  through the shape's transparent areas. Flat also keeps every OEM mask (circle, squircle,
+  rounded square) looking intentional.
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:angle="315"
-        android:startColor="#0B1020"
-        android:centerColor="#161B24"
-        android:endColor="#221A2E"
-        android:type="linear" />
+    <solid android:color="@color/auris_icon_bg" />
 </shape>

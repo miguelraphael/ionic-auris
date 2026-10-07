@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -83,6 +84,7 @@ fun ExtensionsScreen(
     actions: ExtensionsUiActions,
     modifier: Modifier = Modifier,
     repo: ExtensionRepo = ExtensionRepo.DEFAULT,
+    onOpenDiagnostics: () -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 32.dp,
 ) {
     // The gradient tracks whichever icon the user last touched, so the header carries a colour.
@@ -114,6 +116,7 @@ fun ExtensionsScreen(
                     onToggleNsfw = actions.onToggleNsfw,
                     onRefresh = actions.onRefresh,
                     onEditRepo = actions.onEditRepo,
+                    onOpenDiagnostics = onOpenDiagnostics,
                 )
             }
 
@@ -152,6 +155,7 @@ private fun ExtensionsHeader(
     onToggleNsfw: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onEditRepo: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
 ) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -184,6 +188,14 @@ private fun ExtensionsHeader(
                 icon = Icons.Filled.CloudDownload,
                 contentDescription = "Change repository",
                 onClick = onEditRepo,
+            )
+            Spacer(Modifier.width(8.dp))
+            // Diagnostics lives here because Settings does not exist yet. When a Settings screen
+            // lands this moves, and nothing else about the exporter changes.
+            HeaderIconButton(
+                icon = Icons.Filled.BugReport,
+                contentDescription = "Diagnostics",
+                onClick = onOpenDiagnostics,
             )
         }
 
