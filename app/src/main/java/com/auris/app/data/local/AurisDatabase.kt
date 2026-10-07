@@ -20,7 +20,7 @@ import com.auris.app.data.local.entity.SyncSessionEntity
         SyncSessionEntity::class,
         ExtensionEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

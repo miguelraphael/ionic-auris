@@ -54,6 +54,9 @@ kotlin-js-store/
 
 # ---- Android -----------------------------------------------------------------
 *.apk
+# Exception: the signature tests need a real, genuinely-signed third-party APK, and building
+# one locally would defeat the point (it would be signed by our own key).
+!app/src/androidTest/fixtures/*.apk
 *.aab
 *.ap_
 *.dex

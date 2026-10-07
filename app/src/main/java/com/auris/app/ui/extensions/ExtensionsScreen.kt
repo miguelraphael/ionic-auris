@@ -23,7 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -84,7 +84,7 @@ fun ExtensionsScreen(
     actions: ExtensionsUiActions,
     modifier: Modifier = Modifier,
     repo: ExtensionRepo = ExtensionRepo.DEFAULT,
-    onOpenDiagnostics: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 32.dp,
 ) {
     // The gradient tracks whichever icon the user last touched, so the header carries a colour.
@@ -116,7 +116,7 @@ fun ExtensionsScreen(
                     onToggleNsfw = actions.onToggleNsfw,
                     onRefresh = actions.onRefresh,
                     onEditRepo = actions.onEditRepo,
-                    onOpenDiagnostics = onOpenDiagnostics,
+                    onOpenSettings = onOpenSettings,
                 )
             }
 
@@ -155,7 +155,7 @@ private fun ExtensionsHeader(
     onToggleNsfw: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onEditRepo: () -> Unit,
-    onOpenDiagnostics: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -190,12 +190,13 @@ private fun ExtensionsHeader(
                 onClick = onEditRepo,
             )
             Spacer(Modifier.width(8.dp))
-            // Diagnostics lives here because Settings does not exist yet. When a Settings screen
-            // lands this moves, and nothing else about the exporter changes.
+            // This pointed at Diagnostics only because Settings did not exist. It now opens
+            // Settings, which is where Diagnostics lives — and which also carries the signature
+            // state for the extensions listed directly below it.
             HeaderIconButton(
-                icon = Icons.Filled.BugReport,
-                contentDescription = "Diagnostics",
-                onClick = onOpenDiagnostics,
+                icon = Icons.Filled.Settings,
+                contentDescription = "Settings",
+                onClick = onOpenSettings,
             )
         }
 

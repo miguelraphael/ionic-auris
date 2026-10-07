@@ -615,6 +615,105 @@ into our own types; every method returns `Result`.
 The parser also drops a renderer with no video id rather than surfacing it as an unplayable row.
 Bugs #5 and #6 came from live traffic rather than from the fixtures — see above.
 
+## Extension signature verification
+
+An extension is dex the app loads with a `DexClassLoader` and then calls into. It runs with the
+app's full permissions — it can read the library database, the Supabase session and the user's
+cookies. So *"which APK is this really?"* is a security question, and a repository is a remote
+party that gets to choose what bytes it serves.
+
+### Three things that get confused, only one of which is a signature
+
+| | Answers | Sufficient? |
+| --- | --- | --- |
+| **File hash** (`signature_hash`) | "Are these the bytes I installed before?" | No — the attacker computes the new hash alongside the new file |
+| **HTTPS** | "Was this tampered with in flight?" | Only in flight, and see below |
+| **Certificate fingerprint** | "Who signed this?" | Yes — needs the publisher's private key |
+
+`signature_hash` already existed and is kept. It catches a truncated download or a reused
+`versionCode`. It **cannot** answer the security question, so the certificate fingerprint is a
+**separate column** (`signing_cert_fingerprint`, migration v3→v4) rather than an overload of it.
+Overwriting the file hash with a fingerprint would have silently destroyed the integrity check
+while looking like a security improvement.
+
+### Why the fingerprint is read with PackageManager, not CertificateFactory
+
+The common approach reads the signature files under `META-INF` with a `CertificateFactory`. That
+works only for **v1 (JAR) signatures**. Modern APKs are frequently signed with **v2/v3 APK
+Signature Scheme only**, which stores the certificate in a signing block before the central
+directory and leaves no signature file under `META-INF` at all — so that approach reports a
+correctly-signed APK as *unsigned*, and every extension looks tampered with.
+`PackageManager.getPackageArchiveInfo` reads the real signing block.
+
+`GET_SIGNING_CERTIFICATES` only exists from API 28 and is silently non-functional below that, so
+`ApkSigner` branches on the SDK level. Getting this wrong would make every extension on API 26–27
+read as unsigned. Fingerprints are returned as a **set**, because Android lets a publisher rotate
+keys while the old one still validates — an APK with two certificates is legitimate, and a
+verifier that only looked at the first would reject a rotation as a forgery.
+
+### The trust policy, and why pinning exists
+
+A repository that is compromised today can serve a different APK tomorrow. If the only check were
+"does this match whatever the repo currently claims?", a compromised repo could rotate its key,
+republish the index, and have the app accept anything. So the first fingerprint seen for a package
+is **pinned** in the database, and later APKs must match the pin even if the repository's claim
+has changed. Rotation stays possible, but becomes visible instead of silent.
+
+- **Trusted** — signed by the key the repo declares, or matching an existing pin.
+- **Pinned** — repo declares no key, so the observed fingerprint was recorded. Protects against a
+  later swap, says nothing about the repo's honesty at install time.
+- **Rejected** — unsigned, wrong key, or a pin conflict. Always fatal; the APK never reaches the
+  extensions directory.
+
+A configured-but-**malformed** key is rejected rather than downgraded to "unverified": failing open
+would mean a typo in a repo URL silently disables verification for everything from that repo.
+
+Verification runs while the download is still a `.part` file, **before** the rename. Verifying
+afterwards would mean a hostile APK had already replaced a good one, and the failure path would
+have to restore it.
+
+### Normalisation is load-bearing, not cosmetic
+
+Repositories publish fingerprints as colon-separated upper case (`AB:CD:EF:…`) because that is
+what keytool prints, while `ApkSigner` produces bare lower-case hex. Comparing raw strings would
+reject **every real extension** — and the failure would look exactly like a genuine forgery, so a
+future reader could "fix" the mismatch report by loosening the comparison. `normalize` folds both
+to one canonical form and rejects anything that is not 64 hex characters, so a malformed value
+cannot silently match a truncated hash.
+
+Plain HTTP repository URLs are **refused**, not warned about: over HTTP an attacker can rewrite
+the index to point at an APK they control and simply declare their own key, so the user would see
+a "verified" extension signed by nobody they know.
+
+`SignatureVerifierTest` pins each rule in both directions (15 tests), `SettingsTrustTest` covers
+the on-screen claims, and `ApkSignerRealApkTest` runs on-device against a **real third-party
+signed APK** committed under `app/src/androidTest/fixtures/` — because a hand-written fixture
+cannot prove the signing-block reader works on a real signature block.
+
+## Manga page extraction: the blocker is confirmed, not inferred
+
+Earlier notes recorded that no real manga extension was inspectable. That is now **verified**
+rather than assumed, and the cause is specific:
+
+- The default repository (`yuzono/anime-repo`) is **reachable** — HTTP 200, 251 extensions, valid
+  Aniyomi-format index. The previous "DMCA-blocked" note no longer applies.
+- **Every one of those 251 extensions is in the `eu.kanade.tachiyomi.animeextension.*` namespace.**
+  There is no `eu.kanade.tachiyomi.extension.*` entry — the manga namespace — anywhere in it.
+- The only manga-named entry, `myreadingmanga`, is an **anime** source (`HttpSource`, no manga
+  type markers) and requires `MYREADINGMANGA_USERNAME`/`MYREADINGMANGA_PASSWORD` to function.
+- Candidate manga repositories (`yuzono/manga-repo`, `aniyomiorg/aniyomi-extensions`) return
+  200 but contain only "Outdated App" nag extensions.
+
+So `AnimeSourceAdapter.pages()` still cannot be verified against a real manga extension, and the
+gap is in **source availability**, not in our code. The inferred `getHosterList` + `getVideoList`
+path stays unverified until an extension implementing the Anikku manga interface can be obtained.
+
+What *was* verified this sprint, using the extensions that do exist, is the riskiest untested
+assumption in the codebase: that our Anikku-shaped `:source-api` can load a **real Aniyomi
+extension** whose dex references host-provided `eu.kanade.tachiyomi.network.*` classes. That
+invariant is what the conformance module protects on paper, and it is now exercised against a real
+signed APK.
+
 ## Background audio
 
 `MusicPlaybackService` is a media3 `MediaSessionService`, so playback survives the Activity and
@@ -794,9 +893,9 @@ Result on this hardware: **release build in ~4 minutes**, previously stalling in
 Deliberately out of scope for this first slice; the seams are in place:
 
 - **Manga page resolution is inferred, not verified.** `AnimeSourceAdapter.pages()` populates
-  from `getHosterList` + `getVideoList`, which is the only path available under Anikku's
-  unified hierarchy, but no real manga extension was inspectable (the repo is DMCA-blocked).
-  This is the first thing to check against a live source.
+  from `getHosterList` + `getVideoList`, the only path available under Anikku's unified hierarchy.
+  Now confirmed blocked by **source availability**: no reachable repository carries an extension in
+  the manga namespace at all (see above). Needs an actual Anikku manga extension to close.
 - **Horizontal (RTL) manga paging** — the reader pages vertically; the common right-to-left
   horizontal variant is not implemented and should not be guessed at without a preference.
 - **Reader progress persistence** — the current page is not written back to
@@ -806,10 +905,13 @@ Deliberately out of scope for this first slice; the seams are in place:
 - **Genre browsing** — `KitsuClient.genres()` and the `*ByGenres` methods work but have no UI.
 - **Kitsu metadata refresh** — `kitsuIdentifier.rankCandidates` is ready for a "this match is
   wrong, pick another" affordance that has no screen yet.
-- **Extension signature verification** — the index signature and per-APK signing-key
-  fingerprint are modelled but not checked. This is the main gap in the install path.
-- **Repo management UI** — the URL is settable through the view model; the on-screen editor is
-  not wired up yet (`onEditRepo` is a no-op).
+- **Index-level signature checking** — per-APK signing certificates are now verified and pinned
+  (see above). Verifying the *index document* itself is still not implemented, so a repository can
+  still lie about which APK version is current. Mitigated but not closed: the pinned fingerprint
+  means a rewritten index cannot substitute a differently-signed APK.
+- **Repository fingerprint input** — Settings edits the repository URL and reports trust state,
+  but there is no field for the signing key fingerprint, so a repository can only be "verified" if
+  it is coded in rather than entered. `ExtensionRepo.signingKeyFingerprint` is the seam.
 
 - **Music playback does not work, and cannot until `/player` is solved.** Browse, search,
   metadata and the library all function; stream resolution returns `UNPLAYABLE` with zero
@@ -824,5 +926,5 @@ Deliberately out of scope for this first slice; the seams are in place:
 - **Android Auto** — the `MediaSessionService` is browsable in principle, but no
   `MediaLibraryService`/`MediaBrowser` tree is published, so Auto shows no content to choose
   from.
-- **Settings screen** — Diagnostics is currently reached from a button on the Extensions
-  screen, because no Settings screen exists yet. It should move when one lands.
+- **Settings is read-mostly** — repository URL, trust state, content toggle and a Diagnostics
+  link are there; there is no theme picker, language, or account section yet.

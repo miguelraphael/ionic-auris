@@ -94,6 +94,33 @@ object Migrations {
         }
     }
 
+    /**
+     * Adds the signing-certificate fingerprint to installed extensions.
+     *
+     * ### Why a new column rather than reusing `signature_hash`
+     * `signature_hash` already holds a SHA-256 — of the **APK file**. It answers "are these the
+     * bytes I installed before?", which catches a truncated download or a reused `versionCode`.
+     *
+     * It cannot answer "who signed this?", because the file hash is computed by whoever supplies
+     * the file: an attacker who replaces the APK simply stores the new hash alongside it. Only the
+     * signing certificate identifies the publisher, and overwriting the file hash with a
+     * certificate fingerprint would silently destroy the integrity check it provides while
+     * appearing to add a security property.
+     *
+     * Nullable because it did not exist before, and an `ALTER TABLE ... ADD COLUMN` with no
+     * default leaves existing rows null rather than inventing a fingerprint for them. Those rows
+     * are re-pinned on their next update; until then they read as "not yet verified", which is
+     * the honest state.
+     */
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `installed_extensions` " +
+                    "ADD COLUMN `signing_cert_fingerprint` TEXT",
+            )
+        }
+    }
+
     /** Every migration, in order. */
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 }

@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +46,31 @@ class MigrationsTest {
         emptyList(),
         FrameworkSQLiteOpenHelperFactory(),
     )
+
+    /**
+     * Deletes the database file before each test.
+     *
+     * [MigrationTestHelper] reopens the same file name every test but does not remove it, so a
+     * test that ran earlier — or another suite that opened the app's *real* database, as
+     * `LibrarySearchTest` does — leaves a file at the current schema version. `createDatabase`
+     * then either refuses to downgrade or produces a database that does not match the requested
+     * schema, and the failure surfaces inside whichever test happens to run next.
+     *
+     * Deleting first makes these tests independent of execution order, which is the only way a
+     * migration suite can be trusted to run as part of a larger class list.
+     *
+     * The `-wal` and `-shm` sidecars go too: SQLite will otherwise replay a stale write-ahead log
+     * over the freshly created file.
+     */
+    @Before
+    fun deleteDatabaseFile() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val path = context.getDatabasePath(AurisDatabase.NAME)
+
+        listOf("", "-wal", "-shm", "-journal").forEach { suffix ->
+            java.io.File(path.path + suffix).delete()
+        }
+    }
 
     private fun databaseAt(version: Int): SupportSQLiteDatabase =
         helper.createDatabase(AurisDatabase.NAME, version)
@@ -330,12 +356,81 @@ class MigrationsTest {
     }
 
     @Test
+    fun signingFingerprintIsAddedAndExistingRowsSurvive() {
+        // v3 -> v4 adds the signing certificate fingerprint.
+        //
+        // The safety property that matters is the *nullable* add: a column added without a
+        // default leaves existing rows null rather than inventing a fingerprint for them. A
+        // fabricated value would be worse than none, because the app would then trust a
+        // certificate it never actually observed.
+        val db = databaseAt(3)
+        db.execSQL(
+            """
+            INSERT INTO installed_extensions (
+                package_name, label, version_name, version_code, apk_path, signature_hash,
+                enabled, repo_url, installed_at
+            ) VALUES (
+                'com.auris.pre', 'Pre-existing', '1.0', 1, '/tmp/pre.apk', 'filesha', 1,
+                'https://repo.test', 500
+            )
+            """.trimIndent(),
+        )
+        helper.closeWhenFinished(db)
+
+        val migrated = helper.runMigrationsAndValidate(
+            AurisDatabase.NAME, 4, true, Migrations.MIGRATION_3_4,
+        )
+
+        migrated.query(
+            "SELECT label, signature_hash, signing_cert_fingerprint FROM installed_extensions",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("Pre-existing", c.getString(0))
+            // The file hash must survive untouched: it is a different check from the
+            // certificate fingerprint, and overwriting it would silently lose the integrity
+            // guarantee while looking like a security improvement.
+            assertEquals("filesha", c.getString(1))
+            assertTrue("no fingerprint should be invented for an old row", c.isNull(2))
+        }
+    }
+
+    @Test
+    fun fingerprintIsStorableAndReadableAfterMigration() {
+        val db = databaseAt(3)
+        helper.closeWhenFinished(db)
+
+        val migrated = helper.runMigrationsAndValidate(
+            AurisDatabase.NAME, 4, true, Migrations.MIGRATION_3_4,
+        )
+
+        migrated.execSQL(
+            """
+            INSERT INTO installed_extensions (
+                package_name, label, version_name, version_code, apk_path, signature_hash,
+                signing_cert_fingerprint, enabled, installed_at
+            ) VALUES (
+                'com.auris.post', 'Post', '2.0', 2, '/tmp/post.apk', 'filesha',
+                'abc123', 1, 900
+            )
+            """.trimIndent(),
+        )
+
+        migrated.query(
+            "SELECT signing_cert_fingerprint FROM installed_extensions WHERE package_name = ?",
+            arrayOf("com.auris.post"),
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("abc123", c.getString(0))
+        }
+    }
+
+    @Test
     fun migrationChainIsOrderedAndComplete() {
         // A gap in the chain means an installed database cannot open: Room looks for a path
         // from its version to the current one and finds none.
         val versions = Migrations.ALL.map { it.startVersion to it.endVersion }
 
-        assertEquals(listOf(1 to 2, 2 to 3), versions)
+        assertEquals(listOf(1 to 2, 2 to 3, 3 to 4), versions)
         // Contiguous from 1 with no gaps.
         versions.zipWithNext().forEach { (first, second) ->
             assertEquals(

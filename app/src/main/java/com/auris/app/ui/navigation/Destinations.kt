@@ -38,10 +38,12 @@ object Routes {
     const val EPISODE_PLAYER = "play/episode/{entryId}/{unitIndex}"
     const val DIAGNOSTICS = "settings/diagnostics"
     const val MUSIC_BROWSE = "music/browse"
+    const val SETTINGS = "settings"
 
     fun player(entryId: String) = "player/$entryId"
     fun animeDetail(entryId: String) = "anime/$entryId"
     fun mangaReader(entryId: String, unitIndex: Int) = "manga/reader/$entryId/$unitIndex"
     fun episodePlayer(entryId: String, unitIndex: Int) = "play/episode/$entryId/$unitIndex"
     const val diagnostics = DIAGNOSTICS
+    const val settings = SETTINGS
 }

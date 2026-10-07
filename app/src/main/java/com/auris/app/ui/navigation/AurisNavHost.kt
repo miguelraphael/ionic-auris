@@ -37,6 +37,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.ui.diagnostics.DiagnosticsRoute
 import com.auris.app.ui.player.EpisodePlayer
+import com.auris.app.data.repository.ExtensionRepository
+import com.auris.app.ui.settings.SettingsScreen
+import com.auris.app.ui.settings.SettingsViewModel
 import com.auris.app.data.remote.music.InnerTubeClient
 import com.auris.app.ui.music.MusicBrowseScreen
 import com.auris.app.ui.music.MusicLibraryEntry
@@ -77,6 +80,8 @@ fun AurisNavHost(
     kitsuIdentifier: KitsuIdentifier,
     extensionContentRepository: ExtensionContentRepository,
     extensionsViewModelFactory: ViewModelProvider.Factory? = null,
+    /** Read by Settings to report the trust state of installed extensions. */
+    extensionRepository: ExtensionRepository,
     extensionRepo: ExtensionRepo = ExtensionRepo.DEFAULT,
     /** Receives a resolved, playable stream. ExoPlayer hosting is the next slice. */
     /** Process-scoped so the player survives navigation between episodes. */
@@ -181,6 +186,9 @@ fun AurisNavHost(
                 state = state,
                 actions = viewModel.actions(),
                 repo = extensionRepo,
+                // Was a no-op: the Diagnostics button existed but had no destination before
+                // Settings existed. Now wired, with Diagnostics reachable from inside Settings.
+                onOpenSettings = { navController.navigate(Routes.settings) },
                 bottomPadding = 32.dp + WindowInsets.navigationBars
                     .asPaddingValues()
                     .calculateBottomPadding(),
@@ -290,6 +298,25 @@ fun AurisNavHost(
                     // existing player state if not.
                     navController.navigate(Routes.PLAYER)
                 },
+            )
+        }
+
+        // Settings. Diagnostics moved under it: a diagnostics screen reached from an
+        // extensions button was a placeholder for a settings screen that did not exist yet.
+        composable(Routes.SETTINGS) {
+            val settingsViewModel: SettingsViewModel = viewModel(
+                key = "settings",
+                factory = SettingsViewModel.factory(extensionRepository = extensionRepository),
+            )
+            val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
+
+            SettingsScreen(
+                state = settingsState,
+                onRepoUrlChange = settingsViewModel::setRepoUrl,
+                onBeginRepoEdit = settingsViewModel::cancelRepoEdit,
+                onCancelRepoEdit = settingsViewModel::cancelRepoEdit,
+                onOpenExtensions = { navController.navigate(Routes.EXTENSIONS) },
+                onOpenDiagnostics = { navController.navigate(Routes.diagnostics) },
             )
         }
 

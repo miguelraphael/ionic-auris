@@ -45,6 +45,17 @@ data class ExtensionEntity(
     @ColumnInfo(name = "signature_hash")
     val signatureHash: String,
 
+    /**
+     * SHA-256 of the APK's **signing certificate**, lower-case hex — not the file hash above.
+     *
+     * This is the publisher's identity. Set on install from [ApkSigner], and thereafter used as a
+     * pin: an update signed by a different key is refused even if the repository has started
+     * claiming that key. Null means the extension predates verification and has not been
+     * re-checked yet.
+     */
+    @ColumnInfo(name = "signing_cert_fingerprint")
+    val signingCertFingerprint: String? = null,
+
     @ColumnInfo(name = "enabled")
     val enabled: Boolean = true,
 

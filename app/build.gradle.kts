@@ -98,6 +98,11 @@ android {
             include("mock-extension-debug.apk")
             rename { "mock-extension.apk" }
         }
+        // A real third-party extension, signed by a key we do not control, so the signature
+        // tests run against an actual APK Signature Scheme block rather than a fixture.
+        from(layout.projectDirectory.dir("src/androidTest/fixtures")) {
+            include("real-mangasource-extension.apk")
+        }
         into(layout.buildDirectory.dir("androidTestAssets"))
         dependsOn(":mock-extension:assembleDebug")
     }

@@ -8,6 +8,9 @@ import androidx.lifecycle.viewModelScope
 import com.auris.app.data.local.entity.ExtensionEntity
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.source.ExtensionApkReader
+import com.auris.app.source.repo.ApkSigner
+import com.auris.app.source.repo.SignatureVerdict
+import com.auris.app.source.repo.SignatureVerifier
 import com.auris.app.source.ExtensionLoader
 import com.auris.app.source.repo.ExtensionListItem
 import com.auris.app.source.repo.ExtensionRepo
@@ -201,6 +204,14 @@ class ExtensionsViewModel(
                     "APK declares ${identity.packageName}, expected $packageName"
                 }
 
+                // Signature check, before the file is allowed to become the installed APK.
+                //
+                // Order matters: the APK is still a `.part` file here, so a rejection deletes it
+                // and leaves the previous version installed. Verifying after the rename would
+                // mean a hostile APK had already replaced a good one, and the failure path would
+                // have to try to restore it.
+                val fingerprint = verifySignature(item, temp)
+
                 target.delete()
                 check(temp.renameTo(target)) { "Could not move downloaded APK into place" }
                 target.setReadOnly()
@@ -213,6 +224,8 @@ class ExtensionsViewModel(
                         versionCode = identity.versionCode,
                         apkPath = target.absolutePath,
                         signatureHash = identity.signatureHash,
+                        signingCertFingerprint = fingerprint,
+                        repoUrl = item.repo.baseUrl,
                     ),
                 )
 
@@ -224,6 +237,56 @@ class ExtensionsViewModel(
                 setStage(packageName, InstallProgress.Stage.FAILED)
                 _state.value = _state.value.copy(message = "Install failed: ${error.message}")
                 runCatching { temp.delete() }
+            }
+        }
+    }
+
+    /**
+     * Checks [apkPath]'s signing certificate against the repository's claim and this extension's
+     * existing pin, and returns the fingerprint to record.
+     *
+     * Throws when the APK must not be installed. [runCatching] in [install] turns that into a
+     * failed install, and the `.part` file is deleted, so a rejected APK never reaches the
+     * extensions directory and is never handed to the [extensionLoader].
+     */
+    private suspend fun verifySignature(item: ExtensionListItem, apkPath: File): String {
+        val observed = ApkSigner.fingerprints(context.packageManager, apkPath.absolutePath)
+
+        // Read *before* registering, so an update is checked against the pin from the install
+        // it replaces rather than against itself.
+        val pinned = extensionRepository.find(item.remote.packageName)?.signingCertFingerprint
+
+        val verdict = SignatureVerifier.verify(
+            declaredFingerprint = item.repo.signingKeyFingerprint,
+            observed = observed,
+            previouslyPinned = pinned,
+        )
+
+        return when (verdict) {
+            is SignatureVerdict.Trusted -> {
+                // Prefer the pinned value so an update that legitimately adds a second signer
+                // does not silently re-pin to a different key.
+                val chosen = pinned
+                    ?.takeIf { SignatureVerifier.normalize(it) != null }
+                    ?: observed.first()
+                Log.i(TAG, "Signature trusted for ${item.remote.packageName} (${chosen.take(12)}…)")
+                chosen
+            }
+
+            is SignatureVerdict.Pinned -> {
+                // Trust on first use. Allowed so a repository with no declared key is usable at
+                // all, but reported so the UI can say it is pinned rather than verified.
+                Log.w(
+                    TAG,
+                    "No declared signing key for ${item.remote.packageName}; " +
+                        "pinning ${verdict.fingerprint.take(12)}… on first install",
+                )
+                verdict.fingerprint
+            }
+
+            is SignatureVerdict.Rejected -> {
+                Log.w(TAG, "Signature rejected for ${item.remote.packageName}: ${verdict.reason}")
+                error(verdict.reason)
             }
         }
     }
