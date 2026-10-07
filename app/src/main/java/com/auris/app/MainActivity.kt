@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
                         extensionContentRepository = container.extensionContentRepository,
                         episodePlayer = container.episodePlayer,
                         appStateCollector = container.appStateCollector,
+                        innerTubeClient = container.innerTubeClient,
                         extensionsViewModelFactory = ExtensionsViewModel.Factory(
                             context = applicationContext,
                             client = container.extensionRepositoryClient,

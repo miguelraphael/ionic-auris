@@ -37,6 +37,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.ui.diagnostics.DiagnosticsRoute
 import com.auris.app.ui.player.EpisodePlayer
+import com.auris.app.data.remote.music.InnerTubeClient
+import com.auris.app.ui.music.MusicBrowseScreen
+import com.auris.app.ui.music.MusicLibraryEntry
+import com.auris.app.ui.music.MusicBrowseViewModel
 import com.auris.app.ui.player.EpisodePlayerRoute
 import com.auris.app.ui.reader.MangaReaderScreen
 import com.auris.app.ui.reader.MangaReaderViewModel
@@ -78,6 +82,7 @@ fun AurisNavHost(
     /** Process-scoped so the player survives navigation between episodes. */
     episodePlayer: EpisodePlayer? = null,
     appStateCollector: com.auris.app.diagnostics.AppStateCollector? = null,
+    innerTubeClient: InnerTubeClient? = null,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -113,11 +118,14 @@ fun AurisNavHost(
             )
         }
 
+        // The Music pillar leads to the live YouTube Music browser rather than a static grid:
+        // with no library yet, the saved-tracks grid would be empty on first run and the app
+        // would look broken. The library is still reachable from the browse screen.
         composable(TopLevelDestination.MUSIC.route) {
-            BrowseScreen(
-                mediaType = MediaType.MUSIC,
+            MusicLibraryEntry(
                 entries = library.filter { it.mediaType == MediaType.MUSIC },
                 onEntryClick = onEntryClick,
+                onOpenBrowse = { navController.navigate(Routes.MUSIC_BROWSE) },
             )
         }
 
@@ -256,8 +264,41 @@ fun AurisNavHost(
             )
         }
 
+        // Music browse/search. Reached from the Music pillar on the nav pill.
+        composable(Routes.MUSIC_BROWSE) {
+            if (innerTubeClient == null) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                return@composable
+            }
+            val viewModel: MusicBrowseViewModel = viewModel(
+                key = "music-browse",
+                factory = MusicBrowseViewModel.factory(
+                    client = innerTubeClient,
+                    libraryRepository = libraryRepository,
+                    context = navController.context,
+                ),
+            )
+            val musicState by viewModel.state.collectAsStateWithLifecycle()
+
+            MusicBrowseScreen(
+                state = musicState,
+                onQueryChange = viewModel::search,
+                onPlay = viewModel::play,
+                onSave = viewModel::saveToLibrary,
+                onOpenPlayer = {
+                    // Only meaningful with something playing; the route is cheap and shows the
+                    // existing player state if not.
+                    navController.navigate(Routes.PLAYER)
+                },
+            )
+        }
+
         // Diagnostics / log export.
         composable(Routes.DIAGNOSTICS) {
+            if (innerTubeClient == null) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                return@composable
+            }
             DiagnosticsRoute(
                 onBack = { navController.popBackStack() },
                 appStateCollector = appStateCollector,

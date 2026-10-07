@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -51,6 +52,12 @@ fun AurisTheme(
     content: @Composable () -> Unit,
 ) {
     val view = LocalView.current
+
+    // Palette extraction decodes artwork from a coroutine outside composition, and Coil 2 has no
+    // global context accessor. Published once here so `rememberArtworkPalette` works without
+    // every call site threading a loader through.
+    LocalContext.current.applicationContext?.let { CoilContextHolder.context = it }
+
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect

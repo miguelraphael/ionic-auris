@@ -8,6 +8,8 @@ import com.auris.app.data.local.SyncDao
 import com.auris.app.data.remote.SupabaseLibraryDataSource
 import com.auris.app.data.remote.SupabaseLibraryDataSourceImpl
 import com.auris.app.data.remote.kitsu.KitsuClient
+import com.auris.app.data.remote.music.InnerTubeClient
+import com.auris.app.data.remote.music.InnerTubeParser
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.KitsuIdentifier
@@ -45,6 +47,7 @@ interface AppContainer {
     val extensionRepository: ExtensionRepository
     val extensionLoader: ExtensionLoader
     val kitsuClient: KitsuClient
+    val innerTubeClient: InnerTubeClient
     val kitsuIdentifier: KitsuIdentifier
     val extensionContentRepository: ExtensionContentRepository
     val episodePlayer: EpisodePlayer
@@ -147,6 +150,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
      * lazily so nothing blocks app startup on it — identification is triggered by a screen, not
      * by the library loading.
      */
+    /**
+     * YouTube Music client.
+     *
+     * Shares the app's OkHttp client for connection reuse, but nothing else: InnerTube is
+     * unauthenticated and the client identity/version are sent as headers, not credentials.
+     */
+    override val innerTubeClient: InnerTubeClient by lazy {
+        InnerTubeClient(httpClient, json, InnerTubeParser())
+    }
+
     override val kitsuIdentifier: KitsuIdentifier by lazy {
         KitsuIdentifier(kitsuClient, libraryRepository::upsert)
     }

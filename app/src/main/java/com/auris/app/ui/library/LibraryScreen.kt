@@ -12,12 +12,21 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.components.MediaGridCard
 import com.auris.app.ui.components.SectionHeader
+import com.auris.app.ui.theme.ArtworkGradientBackground
+import com.auris.app.ui.theme.ArtworkPalette
+import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
+import com.auris.app.ui.theme.rememberArtworkPaletteValue
 
 /**
  * The unified library grid. One screen, one query, three media types — anime, manga and
@@ -36,11 +45,30 @@ fun LibraryScreen(
     contentPadding: PaddingValues = PaddingValues(bottom = 120.dp),
     header: (@Composable () -> Unit)? = null,
 ) {
-    if (entries.isEmpty()) {
-        EmptyLibrary(modifier)
-        return
+    // The gradient tracks whichever entry the user last touched, the same rule the player and
+    // detail screens follow. Chosen on tap rather than on "most recent" so the screen reacts to
+    // what the user is actually looking at, and so the colour is not a function of data ordering.
+    var gradientArtwork by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(entries.size) {
+        // Seed with the newest entry so the screen is never flat grey on first open.
+        if (gradientArtwork == null) {
+            gradientArtwork = entries.maxByOrNull { it.lastActivityAt }?.artworkUrl
+        }
     }
 
+    // The shared loader inside rememberArtworkPalette handles the decode, so this is just
+    // "track this artwork".
+    val palette = rememberArtworkPaletteValue(artworkKey = gradientArtwork)
+
+    ArtworkGradientBackground(
+        palette = palette,
+        intensity = 0.7f,
+        // Fades early: a grid of many cards behind a gradient reaching half the viewport tints
+        // every one of them.
+        fadeEndFraction = 0.38f,
+        modifier = modifier,
+    ) {
     LazyVerticalGrid(
         // Adaptive so the same composable serves a phone, a foldable and a tablet.
         columns = GridCells.Adaptive(minSize = 116.dp),
@@ -62,25 +90,12 @@ fun LibraryScreen(
                 title = entry.title,
                 subtitle = entry.subtitle ?: entry.author,
                 progress = entry.progress.takeIf { it > 0f },
-                onClick = { onEntryClick(entry) },
+                onClick = {
+                    gradientArtwork = entry.artworkUrl ?: entry.localArtworkPath
+                    onEntryClick(entry)
+                },
             )
         }
     }
-}
-
-@Composable
-private fun EmptyLibrary(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        SectionHeader(title = "Your library is empty")
-        Text(
-            text = "Favourite an anime, manga or track and it will show up here, synced across devices.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = AurisOnSurfaceVariant,
-        )
     }
 }

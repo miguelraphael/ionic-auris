@@ -1,6 +1,10 @@
 package com.auris.app.ui.theme
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import coil.ImageLoader
+import coil.request.ImageRequest
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -32,11 +36,30 @@ private val paletteExecutor = Executors.newSingleThreadExecutor { r ->
  * Callers should cache by artwork key (see [rememberArtworkPalette]); this function
  * intentionally holds no cache of its own.
  */
+
+/**
+ * Remembers an [ArtworkPalette] for [artworkKey], decoding the artwork itself.
+ *
+ * ### Why this loads the bitmap rather than taking one
+ * This previously defaulted `onBitmap` to `{ null }`, and every call site passed only
+ * `artworkKey` — so the bitmap was always null, the palette was always
+ * [ArtworkPalette.Unspecified], and the artwork-derived gradient silently never rendered
+ * anywhere in the app. It looked like it worked because the neutral fallback is
+ * indistinguishable from a screenshot taken at the wrong moment.
+ *
+ * Loading here rather than at each call site fixes all of them at once, and means a new screen
+ * gets the behaviour by default instead of by remembering to wire a loader.
+ *
+ * @param artworkBitmap a pre-decoded bitmap when the caller already has one; takes precedence
+ *   over [onBitmap] so a caller holding a bitmap does no load at all.
+ * @param onBitmap override for the loader. Supplying one disables the Coil default, which is
+ *   what tests want.
+ */
 @Composable
 fun rememberArtworkPalette(
     artworkKey: String?,
-    artworkBitmap: Bitmap?,
-    onBitmap: suspend (String) -> Bitmap? = { null },
+    artworkBitmap: Bitmap? = null,
+    onBitmap: suspend (String) -> Bitmap? = ::loadArtworkBitmap,
 ): State<ArtworkPalette> {
     val state = remember(artworkKey) { mutableStateOf(ArtworkPalette.Unspecified) }
 
@@ -56,12 +79,49 @@ fun rememberArtworkPalette(
     return state
 }
 
+/** [rememberArtworkPalette]'s value. */
 @Composable
 fun rememberArtworkPaletteValue(
     artworkKey: String?,
     artworkBitmap: Bitmap? = null,
-    onBitmap: suspend (String) -> Bitmap? = { null },
+    onBitmap: suspend (String) -> Bitmap? = ::loadArtworkBitmap,
 ): ArtworkPalette = rememberArtworkPalette(artworkKey, artworkBitmap, onBitmap).value
+
+/**
+ * Decodes [url] through Coil's shared loader and returns its bitmap, or null on failure.
+ *
+ * Null rather than throwing: artwork is decoration, so a failed load must leave the screen on
+ * its neutral palette rather than propagate an exception out of a `LaunchedEffect`.
+ */
+private suspend fun loadArtworkBitmap(url: String): Bitmap? {
+    val context = CoilContextHolder.context ?: return null
+    return runCatching {
+        ImageLoader(context)
+            .execute(ImageRequest.Builder(context).data(url).size(PALETTE_SAMPLE_PX).build())
+            .drawable
+            ?.let { it as? BitmapDrawable }
+            ?.bitmap
+    }.getOrNull()
+}
+
+/**
+ * Holds the application Context for decoding outside composition.
+ *
+ * Coil 2 exposes no global context accessor, and palette extraction runs on a coroutine outside
+ * composition. Set once from the theme.
+ */
+object CoilContextHolder {
+    @Volatile
+    var context: Context? = null
+}
+
+/**
+ * Decode size for palette sampling.
+ *
+ * 128px is well past what Palette needs — it quantizes internally — while staying small enough
+ * that the request usually hits Coil's cache rather than the network.
+ */
+private const val PALETTE_SAMPLE_PX = 128
 
 /**
  * Maps a Palette result onto our four-role scheme.

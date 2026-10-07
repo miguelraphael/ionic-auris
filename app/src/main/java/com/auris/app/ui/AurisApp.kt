@@ -66,6 +66,7 @@ fun AurisApp(
     /** Process-scoped so the player survives navigation between episodes. */
     episodePlayer: EpisodePlayer? = null,
     appStateCollector: com.auris.app.diagnostics.AppStateCollector? = null,
+    innerTubeClient: com.auris.app.data.remote.music.InnerTubeClient? = null,
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
@@ -92,6 +93,7 @@ fun AurisApp(
             extensionContentRepository = extensionContentRepository,
             episodePlayer = episodePlayer,
             appStateCollector = appStateCollector,
+            innerTubeClient = innerTubeClient,
             extensionsViewModelFactory = extensionsViewModelFactory,
             extensionRepo = extensionRepo,
             modifier = Modifier.fillMaxSize(),

@@ -48,6 +48,23 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!--
+          Background audio.
+
+          The service owns the ExoPlayer so playback survives the Activity. Its notification is a
+          foreground-service notification, which is why `foregroundServiceType="mediaPlayback"`
+          and the matching permission are both required from Android 14.
+        -->
+        <service
+            android:name=".music.MusicPlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

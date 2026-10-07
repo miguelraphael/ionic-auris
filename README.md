@@ -354,16 +354,25 @@ user-facing message differs and collapsing them states something false.
 
 `Logos/` holds the brand sources; `app/src/main/res/drawable/` holds four generated variants.
 
-### The filenames are inverted from their contents
-Worth recording because it is genuinely confusing:
+### Source files and generated variants
+The `Logos/` filenames name the **backdrop**, so the ink is necessarily the opposite:
 
-| File | Actually contains |
-|---|---|
-| `Auris-white.png` | **Dark ink on a light backdrop** |
-| `Auris-black.png` | **Light ink on a dark backdrop** |
+| Source | Backdrop | Ink |
+|---|---|---|
+| `Auris-white.png` | white | dark |
+| `Auris-black.png` | black | light |
+| `AURIS logo on transparent background.png` | transparent | — |
 
-Both are *opaque* (logo on a solid backdrop), so neither can be composited over arbitrary
-surfaces directly. `logo_mark_light`, `logo_mark_dark`, `logo_full_light` and `logo_full_dark`
+The generated variants are named by **ink** instead, because that is the axis a caller actually
+chooses on:
+
+| Generated | Derived from | Use on |
+|---|---|---|
+| `logo_mark_light` / `logo_full_light` | `Auris-black.png` | dark surfaces |
+| `logo_mark_dark` / `logo_full_dark` | `Auris-white.png` | light surfaces |
+
+The two source files are *opaque* (logo on a solid backdrop), so neither can be composited over
+arbitrary surfaces directly. `logo_mark_light`, `logo_mark_dark`, `logo_full_light` and `logo_full_dark`
 are generated from them with the alpha channel synthesised from luminance, cropped to the ink's
 actual bounding box, and tone-lifted.
 
@@ -474,6 +483,200 @@ Sharing uses a `FileProvider` URI scoped to `cache/diagnostics/` only — a raw 
 `FileUriExposedException`, and exposing the whole cache would let the share sheet read extension
 APKs and Coil's image cache.
 
+## YouTube Music (InnerTube)
+
+`InnerTubeClient` + `InnerTubeParser` fetch tracks, albums and playlists, and
+`MusicLibraryMapper` projects them onto the existing unified schema.
+
+### Mapping onto `library_entries` / `library_units`
+The schema already documents music's identity tuple — `source_key = "innertube"`, `source_id` =
+the YouTube video id — so adding a track from two sources upserts rather than duplicating. An
+**album is one entry whose `totalUnits` is its track count**, and its tracks are units. That is
+what makes album progress legible through the library UI that was built for anime: an album at
+track 2 of 5 shows 40%, exactly as an anime at episode 2 of 5 does.
+
+Two decisions worth stating:
+- **`stream_url` is never written.** InnerTube stream URLs carry an `expiresInSeconds` of about
+  six hours, so storing one guarantees a 403 on the next play. The player re-resolves per
+  playback; the unit row keeps only the video id.
+- **`unit_index` is 1-based**, matching the schema's documented convention, even though
+  InnerTube numbers tracks from zero in places.
+
+### Tested against the live API — and it was not working
+
+The InnerTube layer had never made a real request. It does now, and the first four live calls
+returned **HTTP 400**. Every failure was in a request the hand-written fixtures could not have
+caught, and three of the four were not client-version drift at all.
+
+| What | Result |
+| --- | --- |
+| `search` with an **empty** query | **400** — `INVALID_ARGUMENT`. InnerTube rejects a blank query outright, so "browse on open" cannot be an empty search. |
+| `search` with the widely-cited `EgWKAQIYAWoKEAkQBRAKEAMQBA==` **songs filter** | **Silently zero results.** 0 videoIds on `ANDROID_MUSIC`, 0 responsive renderers on `WEB_REMIX`. The same query *without* the token returns 123 and 32. |
+| `browse` with YouTube Music's own **chart ids** (`FEmusic_music_romantic`) | **400**, on both clients. User-generated ids work fine — a playlist returned 161 videoIds, an album 240. |
+| The whole request otherwise | **200**, 1.5 MB, once the above were fixed. |
+
+Consequences, all of which would have shipped as an empty music screen:
+
+- **`WEB_REMIX` replaced `ANDROID_MUSIC`.** Not for `streamingData` — for *renderer shape*.
+  `ANDROID_MUSIC` returns bare `videoId`s and no `musicResponsiveListItemRenderer`, so a track
+  list has to be reassembled from several unrelated shapes. `WEB_REMIX` returns the responsive
+  renderer directly, which is one uniform shape, and needs no web API key.
+- **No filter tokens are sent.** The stale token returns zero results, and a zero-result response
+  is indistinguishable from a parser that matched nothing — the exact failure this section
+  documents would have been invisible in the app.
+- **Discovery is seeded search, not a chart.** With blank queries and chart ids both rejected,
+  there is no id-independent "top songs" browse, so the landing page searches a few broad terms
+  (`popular music`, `chill beats`, `new releases`). A hard-coded playlist id would go stale with
+  no signal that it had.
+
+The parser was then run against the captured live payload, which exposed two more real bugs:
+
+5. **`WEB_REMIX` runs carry no `accessibilityData`.** The parser matched columns by
+   `accessibilityData.label` — the approach that had been working against inferred fixtures. On
+   live data every lookup returned null and each track fell back to *its own video id as its
+   title*. Positional `flexColumns` parsing is now the primary path, with labels as fallback.
+6. **Songs have no `fixedColumns` and no thumbnail.** Duration lives in the *second* flex column
+   as a run — `[{text:"Song"},{text:" • "},{text:"5:54"}]` — so the duration-only-from-fixed-
+   columns rule silently yielded null for every song row. Subtitle runs are now classified:
+   the duration is extracted, `"Song"` is discarded as a media-type token (it was becoming the
+   artist), and only genuine metadata is kept.
+
+`InnerTubeLiveShapeTest` encodes the real response shape as fixtures, so #5 and #6 stay fixed.
+
+### Classifying the subtitle column
+
+With #6 fixed, the subtitle is a bullet-joined list whose parts mostly are *not* metadata about
+the work. Sorting them out correctly is what stands between a correct title and plausible-looking
+wrong text beside it — every mistake here renders as fact, with no error anywhere.
+
+Live rows that had to be handled: `"Song • 5:54"`, `"Daft Punk • 2019 • Discovery"`,
+`"Serenata • 921K views"`, `"Artist • Album • 2019"`. Three rules, each of which was a real
+device-visible bug:
+
+| Segment | Rule | Why a naive filter gets it wrong |
+| --- | --- | --- |
+| Duration | must contain a colon | A bare `2019` parses as 2,019 seconds, so a release year became a 33-minute track. |
+| `Song`, `Album`, `EP`… | filtered **only at index 0** | `Album`, `EP` and `Single` are also ordinary words releases are titled with — filtering everywhere made the album genuinely called "Album" report no album. |
+| `921K views`, `388M plays` | shape match, not a word list | Blocking "play" misses `views` and `listeners`; the next unit YouTube adds would appear as an album title. |
+
+A bare year is excluded from the artist/album slots for a separate reason: keeping it as metadata
+puts it in the second slot, so `"Daft Punk • 2019 • Discovery"` reports its album as *2019*. It
+is still parsed by `extractYear`, just not as a name. `InnerTubeSubtitleSegmentTest` covers each
+of these with the rows that actually occurred.
+
+### Playback is blocked: `/player` requires attestation
+
+Search and browse work. **Stream resolution does not**, and this is an access control rather than
+a bug to fix.
+
+`/player` returns `UNPLAYABLE` with an empty `adaptiveFormats` and no reason, for every
+unauthenticated client identity tested against the live API:
+
+| Client | `search` / `browse` | `player` |
+| --- | --- | --- |
+| `WEB_REMIX` 1.20240101.01.00 | 200, 123 videoIds | 200 **`UNPLAYABLE`**, 0 formats |
+| `ANDROID_MUSIC` 7.27.52 | 200, 123 videoIds | 200 **`LOGIN_REQUIRED`**, 0 formats |
+| `WEB`, `MWEB`, `IOS`, `TVHTML5_SIMPLY_EMBEDDED_PLAYER`, `WEB_EMBEDDED_PLAYER`, `ANDROID_VR` | — | **400 `FAILED_PRECONDITION`** |
+| `WEB_REMIX` + a real `visitorData` from a live search | — | 200 **`UNPLAYABLE`**, 0 formats |
+
+Passing a genuine `visitorData` did not help, so this is not a missing header. Serving stream URLs
+now requires BotGuard attestation (a PO token) or authenticated user cookies.
+
+A PO token means running BotGuard — Googlebot's anti-automation proof-of-work — and defeating it
+is circumventing an access control, so it is not attempted here. It would also sit badly with the
+ToS question already flagged. The app therefore **reports the refusal accurately** instead of
+pretending the track is missing: `YouTube declined to serve audio for "…" (UNPLAYABLE)`.
+
+That distinction is carried deliberately. `UNPLAYABLE` with zero formats and a reason naming the
+*track* (`private`, `removed`, region-blocked) is about the content and is reported as such;
+anything else is about the *request*, and no retry will fix it. Collapsing the two into one
+"Nothing playable" message points the user at the track when the track is fine.
+
+Consequence for the music pillar: **browse, search, metadata and library all work; playback is
+unavailable until stream resolution is solved.** That needs a decision, not more engineering —
+see the options in the handover.
+
+InnerTube remains **undocumented with no version guarantee**, and access this way is not covered
+by any API agreement — whether streaming is restricted by the YouTube Terms of Service depends
+on jurisdiction, and is worth settling before shipping. Everything is built to degrade: client
+name, version and base URL are injectable so a break is a config change; responses are parsed
+into our own types; every method returns `Result`.
+
+### Four parser bugs the tests caught
+1. `runs(key)` read `this[key]["runs"]`, but `flexText` already held the object *containing*
+   `runs` — so every labelled column silently returned null and the artist fell through to the
+   fixed-column duration (`"5:55"` became the artist).
+2. The artist was only ever derived from a *subtitle* column, never from the `"Artist"` label
+   InnerTube provides directly.
+3. `continuations` is an **array**, so `asObject()` returned null and paging never started.
+4. Duration was read from a fixed column *position*; YouTube's `fixedColumns` count varies, so
+   it silently yielded null. Now every fixed column is scanned for a parseable duration.
+
+The parser also drops a renderer with no video id rather than surfacing it as an unplayable row.
+Bugs #5 and #6 came from live traffic rather than from the fixtures — see above.
+
+## Background audio
+
+`MusicPlaybackService` is a media3 `MediaSessionService`, so playback survives the Activity and
+drives the notification shade, lock screen and system media controls.
+
+- **Audio focus** is declared via `AudioAttributes` (`USAGE_MEDIA` / `CONTENT_TYPE_MUSIC`) with
+  `handleAudioFocus = true`. This is mandatory — without it ExoPlayer does not request focus and
+  a phone call or navigation prompt talks over the music instead of ducking it.
+- **`setHandleAudioBecomingNoisy(true)`** pauses when headphones are unplugged. Without it,
+  audio keeps playing out of the speaker, which is the most reported music-app bug there is.
+- **`onTaskRemoved` does not stop playback** when music is playing. Swiping the app away should
+  not kill the music — that is the entire reason a service exists. It only stops when idle.
+- **The player is released in `onDestroy`, not `onUnbind`.** Unbind happens on every rotation;
+  releasing there would interrupt playback.
+
+Two things are deliberately not hand-rolled. The notification comes from
+`DefaultMediaNotificationProvider`, because building transport pending-intents by hand means
+targeting `SessionCommands` constants that **moved between media3 releases** — the first
+attempt at this failed to compile against 1.5.1 exactly that way, and the failure mode of
+getting it subtly wrong is a notification whose buttons silently do nothing. Only the channel id
+is owned by the app, and it is stable so an upgrade keeps the user's per-channel preferences
+instead of leaving a second "Playback" entry behind.
+
+The status-bar small icon is the default (the app icon) for the same reason: media3 1.5's
+`DefaultMediaNotificationProvider.Builder` has no `setSmallIcon`, and `MediaNotification`'s
+constructor only accepts an icon when building a new notification, so a custom icon means
+rebuilding media3's notification wholesale.
+
+### A Room converter crashed the app on launch
+
+Opening the library killed the process with `No enum constant EntryStatus.ONGOING`. Rows written
+by an older build still held `ONGOING`, which had since been renamed to `IN_PROGRESS`.
+
+The stale database was the trigger, not the bug. **A type converter runs while Room is *reading*
+a row** — `valueOf` throwing there does not fail one query, it propagates out of the observing
+coroutine and kills the process. One unrecognised value made the app unlaunchable, with the
+library unrecoverable without clearing app data.
+
+An enum name in SQLite is an external contract that outlives the code that wrote it, across
+renames, downgrades and hand edits. All three converters now fall back to the first constant
+instead of throwing: a slightly wrong status is recoverable, an unlaunchable app is not. Covered
+by `ConvertersTest`, which asserts a fallback for every converter.
+
+## Artwork-derived gradients actually work now
+
+`rememberArtworkPalette` defaulted `onBitmap` to `{ null }` and **every** call site passed only
+`artworkKey` — so the bitmap was always null, the palette was always `Unspecified`, and the
+artwork-derived gradient silently never rendered anywhere in the app. It looked like it worked
+because the neutral fallback is indistinguishable from a screenshot taken at the wrong moment.
+
+It now decodes through Coil's shared loader (128px, so it usually hits Coil's cache rather than
+the network), with the Context published once from the theme since Coil 2 has no global accessor.
+Every screen that calls it gets the behaviour by default instead of by remembering to wire a
+loader.
+
+## Library screen
+
+The unified grid — anime, manga and music from one Room query — now drives its gradient from the
+**last-touched** entry rather than "most recent" by timestamp, so the screen reacts to what the
+user is actually looking at rather than to data ordering. Seeded with the newest entry on first
+open so it is never flat grey.
+
 ## Tests
 
 | Suite | Location | Runs on |
@@ -488,6 +691,8 @@ APKs and Coil's image cache.
 | `KitsuIdentifierTest` — id plumbing, caching, which fields may be written | `app/src/test/` | JVM |
 | `ExtensionContentRepositoryTest` — source resolution, unit/stream fetch, persistence rules | `app/src/test/` | JVM |
 | `LogRedactionTest` — credential masking, adversarially | `app/src/test/` | JVM |
+| `InnerTubeParserTest` — track/player/continuation parsing | `app/src/test/` | JVM |
+| `MusicLibraryMapperTest` — InnerTube content onto the Room schema | `app/src/test/` | JVM |
 | `MigrationsTest` — v2→v3 preserves rows, units, extensions, outbox | `app/src/androidTest/` | device |
 | `LibrarySearchTest` — `LIKE` pattern matching | `app/src/androidTest/` | device |
 | `ExtensionLoaderTest` — real APK load, id stability, parsing | `app/src/androidTest/` | device |
@@ -598,8 +803,6 @@ Deliberately out of scope for this first slice; the seams are in place:
   `library_units.last_position_ms`, so reopening a chapter restarts at page 1.
 - **Fullscreen orientation** — the player has a fullscreen toggle that hides controls, but does
   not yet lock orientation or drive the system bars.
-- **MediaSession service** — the player screen is complete, but nothing feeds Android Auto,
-  the notification shade or lock-screen controls yet.
 - **Genre browsing** — `KitsuClient.genres()` and the `*ByGenres` methods work but have no UI.
 - **Kitsu metadata refresh** — `kitsuIdentifier.rankCandidates` is ready for a "this match is
   wrong, pick another" affordance that has no screen yet.
@@ -608,6 +811,18 @@ Deliberately out of scope for this first slice; the seams are in place:
 - **Repo management UI** — the URL is settable through the view model; the on-screen editor is
   not wired up yet (`onEditRepo` is a no-op).
 
-- **InnerTube client** — YouTube Music discovery and track metadata.
+- **Music playback does not work, and cannot until `/player` is solved.** Browse, search,
+  metadata and the library all function; stream resolution returns `UNPLAYABLE` with zero
+  formats for every unauthenticated client tested. Serving audio now requires BotGuard
+  attestation or authenticated cookies — see the section above. This is a decision to make,
+  not a bug to fix.
+- **The music player screen is not wired.** `MusicBrowseScreen` resolves a track, hands the
+  queue to the playback service and reports a refusal honestly, but `MusicPlayerScreen` still
+  receives a hard-coded `PlayerUiState` — its controls and progress bar are not connected to
+  the session. Wiring it before streams resolve would be building a screen that can only ever
+  show a dead player.
+- **Android Auto** — the `MediaSessionService` is browsable in principle, but no
+  `MediaLibraryService`/`MediaBrowser` tree is published, so Auto shows no content to choose
+  from.
 - **Settings screen** — Diagnostics is currently reached from a button on the Extensions
   screen, because no Settings screen exists yet. It should move when one lands.
