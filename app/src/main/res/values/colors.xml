@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base surface pulled from the reference UI: #161B24 -->
+    <color name="auris_background">#FF161B24</color>
+    <color name="auris_icon_bg">#FF0B1020</color>
+</resources>

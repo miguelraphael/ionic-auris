@@ -1,0 +1,11 @@
+# Copy to local.properties and fill in. Never commit real values.
+# local.properties is git-ignored; this example file is not.
+
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+
+# Aniyomi extension repository index (signed, gzip JSON) used by the extension manager.
+AURI_EXTENSION_INDEX_URL=https://raw.githubusercontent.com/aniyomiorg/extensions-source/main/index.json
+
+# Android SDK location (also read by the Android Gradle Plugin).
+sdk.dir=/path/to/Android/sdk

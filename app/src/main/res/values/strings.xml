@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Auris</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_anime">Anime</string>
+    <string name="nav_manga">Manga</string>
+    <string name="nav_music">Music</string>
+    <string name="nav_library">Library</string>
+
+    <string name="cd_album_art">Album artwork</string>
+    <string name="cd_poster">Poster</string>
+    <string name="cd_cover">Cover</string>
+    <string name="cd_auris_logo">Auris logo</string>
+</resources>

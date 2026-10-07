@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      An extension APK is a library in practice: no launcher activity, and its identity comes
+      from `packageName` plus the `tachiyomi.extension.id` meta-data, exactly as Aniyomi
+      extension APKs do.
+    -->
+    <application
+        android:label="Auris Mock Extension"
+        android:hasCode="true">
+
+        <meta-data
+            android:name="tachiyomi.extension.id"
+            android:value="com.auris.app.mockextension" />
+
+        <meta-data
+            android:name="tachiyomi.extension.version"
+            android:value="1" />
+
+        <meta-data
+            android:name="tachiyomi.extension.repo"
+            android:value="https://mock.auris.test/repo" />
+    </application>
+</manifest>
