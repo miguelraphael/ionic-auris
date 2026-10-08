@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.auris.app.data.local.entity.ExtensionEntity
+import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.source.repo.ExtensionRepo
 import com.auris.app.source.repo.SignatureVerifier
@@ -68,28 +69,35 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     private val extensionRepository: ExtensionRepository,
-    private val initialRepo: ExtensionRepo,
+    private val repoStore: ExtensionRepoStore,
 ) : ViewModel() {
 
-    private val repo = MutableStateFlow(initialRepo)
     private val message = MutableStateFlow<String?>(null)
     private val _state = MutableStateFlow(
         SettingsUiState(
-            repoUrl = initialRepo.baseUrl,
-            repoName = initialRepo.name,
-            repoDeclaredKey = initialRepo.signingKeyFingerprint,
+            repoUrl = repoStore.current().baseUrl,
+            repoName = repoStore.current().name,
+            repoDeclaredKey = repoStore.current().signingKeyFingerprint,
         ),
     )
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
     init {
+        // The store is the single source of truth for the repository, shared with the
+        // extensions screen. Observed rather than copied, so a fingerprint entered here is the
+        // same value the install path verifies against — not a copy that can drift.
+        repoStore.repo
+            .onEach { publish(extensionRepository.installedSnapshot()) }
+            .launchIn(viewModelScope)
+
         extensionRepository.installed()
             .onEach { installed -> publish(installed) }
             .launchIn(viewModelScope)
     }
 
     private fun publish(installed: List<ExtensionEntity>) {
-        val declared = SignatureVerifier.normalize(repo.value.signingKeyFingerprint)
+        val repo = repoStore.current()
+        val declared = SignatureVerifier.normalize(repo.signingKeyFingerprint)
 
         val security = installed.map { extension ->
             val fingerprint = SignatureVerifier.normalize(extension.signingCertFingerprint)
@@ -112,8 +120,8 @@ class SettingsViewModel(
         }
 
         _state.value = _state.value.copy(
-            repoUrl = repo.value.baseUrl,
-            repoName = repo.value.name,
+            repoUrl = repo.baseUrl,
+            repoName = repo.name,
             repoDeclaredKey = declared,
             extensions = security,
             verifiedCount = security.count { it.trust == ExtensionTrust.VERIFIED },
@@ -171,19 +179,68 @@ class SettingsViewModel(
             }
 
             else -> {
-                repo.value = repo.value.copy(
-                    baseUrl = trimmed,
-                    name = trimmed.substringAfterLast('/').ifBlank { "Custom repository" },
-                )
+                repoStore.update { repo ->
+                    repo.copy(
+                        baseUrl = trimmed,
+                        name = trimmed.substringAfterLast('/').ifBlank { "Custom repository" },
+                    )
+                }
                 _state.value = _state.value.copy(
                     repoEditing = false,
                     message = "Repository set. Extension lists refresh from it.",
                 )
-                // Recompute trust, because a different repository may publish a different key
-                // and the per-extension verdict depends on it.
-                publish(extensionRepository.installedSnapshot())
+                // Trust is recomputed by the store observer above, because a different
+                // repository may publish a different key and every verdict depends on it.
             }
         }
+    }
+
+    /**
+     * Validates and saves the repository's signing key fingerprint.
+     *
+     * ### Why a bad value is refused rather than saved
+     * A fingerprint that is not 64 hex characters can never match an APK, and the verifier's
+     * policy is to **reject installs** when a declared key is malformed — so saving garbage would
+     * turn every extension from this repository into a hard install failure. Failing here, next
+     * to the field, is the only place the user can see the reason.
+     *
+     * An empty value is allowed and meaningful: it declares "this repository publishes no key",
+     * which is the state every non-Anikku repository is in, and it downgrades verification to
+     * pinning rather than breaking installs.
+     */
+    fun setSigningKeyFingerprint(value: String) {
+        val trimmed = value.trim()
+
+        if (trimmed.isEmpty()) {
+            repoStore.update { it.copy(signingKeyFingerprint = "") }
+            _state.value = _state.value.copy(
+                message = "Signing key cleared. Extensions from this repository will be pinned, " +
+                    "not verified.",
+            )
+            return
+        }
+
+        if (!SignatureVerifier.isWellFormed(trimmed)) {
+            _state.value = _state.value.copy(
+                message = "A fingerprint is 64 hexadecimal characters. Copy it with the colons " +
+                    "intact — both forms are accepted.",
+            )
+            return
+        }
+
+        repoStore.update { it.copy(signingKeyFingerprint = trimmed) }
+        _state.value = _state.value.copy(
+            message = "Signing key saved. Extensions will be checked against it.",
+        )
+    }
+
+    /** Forgets the custom repository and returns to the built-in default. */
+    fun resetRepo() {
+        repoStore.reset()
+        _state.value = _state.value.copy(
+            repoEditing = false,
+            message = "Repository reset to the default.",
+        )
     }
 
     fun consumeMessage() {
@@ -193,18 +250,18 @@ class SettingsViewModel(
 
     class Factory(
         private val extensionRepository: ExtensionRepository,
-        private val repo: ExtensionRepo,
+        private val repoStore: ExtensionRepoStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SettingsViewModel(extensionRepository, repo) as T
+            SettingsViewModel(extensionRepository, repoStore) as T
     }
 
     companion object {
         fun factory(
             extensionRepository: ExtensionRepository,
-            repo: ExtensionRepo = ExtensionRepo.DEFAULT,
-        ): ViewModelProvider.Factory = Factory(extensionRepository, repo)
+            repoStore: ExtensionRepoStore,
+        ): ViewModelProvider.Factory = Factory(extensionRepository, repoStore)
     }
 }
 
@@ -215,5 +272,5 @@ class SettingsViewModel(
  * the observed [kotlinx.coroutines.flow.Flow] has no blocking getter. Suspending on a first
  * emission is the alternative; this is simpler and the list is already in memory.
  */
-private suspend fun ExtensionRepository.installedSnapshot(): List<ExtensionEntity> =
+internal suspend fun ExtensionRepository.installedSnapshot(): List<ExtensionEntity> =
     installed().first()

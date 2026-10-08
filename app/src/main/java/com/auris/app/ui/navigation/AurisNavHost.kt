@@ -82,6 +82,8 @@ fun AurisNavHost(
     extensionsViewModelFactory: ViewModelProvider.Factory? = null,
     /** Read by Settings to report the trust state of installed extensions. */
     extensionRepository: ExtensionRepository,
+    /** Shared with the extensions screen: one repository, one signing key. */
+    extensionRepoStore: com.auris.app.data.repository.ExtensionRepoStore,
     extensionRepo: ExtensionRepo = ExtensionRepo.DEFAULT,
     /** Receives a resolved, playable stream. ExoPlayer hosting is the next slice. */
     /** Process-scoped so the player survives navigation between episodes. */
@@ -306,7 +308,10 @@ fun AurisNavHost(
         composable(Routes.SETTINGS) {
             val settingsViewModel: SettingsViewModel = viewModel(
                 key = "settings",
-                factory = SettingsViewModel.factory(extensionRepository = extensionRepository),
+                factory = SettingsViewModel.factory(
+                    extensionRepository = extensionRepository,
+                    repoStore = extensionRepoStore,
+                ),
             )
             val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
 
@@ -315,6 +320,8 @@ fun AurisNavHost(
                 onRepoUrlChange = settingsViewModel::setRepoUrl,
                 onBeginRepoEdit = settingsViewModel::cancelRepoEdit,
                 onCancelRepoEdit = settingsViewModel::cancelRepoEdit,
+                onFingerprintChange = settingsViewModel::setSigningKeyFingerprint,
+                onResetRepo = settingsViewModel::resetRepo,
                 onOpenExtensions = { navController.navigate(Routes.EXTENSIONS) },
                 onOpenDiagnostics = { navController.navigate(Routes.diagnostics) },
             )

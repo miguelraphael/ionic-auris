@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.auris.app.data.local.entity.ExtensionEntity
+import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.source.ExtensionApkReader
 import com.auris.app.source.repo.ApkSigner
@@ -70,17 +71,24 @@ class ExtensionsViewModel(
     private val extensionRepository: ExtensionRepository,
     private val extensionLoader: ExtensionLoader,
     private val extensionsDir: File,
-    defaultRepo: ExtensionRepo = ExtensionRepo.DEFAULT,
+    private val repoStore: ExtensionRepoStore,
 ) : ViewModel() {
 
-    private val repo = MutableStateFlow(defaultRepo)
+    /**
+     * The repository, owned by [repoStore] and shared with Settings.
+     *
+     * Previously this ViewModel held its own copy, which meant a signing key entered in Settings
+     * never reached [install] — the field would have appeared to work while every extension
+     * stayed pinned. It now observes the store, so the key the user typed is the key used.
+     */
+    private val repo: StateFlow<ExtensionRepo> = repoStore.repo
     private val remoteIndex = MutableStateFlow<List<ExtensionListItem>>(emptyList())
     private val showNsfw = MutableStateFlow(true)
     private val focusIcon = MutableStateFlow<String?>(null)
     private val progress = MutableStateFlow<Map<String, InstallProgress.Stage>>(emptyMap())
 
     private val _state = MutableStateFlow(
-        ExtensionsUiState(isLoading = true, repoUrl = defaultRepo.baseUrl),
+        ExtensionsUiState(isLoading = true, repoUrl = repoStore.current().baseUrl),
     )
     val state: StateFlow<ExtensionsUiState> = _state.asStateFlow()
 
@@ -134,13 +142,19 @@ class ExtensionsViewModel(
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null)
 
-            client.fetchIndex(repo.value)
+            // Read once, so the index and every row it produces come from the same repository
+            // even if it changes mid-flight. Reading `repo.value` per row would let a user edit
+            // the URL during a fetch and get rows pointing at a repository that was never
+            // queried.
+            val repo = repo.value
+
+            client.fetchIndex(repo)
                 .onSuccess { index ->
                     remoteIndex.value = index
                         // A repo entry with no sources installs fine but offers nothing to
                         // browse, so it would be a row that leads nowhere.
                         .filter { it.sourceCount > 0 }
-                        .map { ExtensionListItem(it, repo.value, null) }
+                        .map { ExtensionListItem(it, repo, null) }
                     _state.value = _state.value.copy(isLoading = false, error = null)
                 }
                 .onFailure { error ->
@@ -164,7 +178,9 @@ class ExtensionsViewModel(
             _state.value = _state.value.copy(error = "Repository URL must start with http(s)://")
             return
         }
-        repo.value = repo.value.copy(baseUrl = trimmed, name = trimmed.substringAfterLast('/'))
+        repoStore.update { current ->
+            current.copy(baseUrl = trimmed, name = trimmed.substringAfterLast('/'))
+        }
         refresh()
     }
 
@@ -326,15 +342,17 @@ class ExtensionsViewModel(
         private val extensionRepository: ExtensionRepository,
         private val extensionLoader: ExtensionLoader,
         private val extensionsDir: File,
+        private val repoStore: ExtensionRepoStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             ExtensionsViewModel(
-                context,
-                client,
-                extensionRepository,
-                extensionLoader,
-                extensionsDir,
+                context = context,
+                client = client,
+                extensionRepository = extensionRepository,
+                extensionLoader = extensionLoader,
+                extensionsDir = extensionsDir,
+                repoStore = repoStore,
             ) as T
     }
 }

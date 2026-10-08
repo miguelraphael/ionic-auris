@@ -672,6 +672,58 @@ Verification runs while the download is still a `.part` file, **before** the ren
 afterwards would mean a hostile APK had already replaced a good one, and the failure path would
 have to restore it.
 
+### The ABI guard, and what it caught in itself
+
+The conformance module compared our declarations against our own expectations. That cannot detect
+an *incomplete* or *mis-shaped* API, because its only input is the thing under test. It is now
+backed by `SourceApiAbiTest`, which asserts **JVM descriptors** — the text linking actually
+matches — written out in the same form they were read from real extension dex.
+
+Expectations are descriptor strings (`getState()Ljava/lang/Object;`) rather than Kotlin
+signatures, because a Kotlin declaration can stay valid while its descriptor changes. Declaring
+`state: Boolean` instead of `Any?` compiles, keeps the member present, and breaks every extension.
+
+**`SourceApiAbiGuardTest` exists because a guard that cannot fail is not a guard.** It runs each
+check against a synthetic type built to be wrong in exactly one way and asserts rejection. Writing
+it found a real defect in the guard itself:
+
+> `Class.getDeclaredMethod` matches on **name and parameter types only** — it never compares the
+> return type. So `getState()Z` silently satisfied a `getState()Ljava/lang/Object;` expectation,
+> and the guard would have passed on precisely the drift it was written to catch.
+
+Three further traps the guard tests pin, all found by writing them:
+
+- **Descriptors separate object types with `;`, not `,`.** An earlier tokenizer split on commas
+  and merged `String` and `List` into one unresolvable token, which then reported as *"the method
+  does not exist"* — pointing at the wrong problem entirely.
+- **`<init>` needs `getDeclaredConstructor`.** `getDeclaredMethod` always misses a constructor,
+  so a present one reports as absent.
+- **A missing `L` sigil yields a genuinely misleading error.** Stripping only the trailing `;`
+  leaves `Ljava.lang.String`, producing "cannot resolve java.lang.String".
+
+The guard also checks inherited members, because dex resolves through superclasses:
+`AnimeFilter.CheckBox` does not declare `getName()` and does not need to.
+
+### Fingerprint entry, and why the repository had to be persisted first
+
+Settings gained a signing-key field — but it would have been theatre without two fixes underneath
+it, both found while wiring it up:
+
+- **Settings and Extensions each held their own `StateFlow<ExtensionRepo>`.** A fingerprint typed
+  into Settings never reached the code that verifies installs. The field would have rendered,
+  saved, and changed nothing.
+- **Nothing was persisted.** Both values lived only in a ViewModel, so both vanished on process
+  death and every extension silently fell back to trust-on-first-use. That is the worse of the
+  two: the app keeps working perfectly and the user has no way to notice they are being trusted
+  on nothing.
+
+`ExtensionRepoStore` is now the single source of truth, shared and persisted.
+
+The field is **manual on purpose**. Fetching a fingerprint from the repository being validated
+would make the check circular — the server would supply the value used to validate the server's
+own files. Keiyoushi's `index.json` does publish a `signingKey` field; it is documented as a
+source for users to copy from, not read as authority.
+
 ### Normalisation is load-bearing, not cosmetic
 
 Repositories publish fingerprints as colon-separated upper case (`AB:CD:EF:…`) because that is

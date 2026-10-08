@@ -60,6 +60,8 @@ fun SettingsScreen(
     onRepoUrlChange: (String) -> Unit,
     onBeginRepoEdit: () -> Unit,
     onCancelRepoEdit: () -> Unit,
+    onFingerprintChange: (String) -> Unit,
+    onResetRepo: () -> Unit = {},
     onOpenExtensions: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
@@ -83,6 +85,8 @@ fun SettingsScreen(
                     onRepoUrlChange = onRepoUrlChange,
                     onBeginRepoEdit = onBeginRepoEdit,
                     onCancelRepoEdit = onCancelRepoEdit,
+                    onFingerprintChange = onFingerprintChange,
+                    onResetRepo = onResetRepo,
                 )
             }
 
@@ -164,6 +168,8 @@ private fun RepoSection(
     onRepoUrlChange: (String) -> Unit,
     onBeginRepoEdit: () -> Unit,
     onCancelRepoEdit: () -> Unit,
+    onFingerprintChange: (String) -> Unit,
+    onResetRepo: () -> Unit = {},
 ) {
     Column {
         if (state.repoEditing) {
@@ -198,20 +204,90 @@ private fun RepoSection(
             )
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
 
         // Stated rather than implied. A repository with no published key cannot produce a
         // verified verdict, and a user deserves to know that before trusting the list.
         InfoBanner(
             text = if (state.repoHasNoKey) {
-                "This repository publishes no signing key. Extensions are pinned to the key they " +
-                    "were first installed with, which detects a later swap but cannot confirm the " +
-                    "publisher."
+                "No signing key is set for this repository. Extensions are pinned to the key " +
+                    "they were first installed with, which detects a later swap but cannot " +
+                    "confirm the publisher."
             } else {
-                "Extensions are checked against this repository's published signing key."
+                "Extensions are checked against this repository's signing key."
             },
             isWarning = state.repoHasNoKey,
         )
+
+        Spacer(Modifier.height(12.dp))
+        SigningKeyField(state, onFingerprintChange)
+
+        Spacer(Modifier.height(8.dp))
+        SmallButton(text = "Reset to default repository", onClick = onResetRepo)
+    }
+}
+
+/**
+ * The repository's signing key fingerprint.
+ *
+ * ### Why this is a manual field rather than something we fetch
+ * The fingerprint is what identifies the *publisher*. Fetching it from the repository we are
+ * asking to trust would make the check circular — the server would supply the value used to
+ * validate the server's own files. It has to come from somewhere the user already trusts:
+ * the repository's own site, a keyserver, or the maintainer.
+ *
+ * That is why it is not auto-populated from `index.json`, even though Keiyoushi's index does
+ * carry a `signingKey` field. It is offered as documentation, not read as authority.
+ */
+@Composable
+private fun SigningKeyField(
+    state: SettingsUiState,
+    onFingerprintChange: (String) -> Unit,
+) {
+    var field by remember(state.repoDeclaredKey) {
+        mutableStateOf(TextFieldValue(state.repoDeclaredKey.orEmpty()))
+    }
+
+    Column {
+        Text(
+            text = "Signing key fingerprint",
+            style = MaterialTheme.typography.bodyLarge,
+            color = AurisOnSurface,
+        )
+        Text(
+            text = "64 hex characters. Colons are accepted and ignored.",
+            style = MaterialTheme.typography.bodySmall,
+            color = AurisOnSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        Surface(
+            shape = RoundedCornerShape(AurisRadii.button),
+            color = AurisSurface,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            BasicTextField(
+                value = field,
+                onValueChange = { value ->
+                    field = value
+                    // Passed straight through: the view model owns validation so the rule lives
+                    // beside SignatureVerifier rather than being restated in the UI.
+                    onFingerprintChange(value.text)
+                },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = AurisOnSurface),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            )
+        }
+
+        if (!state.repoHasNoKey) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Saved. Installs signed by a different key are refused.",
+                style = MaterialTheme.typography.labelSmall,
+                color = AurisAccent,
+            )
+        }
     }
 }
 

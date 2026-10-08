@@ -10,6 +10,7 @@ import com.auris.app.data.remote.SupabaseLibraryDataSourceImpl
 import com.auris.app.data.remote.kitsu.KitsuClient
 import com.auris.app.data.remote.music.InnerTubeClient
 import com.auris.app.data.remote.music.InnerTubeParser
+import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.KitsuIdentifier
@@ -45,6 +46,16 @@ interface AppContainer {
     val libraryRepository: LibraryRepository
     val extensionDao: ExtensionDao
     val extensionRepository: ExtensionRepository
+
+    /**
+     * Shared, persisted repository settings.
+     *
+     * Injected rather than constructed per screen because the URL and the signing key are one
+     * trust decision with two consumers: Settings edits it, the install path verifies against it.
+     * Two independent copies would mean a fingerprint saved in one is not the value checked in
+     * the other.
+     */
+    val extensionRepoStore: ExtensionRepoStore
     val extensionLoader: ExtensionLoader
     val kitsuClient: KitsuClient
     val innerTubeClient: InnerTubeClient
@@ -107,6 +118,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val extensionDao: ExtensionDao by lazy { database.extensionDao() }
+
+    override val extensionRepoStore: ExtensionRepoStore by lazy {
+        ExtensionRepoStore(context)
+    }
 
     override val extensionRepository: ExtensionRepository by lazy {
         ExtensionRepository(extensionDao)

@@ -35,15 +35,18 @@ class MainActivity : ComponentActivity() {
                         appStateCollector = container.appStateCollector,
                         innerTubeClient = container.innerTubeClient,
                         extensionRepository = container.extensionRepository,
+                        extensionRepoStore = container.extensionRepoStore,
                         extensionsViewModelFactory = ExtensionsViewModel.Factory(
                             context = applicationContext,
                             client = container.extensionRepositoryClient,
                             extensionRepository = container.extensionRepository,
                             extensionLoader = container.extensionLoader,
                             extensionsDir = container.extensionsDir,
+                            repoStore = container.extensionRepoStore,
                         ),
-                        // Reached from Settings via the nav bar's settings affordance.
-                        extensionRepo = com.auris.app.source.repo.ExtensionRepo.DEFAULT,
+                        // The persisted repository, shared with Settings so a signing key
+                        // entered there is the same value installs are checked against.
+                        extensionRepo = container.extensionRepoStore.current(),
                     )
                 }
             }
