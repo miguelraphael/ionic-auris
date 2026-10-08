@@ -189,7 +189,7 @@ from a GPL app.**
 | 10 | `RequestsKt.GET/POST` lacked `CacheControl?` | Compiles fine, fails at first request |
 | 11 | `OkHttpExtensionsKt`, `Track`, `asJsoup(charset)` | Each one member at a time |
 | 12 | `Video` was an `interface` | Interface, no constructor: `InstantiationError`. Found by the fixture that finally worked. |
-| 13 | v16 `Video` 16-param constructor absent | **Open.** `NoSuchMethodError` on animetake v16.9 |
+| 13 | v16 `Video` 16-param constructor absent | `NoSuchMethodError`. **Fixed** — see below |
 
 **Every one presented identically to a user: the extension loads and registers zero sources.**
 
@@ -285,11 +285,41 @@ branch is the same method but was not exercised by this run, and the manga-side 
 (`getHosterList` for a manga source) remains unverified against a live source. The Keiyoushi
 fixture is a different API generation and cannot load — see §5.
 
-**The 16-parameter `Video` constructor.** v16 extensions (animetake) call
-`Video(String, String, Integer, Integer, Headers, boolean, <6× List>, String, boolean, int,
-DefaultConstructorMarker)`. Our `Video` has the 6-parameter form only, so v16 sources fail on it.
-This is **gap #13**, known and unfixed, and it is why the animetake fixture still fails. Fixing it
-means adding that constructor — do it from the dex, not from memory.
+### Gap #13 — the v16 `Video` constructor — is FIXED
+
+v16 extensions call a 14-parameter constructor, with the `int` mask and `DefaultConstructorMarker`
+that Kotlin appends for defaulted parameters making 16 arguments in the dex call:
+
+```
+Video(String, String, Integer, Integer, Headers, boolean, List×6, String, boolean, int, DefaultConstructorMarker)
+```
+
+Our `Video` had only the 6-parameter form, so every v16 source died with `NoSuchMethodError`. It is
+now a secondary constructor with those 14 parameters and matching defaults, which makes Kotlin emit
+the synthetic bridge itself rather than hand-writing one. **Both constructors now coexist**, verified
+descriptor-for-descriptor with `javap`: v14 sources (animekhor) still use the 6-argument primary,
+v16 sources use this one.
+
+The parameter *names* are provisional — only the shapes are known, from the descriptor and the
+constants at the call site — and the code says so, because the names are not what linking checks
+and a confident-but-wrong name would be misleading.
+
+### Why animetake's season layer is empty — now answered, and it is not our bug
+
+Previously listed as "unknown whether the season layer has a parse gap or the site lists none". It
+is the **site**, established without guessing:
+
+- `seasonListParse` descriptors match ours **exactly** — `(Lokhttp3/Response;)Ljava/util/List;` — so
+  the extension does override it and it does get called.
+- `https://animetake.tv/anime/one-piece` returns **HTTP 200, 969 KB**, titled `One Piece -
+  AnimeTake` — so it is the real page and the request works.
+- That response contains **zero** occurrences of `season`/`staffel`/`saison` and **zero**
+  `/episode/` links, alongside Cloudflare markers and a `challenge` reference.
+
+So the page is a client-rendered / bot-filtered shell: a plain HTTP client receives markup with no
+episode data in it. There is nothing for `seasonListParse` to find. **This is a site-side
+constraint, not an ABI gap and not a parsing bug** — the same class of problem as Kitsu's
+DMCA'd repo rather than anything in `:source-api`.
 
 ### Environment note
 

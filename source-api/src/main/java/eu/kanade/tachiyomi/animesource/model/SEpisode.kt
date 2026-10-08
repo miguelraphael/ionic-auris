@@ -142,6 +142,58 @@ open class Video(
     var subtitleUrl: String? = null
     var audioUrl: String? = null
 
+    /**
+     * The 14-parameter constructor Aniyomi 16+ calls.
+     *
+     * Extracted from `animeextension.en.animetake` v16.21's dex, where the call site is
+     * `invoke-direct/range` with 16 arguments — the 14 below plus the `int` mask and
+     * `DefaultConstructorMarker` that Kotlin appends for defaulted parameters. The descriptor we
+     * must emit is therefore:
+     *
+     * ```
+     * (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Lokhttp3/Headers;Z
+     *  Ljava/util/List;  × 6
+     *  Ljava/lang/String;Z
+     *  I Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+     * ```
+     *
+     * Declaring it with defaults makes Kotlin emit exactly that bridge, so nothing extra has to be
+     * hand-written. Without it a v16 source dies with `NoSuchMethodError` on a constructor we do
+     * not have, while v14 sources keep using the 6-argument primary constructor above.
+     *
+     * ### Parameter names are provisional
+     * Only the *shapes* are known, from the descriptor and the constants at the call site — the
+     * two `Integer`s were `0`, the six lists are track/audio/preview collections, the trailing
+     * `String` was null and the trailing `boolean` false. Where a name is uncertain it says so,
+     * because the names are not what linking checks and a wrong-but-confident name would be
+     * misleading. The call site's only *meaningful* arguments were url, quality, headers and one
+     * list — the subtitle tracks.
+     */
+    constructor(
+        url: String,
+        quality: String,
+        width: Int? = null,
+        height: Int? = null,
+        requestHeaders: okhttp3.Headers? = null,
+        preferEmbedUrl: Boolean = false,
+        subtitleTracks: List<Any> = emptyList(),
+        audioTracks: List<Any> = emptyList(),
+        // Shapes are known; roles are not. See the note above.
+        previews: List<Any> = emptyList(),
+        thumbnails: List<Any> = emptyList(),
+        segments: List<Any> = emptyList(),
+        codecs: List<Any> = emptyList(),
+        label: String? = null,
+        isDefault: Boolean = false,
+    ) : this(
+        url = url,
+        quality = quality,
+        videoUrl = url,
+        headers = requestHeaders,
+        subtitleTracks = subtitleTracks,
+        audioTracks = audioTracks,
+    )
+
     override fun toString(): String = "Video(url=$url, quality=$quality)"
 }
 
