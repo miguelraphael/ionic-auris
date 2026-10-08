@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.ThumbnailInfo
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkHelperProvider
 import eu.kanade.tachiyomi.network.awaitResult
 import eu.kanade.tachiyomi.network.asObservableSuccess
@@ -52,6 +53,27 @@ abstract class AnimeHttpSource : eu.kanade.tachiyomi.animesource.AnimeCatalogueS
 
     /** Headers applied to every request. Override [headersBuilder] to customise. */
     val headers: Headers by lazy { headersBuilder().build() }
+
+    /**
+     * The host's shared HTTP client, exposed to subclasses.
+     *
+     * ### Declared here, not on `ParsedAnimeHttpSource`
+     * It first went on the parsed subclass, because that is where Anikku's `ParsedHttpSource`
+     * puts it and that is where our first real failure pointed. A second real extension
+     * (`animeextension.en.animetake`, v16.9) then failed with:
+     *
+     * ```
+     * NoSuchMethodError: No virtual method getNetwork()LNetworkHelper;
+     *   in class AnimeHttpSource
+     * ```
+     *
+     * i.e. the accessor is read off the **base** class from inside a constructor, so it has to
+     * be declared there. `ParsedAnimeHttpSource` extends this, so one declaration now satisfies
+     * both call sites.
+     *
+     * `protected` matches Anikku: for subclasses, not host UI.
+     */
+    protected open val network: NetworkHelper get() = NetworkHelperProvider.get()
 
     open val client: OkHttpClient
         get() = NetworkHelperProvider.get().client

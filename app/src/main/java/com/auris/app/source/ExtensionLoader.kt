@@ -133,6 +133,11 @@ class ExtensionLoader(
         val animeSources = mutableListOf<AnimeSource>()
         val mangaSources = mutableListOf<AnimeSource>()
 
+        // Factory-driven discovery first: an extension that ships a factory is authoritative
+        // about how many sources it offers, and a v14-style extension has both a factory *and*
+        // concrete source classes. Registering both would duplicate every source — which is
+        // exactly what happened when this fallback was added without this guard (the mock
+        // extension went from 3 sources to 6).
         for (className in classNames) {
             when (val instance = instantiateFactory(className, loader)) {
                 is AnimeSourceFactory -> animeSources += createSources(instance, className)
@@ -140,6 +145,28 @@ class ExtensionLoader(
                 // Anikku is a typealias of `List<AnimeSource>` — same type, so this branch
                 // simply appends to the same pool.
                 is SourceFactory -> mangaSources += createSources(instance, className)
+            }
+        }
+
+        if (animeSources.isEmpty() && mangaSources.isEmpty()) {
+            // Fallback for Aniyomi 16+, which dropped the factory entirely: the source class
+            // extends `AnimeHttpSource` directly. Verified against
+            // `animeextension.en.animetake` (v16.9), whose dex references `AnimeSourceFactory`
+            // **zero** times, so without this the extension registers no sources at all.
+            //
+            // Runs only when no factory was found, which is what keeps the two mechanisms from
+            // double-registering an extension that supports both.
+            for (className in classNames) {
+                val instance = instantiateFactory(className, loader) ?: continue
+                if (instance is AnimeSource) animeSources += instance
+            }
+
+            if (animeSources.isNotEmpty()) {
+                Log.i(
+                    TAG,
+                    "No source factory found; discovered ${animeSources.size} source(s) " +
+                        "directly, which is the Aniyomi 16+ shape",
+                )
             }
         }
 
@@ -172,6 +199,13 @@ class ExtensionLoader(
 
         if (!isFactory(clazz)) return null
 
+        // Kotlin `object` declarations (how modern Aniyomi extensions declare their source and
+        // their factory) expose a ready instance on the static INSTANCE field and need no
+        // constructor call. Tried first because a source object's constructor is frequently
+        // non-trivial, and `getDeclaredConstructor()` on one can fail for reasons that have
+        // nothing to do with whether the class is usable.
+        kotlinObjectInstance(clazz)?.let { return it }
+
         return try {
             val constructor = clazz.getDeclaredConstructor()
             // Aniyomi factories are top-level classes, but allow non-public too, for Kotlin
@@ -179,15 +213,63 @@ class ExtensionLoader(
             if (!constructor.isAccessible) constructor.isAccessible = true
             constructor.newInstance()
         } catch (e: Throwable) {
-            Log.w(TAG, "Factory $className is not instantiable: ${e.message}")
+            // The exception *chain* is what makes this diagnosable. `InvocationTargetException`
+            // in particular wraps the real failure — and both its own message and the wrapper's
+            // are `null` here, so logging only the outer exception says nothing at all about a
+            // constructor that failed because it touched a type we do not provide.
+            Log.w(
+                TAG,
+                "Not instantiable: $className — " + describeChain(e),
+            )
             null
         }
     }
 
+    /** The cause chain of [throwable], root first, for a diagnostic that is actually readable. */
+    private fun describeChain(throwable: Throwable): String = buildString {
+        var current: Throwable? = throwable
+        var depth = 0
+        while (current != null && depth < MAX_CAUSE_DEPTH) {
+            if (depth > 0) append(" <- ")
+            append(current.javaClass.simpleName)
+            current.message?.takeIf { it.isNotBlank() }?.let { append(": ").append(it) }
+            current = current.cause?.takeIf { it !== current }
+            depth++
+        }
+    }
+
+    /**
+     * The `INSTANCE` field of a Kotlin `object`, if this class is one.
+     *
+     * A Kotlin `object` compiles to a class with a private constructor plus a static `INSTANCE`
+     * holding the single instance. Reading it directly is both more reliable and cheaper than
+     * constructing one, and it is how `object Factory : AnimeSourceFactory` — the shape modern
+     * Aniyomi extensions use — is meant to be obtained.
+     */
+    private fun kotlinObjectInstance(clazz: Class<*>): Any? {
+        if (clazz.isInterface || Modifier.isAbstract(clazz.modifiers)) return null
+
+        return try {
+            val field = clazz.getDeclaredField("INSTANCE")
+            if (!field.isAccessible) field.isAccessible = true
+            if (Modifier.isStatic(field.modifiers)) field.get(null) else null
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Whether [clazz] is something this loader can usefully instantiate.
+     *
+     * Includes concrete [AnimeSource] subclasses, not just factories — see the discovery note.
+     * Abstract and interface types are excluded because they cannot be instantiated and are the
+     * loader's own base classes, which live in the host APK rather than the extension anyway.
+     */
     private fun isFactory(clazz: Class<*>): Boolean {
         if (clazz.isInterface || Modifier.isAbstract(clazz.modifiers)) return false
         return AnimeSourceFactory::class.java.isAssignableFrom(clazz) ||
-            SourceFactory::class.java.isAssignableFrom(clazz)
+            SourceFactory::class.java.isAssignableFrom(clazz) ||
+            AnimeSource::class.java.isAssignableFrom(clazz)
     }
 
     /**
@@ -298,6 +380,9 @@ class ExtensionLoader(
 
     companion object {
         private const val TAG = "AurisExtensions"
+
+        /** Bound on the cause-chain walk; generated exceptions can self-reference. */
+        private const val MAX_CAUSE_DEPTH = 6
         internal const val CACHE_DIR = "extensions"
     }
 }

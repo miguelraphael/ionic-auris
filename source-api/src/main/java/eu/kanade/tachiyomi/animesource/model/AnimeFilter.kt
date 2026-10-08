@@ -26,6 +26,15 @@ package eu.kanade.tachiyomi.animesource.model
  *
  * Declaring `state: Any?` yields `getState()Ljava/lang/Object;` for Boolean, Int and List alike.
  * The typed accessors ([booleanState], [intState]) exist so host code is not reduced to casting.
+ *
+ * ### Every subtype is `open`
+ * Kotlin classes are final by default, and extensions subclass `Group`, `CheckBox`, `Select` and
+ * the rest to add their own filters. A final host type fails at verification with
+ * `VerifyError: Superclass ... is declared final` — and that message names the *extension's*
+ * class, giving no hint that the host sealed the type. Found by loading a real extension.
+ */
+/**
+ * @param name the display name; extensions subclass every subtype below.
  */
 sealed class AnimeFilter(val name: String) {
 
@@ -75,7 +84,7 @@ sealed class AnimeFilter(val name: String) {
     }
 
     /** Tri-state checkbox, carrying a [Boolean]. */
-    class CheckBox(name: String, var checked: Boolean = false) : AnimeFilter(name) {
+    open class CheckBox(name: String, var checked: Boolean = false) : AnimeFilter(name) {
         override val state: Any? get() = checked
     }
 
@@ -85,7 +94,7 @@ sealed class AnimeFilter(val name: String) {
      * [state] is declared as `Any?` rather than `List<*>` purely so the accessor descriptor is
      * `()Ljava/lang/Object;`, matching what extensions were compiled against. Use [children].
      */
-    class Group(name: String, children: List<*>) : AnimeFilter(name) {
+    open class Group(name: String, children: List<*>) : AnimeFilter(name) {
 
         /**
          * The nested filters.
@@ -105,8 +114,37 @@ sealed class AnimeFilter(val name: String) {
     }
 
     /** Free text input. */
-    class TextField(name: String, var text: String = "") : AnimeFilter(name) {
+    open class TextField(name: String, var text: String = "") : AnimeFilter(name) {
         override val state: Any? get() = text
+    }
+
+    /**
+     * A section heading inside the filter sheet. Carries no state.
+     *
+     * Found by loading a real extension: `getFilterList()` constructs `AnimeFilter.Header`, and
+     * an absent nested type fails the whole method with `ClassNotFoundException` — which reads as
+     * "search is broken" rather than "one member of the sealed set is missing". [Separator] was
+     * added alongside it for the same reason: the sealed set is only useful complete, and the
+     * missing-member failure is discovered one at a time otherwise.
+     */
+    open class Header(name: String) : AnimeFilter(name) {
+        override val state: Any? get() = null
+    }
+
+    /** A visual divider. Carries no state. */
+    open class Separator(name: String) : AnimeFilter(name) {
+        override val state: Any? get() = null
+    }
+
+    /** Tri-state checkbox, for sources that distinguish "include" from "exclude". */
+    open class TriState(name: String, var selection: String = STATE_INCLUDE) : AnimeFilter(name) {
+        override val state: Any? get() = selection
+
+        companion object {
+            const val STATE_INCLUDE = "INCLUDE"
+            const val STATE_EXCLUDE = "EXCLUDE"
+            const val STATE_AUTO = "AUTO"
+        }
     }
 
     override fun toString(): String = "${javaClass.simpleName}($name=$state)"

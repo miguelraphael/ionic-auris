@@ -4,8 +4,6 @@ import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.network.NetworkHelper
-import eu.kanade.tachiyomi.network.NetworkHelperProvider
 import eu.kanade.tachiyomi.network.awaitResult
 import eu.kanade.tachiyomi.network.awaitString
 import eu.kanade.tachiyomi.util.asJsoup
@@ -24,22 +22,6 @@ import org.jsoup.nodes.Element
  * Every method is overridable, so a source with unusual markup can bypass the helpers.
  */
 abstract class ParsedAnimeHttpSource : AnimeHttpSource() {
-
-    /**
-     * The host's shared HTTP client, exposed to subclasses.
-     *
-     * ### Why this exists
-     * Real extensions call `network` from their own request builders and interceptors. Aniyomi
-     * declares it on `ParsedHttpSource`, so the expected descriptor is
-     * `getNetwork()Leu/kanade/tachiyomi/network/NetworkHelper;` on this class.
-     *
-     * Its absence was invisible until a real extension was loaded, and then it presented as a
-     * `NoSuchMethodError` naming a class we do provide — which reads like the extension being
-     * broken rather than the host being incomplete.
-     *
-     * `protected` matches Aniyomi: it is for subclasses, not the host UI.
-     */
-    protected open val network: NetworkHelper get() = NetworkHelperProvider.get()
 
     // ---- Popular -------------------------------------------------------------
 
