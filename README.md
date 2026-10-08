@@ -701,6 +701,40 @@ Three further traps the guard tests pin, all found by writing them:
 - **A missing `L` sigil yields a genuinely misleading error.** Stripping only the trailing `;`
   leaves `Ljava.lang.String`, producing "cannot resolve java.lang.String".
 
+### RequestsKt needed the same treatment
+
+The `GET`/`POST` builders extensions call from their `*Request()` overrides take a trailing
+`CacheControl?`, and omitting it compiled fine and passed every test we had. It only surfaced when
+a source built its first request:
+
+```
+NoSuchMethodError: GET(HttpUrl, Headers, CacheControl) in RequestsKt
+```
+
+Descriptors taken from a real extension, all three now emitted:
+
+```
+GET:(Ljava/lang/String;Lokhttp3/Headers;Lokhttp3/CacheControl;)Lokhttp3/Request;
+GET:(Lokhttp3/HttpUrl;Lokhttp3/Headers;Lokhttp3/CacheControl;)Lokhttp3/Request;
+POST:(Ljava/lang/String;Lokhttp3/Headers;Lokhttp3/RequestBody;Lokhttp3/CacheControl;)Lokhttp3/Request;
+```
+
+### The automated dex-diff guard is built but NOT yet working
+
+`DexAbiReader` parses a real extension's dex and lists every host-API member it references, which
+would replace nine build-install-crash cycles with one diff. It is committed in a **failing,
+`@Ignore`d state** on purpose.
+
+It reads the string and type tables correctly — verified by hand against `classes.dex` — but
+`proto_ids` parameter parsing yields out-of-range type indexes and dies with an `EOFException`.
+Two bugs were found and fixed on the way (`proto_ids_item` is 8 bytes not 12; `RandomAccessFile.read`
+throws at EOF rather than returning -1), and it still does not complete.
+
+Disabled rather than green, because **a guard that reports "no gaps" because it parsed nothing is
+worse than no guard** — it is indistinguishable from a perfect API, which is exactly how the
+previous nine gaps survived a fully green build. The failure is recorded in the class
+documentation rather than hidden.
+
 The guard also checks inherited members, because dex resolves through superclasses:
 `AnimeFilter.CheckBox` does not declare `getName()` and does not need to.
 
