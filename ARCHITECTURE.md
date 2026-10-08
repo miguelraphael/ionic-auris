@@ -206,15 +206,28 @@ at a 12-byte stride the decoded values are header offsets like `20716` (`class_d
 Loads and registers · popular · latest · search · details · mapping through `AnimeSourceAdapter`
 into our own model · unknown-entry resilience.
 
-### What does not
+### What does not — video resolution is UNPROVEN
 
-**Video resolution is unproven.** `getSeasonList` returns empty for a real title ("One Piece"), so
-the season → episode → `getHosterList` → `getVideoList` chain never runs. `AnimeSourceAdapter.pages()`
-therefore remains inferred, not observed — the same status it has held since the project began.
+**`AnimeSourceAdapter.pages()` remains inferred, not observed.** The same status it has held since
+the project began, despite two separate attempts to prove it. **Treat anything built on it —
+the manga reader and the episode player — as untested against a live source.**
 
-Candidates, in order of likelihood: a remaining parse gap in the season layer, or the site genuinely
-listing no episodes for that title right now. **Not yet distinguished**, and guessing would repeat
-the mistake that produced eleven gaps.
+Two fixtures were used, and both dead-ended for different reasons. Neither cause has been
+distinguished from a gap in our own layer, because distinguishing them by guessing is what produced
+eleven ABI breaks.
+
+| Fixture | Shape | Outcome |
+| --- | --- | --- |
+| `real-anime-catalog-extension.apk` | **Season-based.** Declares `seasonListParse`, overrides no `getEpisodeList` — episodes hang off a season. | `getSeasonList` returns empty for every real title tried (e.g. "One Piece"), so the season → episode chain never starts. Unknown whether the season layer has a parse gap or the site lists none. |
+| `real-flat-episode-extension.apk` | **Flat.** Declares `episodeListParse`, no `seasonListParse`, no login. | Loads and registers correctly, but its site returns **no entries at all** for either popular or latest, so the chain never starts. Site is v14.1 and its scraper is likely stale. |
+
+**The test is committed and waiting.** `RealVideoResolutionTest` drives exactly the chain
+`pages()` sits on — catalogue → details → episode → `getHosterList` → `getVideoList` → absolute URL
+— and additionally asserts the result survives mapping through the adapter into our own model, so a
+pass cannot come from the extension alone. It fails today for the reasons above. **It needs a
+cooperating fixture, not more guessing.**
+
+This is the first task after launch.
 
 ### Environment note
 
