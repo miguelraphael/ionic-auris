@@ -183,16 +183,31 @@ class RealCatalogExtractionTest : ExtensionTestBase() {
 
         val details = source.getAnimeDetails(seed)
             ?: return@runBlocking fail("getAnimeDetails returned null for '${seed.title}'")
-        val episodes = source.getEpisodeList(details)
 
+        // Anikku's anime sources are **season-based**: the dex of the v16 fixture declares
+        // `seasonListParse`, `getHosterList`, `hosterListParse`, `sortHosters` and `sortVideos`,
+        // and overrides no `getEpisodeList` at all. Episodes hang off a season, so calling
+        // `getEpisodeList(details)` directly returns nothing and looks like a parsing failure
+        // rather than a wrong call.
+        val seasons = runCatching { source.getSeasonList(details) }.getOrDefault(emptyList())
+        if (seasons.isEmpty()) {
+            return@runBlocking fail(
+                "getSeasonList returned nothing for '${details.title}'; the season path is the " +
+                    "one this source actually implements",
+            )
+        }
+
+        val season = seasons.first()
+        val episodes = source.getEpisodeList(season)
         assertTrue(
-            "no episodes parsed for '${details.title}'; the episode path is unproven",
+            "no episodes parsed for season '${season.title}'",
             episodes.isNotEmpty(),
         )
 
         val episode = episodes.first()
         assertTrue("episode has no url", episode.url.isNotBlank())
 
+        // This is the line `AnimeSourceAdapter.pages()` depends on.
         val videos = source.getVideoList(episode)
 
         assertTrue(
@@ -200,22 +215,19 @@ class RealCatalogExtractionTest : ExtensionTestBase() {
                 "extraction path the manga reader and episode player both depend on",
             videos.isNotEmpty(),
         )
+        assertTrue("video has no url", videos.first().url.isNotBlank())
 
-        val video = videos.first()
-        assertTrue("video has no url", video.url.isNotBlank())
-
-        // HosterList is the *other* branch: Anikku sources may return hosters and require a
-        // second call. Both are exercised so neither is left inferred.
         val hosters = runCatching { source.getHosterList(episode) }.getOrDefault(emptyList())
-        if (hosters.isNotEmpty()) {
-            val fromHoster = hosters.flatMap { hoster ->
-                runCatching { source.getVideoList(hoster) }.getOrDefault(emptyList())
-            }
-            assertTrue(
-                "hosters were offered but yielded no videos",
-                fromHoster.isNotEmpty(),
-            )
+        assertTrue(
+            "this source declares getHosterList/hosterListParse, so it is expected to offer " +
+                "hosters for '${episode.name}'",
+            hosters.isNotEmpty(),
+        )
+
+        val fromHosters = hosters.flatMap { hoster ->
+            runCatching { source.getVideoList(hoster) }.getOrDefault(emptyList())
         }
+        assertTrue("hosters were offered but yielded no videos", fromHosters.isNotEmpty())
     }
 
     @Test

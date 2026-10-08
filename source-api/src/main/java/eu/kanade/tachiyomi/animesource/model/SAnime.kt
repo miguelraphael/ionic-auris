@@ -82,7 +82,20 @@ interface SAnime : Serializable {
  * as soon as localisation ran.
  */
 class SAnimeImpl : SAnime {
-    override lateinit var url: String
+    /**
+     * Empty rather than `lateinit`, deliberately.
+     *
+     * A source creates an `SAnimeImpl`, populates it, and returns it — but it also creates them
+     * speculatively while parsing, and reads fields off instances that were never filled in.
+     * With `lateinit`, any such read throws `UninitializedPropertyAccessException`, which surfaced
+     * as a real extension failing to walk its own episode list.
+     *
+     * Anikku's model uses empty defaults for exactly this reason: instantiation must never crash.
+     * A blank URL is caught immediately downstream by the resolution step, whereas a throw here is
+     * attributed to whatever code happened to read the field first.
+     */
+    override var url: String = ""
+
     override var title: String = ""
 
     @Transient
