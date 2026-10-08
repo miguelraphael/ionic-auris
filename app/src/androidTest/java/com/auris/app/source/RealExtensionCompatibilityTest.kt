@@ -93,11 +93,6 @@ class RealExtensionCompatibilityTest : ExtensionTestBase() {
 
     @Test
     fun apiTypesReferencedByRealExtensionsAreResolvable() {
-        // KNOWN FAILING — this is the bug, asserted so it cannot be forgotten.
-        //
-        // `ConfigurableAnimeSource` and the animesource-namespaced filter types are referenced by
-        // every real Aniyomi/Anikku extension and are absent from `:source-api`. Fix by adding
-        // them to `:source-api`, then flip this test to assert success.
         val apk = install("real-mangasource-extension.apk", "aniyomi-anime.apk")
 
         loaderFor(apk, "eu.kanade.tachiyomi.animeextension.all.myreadingmanga")
@@ -115,20 +110,51 @@ class RealExtensionCompatibilityTest : ExtensionTestBase() {
     }
 
     @Test
-    fun realExtensionRegistersNoSourcesBecauseOfThatGap() {
-        // The user-visible symptom of the gap above, recorded separately so the connection
-        // between the two is explicit rather than inferred.
+    fun aRealExtensionRegistersItsSources() {
+        // The end-to-end proof. Every earlier assertion checks one link in the chain; this one
+        // proves the whole chain holds for an extension this project did not write.
+        //
+        // Getting here required, in order: real `AnimeFilter`/`AnimeFilterList` classes (a
+        // `typealias` emits no JVM class), `ConfigurableAnimeSource`, the Injekt dependency, an
+        // Injekt registration of the Application, `ParsedAnimeHttpSource.network`, and
+        // `NetworkHelper` as an abstract class rather than an interface. Each of those failures
+        // presented identically — loads cleanly, registers zero sources.
         val apk = install("real-mangasource-extension.apk", "aniyomi-anime.apk")
 
         val sources = loaderFor(apk, "eu.kanade.tachiyomi.animeextension.all.myreadingmanga")
             .getOrDefault(emptyList())
 
         assertTrue(
-            "expected zero sources while the API is incomplete; if this now passes, the gap " +
-                "has been fixed and apiTypesReferencedByRealExtensionsAreResolvable should be " +
-                "flipped to assert success",
-            sources.isEmpty(),
+            "a real Aniyomi extension registered no sources; see the loader log for the link " +
+                "that failed",
+            sources.isNotEmpty(),
         )
+    }
+
+    @Test
+    fun discoveredSourcesAreUsableHostObjects() {
+        // Registering is not the same as working: assert the host can actually treat what came
+        // back, so a source that loads but cannot be adapted is caught here.
+        val apk = install("real-mangasource-extension.apk", "aniyomi-anime.apk")
+
+        val sources = loaderFor(apk, "eu.kanade.tachiyomi.animeextension.all.myreadingmanga")
+            .getOrDefault(emptyList())
+
+        assertTrue("no sources discovered", sources.isNotEmpty())
+        sources.forEach { loaded ->
+            assertTrue(
+                "source has no id, so it cannot be persisted",
+                loaded.source.id != 0L,
+            )
+            assertTrue(
+                "source has no name, so it cannot be shown",
+                loaded.source.name.isNotBlank(),
+            )
+            assertTrue(
+                "source has no language",
+                loaded.source.lang.isNotBlank(),
+            )
+        }
     }
 
     // ---- Why the manga question has a different answer -----------------------

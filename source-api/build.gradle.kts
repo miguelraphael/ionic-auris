@@ -30,6 +30,15 @@ dependencies {
     api(libs.jsoup)
     api(libs.rxjava)
     implementation(libs.androidx.core.ktx)
+    // ConfigurableAnimeSource.setupPreferenceScreen(PreferenceScreen) is part of the extension
+    // ABI — the parameter type appears in the method descriptor, so a real extension cannot
+    // link without this on the host classpath.
+    api(libs.androidx.preference)
+    // Aniyomi's source-api ships Injekt, and real extensions call into it
+    // (`uy.kohesive.injekt.InjektKt`) when building their configuration. Without it on the host
+    // classpath the extension dex fails to link with ClassNotFoundException, which is the next
+    // blocker after the three model types.
+    api(libs.injekt.core)
     // SAnime.memo is a JsonObject, matching Aniyomi's model.
     api(libs.kotlinx.serialization.json)
 }

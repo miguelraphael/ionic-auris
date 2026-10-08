@@ -66,7 +66,7 @@ class AnimeSourceAdapter(
         http.getLatestUpdates(page).toSourcePage(baseUrl)
 
     override suspend fun search(page: Int, query: String, filters: FilterList): SourcePage =
-        http.getSearchAnime(page, query, filters).toSourcePage(baseUrl)
+        http.getSearchAnime(page, query, filters.toAnimeFilterList()).toSourcePage(baseUrl)
 
     /**
      * Manga-shaped details call.

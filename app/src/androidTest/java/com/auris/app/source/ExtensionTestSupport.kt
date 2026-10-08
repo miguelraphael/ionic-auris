@@ -59,7 +59,7 @@ object FakeHttp {
         failureMessage = null
     }
 
-    fun networkHelper(): NetworkHelper = object : NetworkHelper {
+    fun networkHelper(): NetworkHelper = object : NetworkHelper() {
         override val client: OkHttpClient = OkHttpClient.Builder()
             .addInterceptor(cannedInterceptor())
             .connectTimeout(2, TimeUnit.SECONDS)

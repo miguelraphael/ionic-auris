@@ -5,7 +5,6 @@ import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import rx.Observable
 
@@ -103,7 +102,7 @@ suspend fun AnimeCatalogueSource.getPopularManga(page: Int): MangasPage = getPop
 suspend fun AnimeCatalogueSource.getSearchManga(
     page: Int,
     query: String,
-    filters: FilterList,
+    filters: AnimeFilterList,
 ): MangasPage = getSearchAnime(page, query, filters)
 
 @Suppress("UNUSED_PARAMETER")

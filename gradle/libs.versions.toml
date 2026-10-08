@@ -1,4 +1,6 @@
 [versions]
+injekt = "2.0.0-ALPHA-03"
+preference = "1.2.1"
 agp = "8.7.3"
 # OkHttp 5.x (required for Anikku extension compatibility) ships Kotlin 2.2
 # metadata, so the whole toolchain moves with it.
@@ -39,6 +41,10 @@ rxjava = "1.3.8"
 
 
 [libraries]
+# Aniyomi/Anikku source-api contract: extensions call `uy.kohesive.injekt.InjektKt` for
+# configuration, so the host must provide it or no real extension can link.
+injekt-core = { group = "uy.kohesive.injekt", name = "injekt-core", version.ref = "injekt" }
+androidx-preference = { group = "androidx.preference", name = "preference-ktx", version.ref = "preference" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }

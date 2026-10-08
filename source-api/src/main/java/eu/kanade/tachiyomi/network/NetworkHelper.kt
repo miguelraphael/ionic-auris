@@ -11,9 +11,23 @@ import java.util.concurrent.TimeUnit
  * request an extension makes. An extension that builds its own client bypasses that policy,
  * which is why the accessor is part of the API.
  */
-interface NetworkHelper {
-    val client: OkHttpClient
-    fun defaultUserAgentProvider(): String
+/**
+ * ### Declared as an `abstract class`, not an `interface`, and that is load-bearing
+ * Real extensions call members on it with `invokevirtual`. Against an interface the same call
+ * site is `invokeinterface`, and dalvik rejects the mismatch at load time:
+ *
+ * ```
+ * IncompatibleClassChangeError: Found interface
+ *   eu.kanade.tachiyomi.network.NetworkHelper, but class was expected
+ * ```
+ *
+ * The failure appears during factory instantiation, so the extension loads and then registers
+ * zero sources — the same invisible symptom as an incomplete API. Anikku declares it as a class,
+ * so this matches.
+ */
+abstract class NetworkHelper {
+    abstract val client: OkHttpClient
+    abstract fun defaultUserAgentProvider(): String
 }
 
 /**
@@ -49,7 +63,7 @@ object NetworkHelperProvider {
 /** Default implementation, owned by the host app. */
 class DefaultNetworkHelper(
     override val client: OkHttpClient = defaultClient(),
-) : NetworkHelper {
+) : NetworkHelper() {
 
     override fun defaultUserAgentProvider(): String = DEFAULT_USER_AGENT
 
