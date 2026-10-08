@@ -690,7 +690,44 @@ the on-screen claims, and `ApkSignerRealApkTest` runs on-device against a **real
 signed APK** committed under `app/src/androidTest/fixtures/` — because a hand-written fixture
 cannot prove the signing-block reader works on a real signature block.
 
-## Manga page extraction: the blocker is confirmed, not inferred
+## The extension API is incomplete — found by loading a real extension
+
+**This is the most important finding in the project, and it invalidates a green build.**
+
+A real, published Aniyomi extension (`animeextension.all.myreadingmanga`) loads through
+`ExtensionLoader` **without throwing and registers zero sources**:
+
+```
+NoClassDefFoundError: Failed resolution of:
+  Leu/kanade/tachiyomi/animesource/ConfigurableAnimeSource;
+Caused by: ClassNotFoundException: Didn't find class
+  "eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource"
+```
+
+Three types that every real extension references are absent from `:source-api`:
+
+| Missing | Note |
+| --- | --- |
+| `animesource.ConfigurableAnimeSource` | absent entirely |
+| `animesource.model.AnimeFilter` | Anikku has an **animesource-namespaced** filter API |
+| `animesource.model.AnimeFilterList` | we implemented Mihon's `source.model.FilterList` instead |
+
+### Why nothing caught this
+`mock-extension` is written against our own interfaces, so it matches by construction — every
+"real APK" claim until now was self-referential. `:source-api-conformance` passes green because
+it compares our declaration against our own expectation; it has no external input, so it cannot
+detect that the API is *incomplete*. A green build never meant extensions worked.
+
+`ExtensionLoader.load` catches `Throwable` and returns an empty list, which makes "no sources"
+and "could not link" indistinguishable — that ambiguity is what hid this. `classLoaderFor` was
+added so tests can ask dalvik directly, and `RealExtensionCompatibilityTest` pins the gap by name.
+
+### What is *not* wrong
+The typealias-merge invariant **holds** against a real extension: `animesource.AnimeSource`
+resolves from the extension's own classloader. The package layout is right; three types are
+missing from it.
+
+## Manga page extraction: two different ecosystems, and neither helps
 
 Earlier notes recorded that no real manga extension was inspectable. That is now **verified**
 rather than assumed, and the cause is specific:
@@ -702,7 +739,26 @@ rather than assumed, and the cause is specific:
 - The only manga-named entry, `myreadingmanga`, is an **anime** source (`HttpSource`, no manga
   type markers) and requires `MYREADINGMANGA_USERNAME`/`MYREADINGMANGA_PASSWORD` to function.
 - Candidate manga repositories (`yuzono/manga-repo`, `aniyomiorg/aniyomi-extensions`) return
-  200 but contain only "Outdated App" nag extensions.
+  200 but contain only "Outdated App" nag extensions. The dedicated Anikku repo
+  (`salmanbappi/extensions-repo`) is reachable and has 98 entries — all `animeextension.*`, zero
+  manga.
+
+**Keiyoushi does have manga: 1422 extensions, 407 English, in `extension.en.*`.** They cannot be
+used, for a reason more fundamental than availability. The two ecosystems forked:
+
+| | Anikku (ours) | Mihon / Keiyoushi |
+| --- | --- | --- |
+| Package | `eu.kanade.tachiyomi.animesource.*` | `eu.kanade.tachiyomi.source.*` |
+| Pages | `getHosterList` + `getVideoList` | `fetchPageList` |
+| Manga | folded into the anime hierarchy | a separate hierarchy |
+
+`extension.en.aquamanga` references `source/online/HttpSource` and `source/model/{SManga,SChapter,
+Page,MangasPage}` — none of which `:source-api` provides, and none of which Anikku-style code
+adapts onto without a second source API. `RealExtensionCompatibilityTest` asserts this directly.
+
+So pointing the fetcher at Keiyoushi (`index.min.json` is a 2-entry stub; `index.json` is the
+real 1.5 MB index; `index.pb` is gzip-wrapped protobuf) cannot make `pages()` succeed: the
+extensions cannot link. The blocker is architectural, not a URL.
 
 So `AnimeSourceAdapter.pages()` still cannot be verified against a real manga extension, and the
 gap is in **source availability**, not in our code. The inferred `getHosterList` + `getVideoList`
@@ -893,9 +949,12 @@ Result on this hardware: **release build in ~4 minutes**, previously stalling in
 Deliberately out of scope for this first slice; the seams are in place:
 
 - **Manga page resolution is inferred, not verified.** `AnimeSourceAdapter.pages()` populates
-  from `getHosterList` + `getVideoList`, the only path available under Anikku's unified hierarchy.
-  Now confirmed blocked by **source availability**: no reachable repository carries an extension in
-  the manga namespace at all (see above). Needs an actual Anikku manga extension to close.
+  from `getHosterList` + `getVideoList`. No reachable repository serves an Anikku-shaped manga
+  extension, and the one repository with manga (Keiyoushi) serves a different API generation
+  entirely — see above. Closing this needs a decision, not a URL.
+- **`:source-api` is missing three types real extensions reference**, so no real extension can
+  register a source. Found by loading a real APK; the conformance guard cannot see it. See above.
+  This blocks every published extension, anime as well as manga.
 - **Horizontal (RTL) manga paging** — the reader pages vertically; the common right-to-left
   horizontal variant is not implemented and should not be guessed at without a preference.
 - **Reader progress persistence** — the current page is not written back to

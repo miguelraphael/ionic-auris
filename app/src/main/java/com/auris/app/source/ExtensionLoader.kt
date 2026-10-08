@@ -215,6 +215,20 @@ class ExtensionLoader(
     }
 
 
+    /**
+     * A classloader for [apkPath] without registering anything.
+     *
+     * Exists so tests can ask the dalvik VM directly whether a type resolves. `load` catches
+     * `Throwable` and returns an empty list, which makes "the extension has no sources" and
+     * "the extension could not be linked" indistinguishable — and that ambiguity is precisely
+     * how a missing API type went unnoticed while every test stayed green.
+     */
+    fun classLoaderFor(apkPath: String): ClassLoader {
+        val apk = File(apkPath)
+        return loaded.entries.firstOrNull { it.value.apkPath == apkPath }?.value?.classLoader
+            ?: createClassLoader(apk, apk.nameWithoutExtension)
+    }
+
     private fun createClassLoader(apkFile: File, packageName: String): DexClassLoader {
         // Dalvik refuses a writable dex/jar outright:
         //   SecurityException: Writable dex file '...' is not allowed.

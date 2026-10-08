@@ -102,6 +102,7 @@ android {
         // tests run against an actual APK Signature Scheme block rather than a fixture.
         from(layout.projectDirectory.dir("src/androidTest/fixtures")) {
             include("real-mangasource-extension.apk")
+            include("real-keiyoushi-manga-extension.apk")
         }
         into(layout.buildDirectory.dir("androidTestAssets"))
         dependsOn(":mock-extension:assembleDebug")
