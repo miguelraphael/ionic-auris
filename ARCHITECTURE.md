@@ -126,12 +126,45 @@ The app reports this honestly: `YouTube declined to serve audio for "…" (UNPLA
 per-track condition (`private`, `removed`, region-blocked) from a request-level refusal, because
 only the first is fixed by choosing a different song.
 
-**NewPipeExtractor was evaluated and rejected**: GPL-3.0 against a project with no `LICENSE` file,
-no YouTube Music support (so it discards the album/track model entirely), and its WebView-based
-token minting cannot run inside a `MediaSessionService` — it would break exactly the background
-audio built above.
-
 Browse, search, metadata and library all work. Only audio does not.
+
+### Decision: YouTube audio extraction is DEFERRED
+
+**Status: not implemented in this release, deliberately.** Two independent blockers, either of
+which alone is sufficient:
+
+**1. Licensing.** Every viable route is GPL-3.0. Auris has **no `LICENSE` file** — all rights
+reserved by default — so linking one would force the entire app to GPL and open-source. That is the
+project owner's call, not an engineering one, and it has not been made.
+
+**2. Technical.** PO tokens are now **bound to the video id**, so serving audio requires BotGuard
+attestation per track. BotGuard is an anti-automation control; defeating it is circumventing an
+access control. It is also incompatible with the architecture: minting needs a WebView, and a
+WebView cannot run inside a `MediaSessionService` — which is precisely what background audio
+requires. **The fix would break the feature it was meant to restore.**
+
+### What was evaluated
+
+| Option | Outcome |
+| --- | --- |
+| NewPipeExtractor | **Rejected.** GPL-3.0. No YouTube Music support, so it discards the album/track model and the `totalUnits` progress mapping. WebView PO-token flow cannot run in a `MediaSessionService`. |
+| ArchiveTune (6.9k stars) | **Rejected.** Verified from its own `libs.versions.toml`: it depends on `com.github.TeamNewPipe:NewPipeExtractor`. So it inherits the same GPL-3.0 and the same WebView constraint — plus it is an *app*, not a library, so nothing is importable. |
+| Obsidian-Music | **Irrelevant.** Apache-2.0 and Media3-based, but the repository contains **no source** — only `README.md`, `LICENSE`, `update.json` and screenshots. It is also a *local-file* player with no streaming at all. |
+| BotGuard attestation | **Not attempted.** Circumventing an access control. |
+
+ArchiveTune is the most useful data point in that table, and not for the reason it might appear: its
+own legal disclaimer states it **"does not bypass YouTube's technical protections"** — it
+*authenticates*. So a 6.9k-star client reaching the same wall and solving it with an account is
+strong evidence that **authentication is the only route**, and that there is no bypass to be found.
+That makes this a product decision about accounts, not an outstanding engineering task.
+
+### If this is revisited
+
+The only unblocked path is user-supplied authenticated cookies (their own account). That is a ToS
+call for the project owner, and the UI work is: a sign-in screen, cookie persistence in the existing
+`sync_sessions`-style secure storage, and expiry handling in `StreamRefusal`. `InnerTubeClient` is
+already built so this is a config change — but **it should be an explicit decision, never inherited
+from a GPL app.**
 
 ---
 
@@ -216,10 +249,17 @@ Two fixtures were used, and both dead-ended for different reasons. Neither cause
 distinguished from a gap in our own layer, because distinguishing them by guessing is what produced
 eleven ABI breaks.
 
-| Fixture | Shape | Outcome |
-| --- | --- | --- |
-| `real-anime-catalog-extension.apk` | **Season-based.** Declares `seasonListParse`, overrides no `getEpisodeList` — episodes hang off a season. | `getSeasonList` returns empty for every real title tried (e.g. "One Piece"), so the season → episode chain never starts. Unknown whether the season layer has a parse gap or the site lists none. |
-| `real-flat-episode-extension.apk` | **Flat.** Declares `episodeListParse`, no `seasonListParse`, no login. | Loads and registers correctly, but its site returns **no entries at all** for either popular or latest, so the chain never starts. Site is v14.1 and its scraper is likely stale. |
+| Fixture | Extension | Shape | Outcome |
+| --- | --- | --- | --- |
+| `real-anime-catalog-extension.apk` | `eu.kanade.tachiyomi.animeextension.en.animetake` v16.9 | **Season-based.** Declares `seasonListParse`, overrides no `getEpisodeList` — episodes hang off a season. | `getSeasonList` returns empty for every real title tried (e.g. "One Piece"), so the season → episode chain never starts. Unknown whether the season layer has a parse gap or the site lists none. |
+| `real-flat-episode-extension.apk` | `eu.kanade.tachiyomi.animeextension.en.kimoitv` v14.1 | **Flat.** Declares `episodeListParse`, no `seasonListParse`, no login. | Loads and registers correctly, but its site returns **no entries at all** for either popular or latest, so the chain never starts. Site is v14.1 and its scraper is likely stale. |
+
+**To resume:** substitute a third fixture. The requirements, verified by inspecting candidate dex
+rather than guessing — declare `episodeListParse` and **not** `seasonListParse`; require no
+credentials; and have a catalogue that currently returns entries. Check those three with `dexdump`
+*before* committing the APK, which costs seconds and avoids a full build-install cycle per
+candidate. The live repos are `yuzono/anime-repo` (`index.json`; `index.min.json` is a stub) and
+`salmanbappi/extensions-repo` (98 entries).
 
 **The test is committed and waiting.** `RealVideoResolutionTest` drives exactly the chain
 `pages()` sits on — catalogue → details → episode → `getHosterList` → `getVideoList` → absolute URL
