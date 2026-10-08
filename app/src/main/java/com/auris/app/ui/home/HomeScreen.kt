@@ -1,7 +1,23 @@
 package com.auris.app.ui.home
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,12 +27,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
 import com.auris.app.core.model.MediaType
+import com.auris.app.ui.theme.AurisSurface
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.components.MediaGridCard
@@ -35,6 +48,8 @@ import com.auris.app.ui.theme.AurisOnSurfaceVariant
 fun HomeScreen(
     library: List<LibraryEntryEntity>,
     onEntryClick: (LibraryEntryEntity) -> Unit,
+    /** Opens Settings, which is where extensions are installed. */
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val inProgress = library.filter { it.progress > 0f && !isComplete(it) }
@@ -47,18 +62,37 @@ fun HomeScreen(
             .fillMaxSize()
             .padding(horizontal = 20.dp),
     ) {
-        Column(
-            Modifier.padding(top = 56.dp, bottom = 4.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 56.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "Auris",
-                style = MaterialTheme.typography.displayLarge,
-                color = AurisOnSurface,
-            )
-            Text(
-                text = "Anime, manga and music in one place",
-                style = MaterialTheme.typography.bodyMedium,
-                color = AurisOnSurfaceVariant,
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Auris",
+                    style = MaterialTheme.typography.displayLarge,
+                    color = AurisOnSurface,
+                )
+                Text(
+                    text = "Anime, manga and music in one place",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AurisOnSurfaceVariant,
+                )
+            }
+
+            /**
+             * The only way into Settings.
+             *
+             * Home had no header action, so Settings — and the extension manager inside it,
+             * which is how anime sources get installed — was reachable from no top-level
+             * destination. Settings opened Extensions and Extensions opened Settings, and
+             * neither could be entered. Caught only by running the app on real hardware.
+             */
+            HomeHeaderIconButton(
+                icon = Icons.Filled.Settings,
+                contentDescription = "Settings",
+                onClick = onOpenSettings,
             )
         }
 
@@ -200,6 +234,36 @@ private fun EmptyHome() {
             style = MaterialTheme.typography.bodyMedium,
             color = AurisOnSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp, start = 32.dp, end = 32.dp),
+        )
+    }
+
+
+}
+
+/** A 44dp circular header action, matching the app's other header controls. */
+@Composable
+private fun HomeHeaderIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(AurisSurface)
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = AurisOnSurfaceVariant,
+            modifier = Modifier.size(20.dp),
         )
     }
 }

@@ -106,6 +106,10 @@ fun AurisNavHost(
             HomeScreen(
                 library = library,
                 onEntryClick = onEntryClick,
+                // The one entry point into Settings, and therefore into the extension
+                // manager. Without it, Settings and Extensions only opened each other and
+                // neither could be reached from any top-level destination.
+                onOpenSettings = { navController.navigate(Routes.settings) },
             )
         }
 

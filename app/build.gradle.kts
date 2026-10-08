@@ -6,6 +6,39 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+import java.util.Properties
+
+/**
+ * Reads a project property, falling back to `local.properties`.
+ *
+ * ### Why the fallback exists
+ * `local.properties` is read by AGP for `sdk.dir` and **only** that. It is not a Gradle
+ * properties file, so `project.findProperty` never sees anything else in it — and
+ * `local.properties.example` tells people to put SUPABASE_URL right there, next to `sdk.dir`.
+ *
+ * The result is silent: the build succeeds, the task graph reports everything up-to-date,
+ * `buildConfigField` receives an empty string, and the crash only appears at runtime as
+ * "SUPABASE_URL is not set". Nothing in the build output hints that the value was never read.
+ *
+ * `local.properties` is also git-ignored while `gradle.properties` is committed, so it is the
+ * right place for a secret even though Gradle ignores it by default — which is why this reads it
+ * explicitly rather than telling the user to move anything.
+ *
+ * Precedence is still `gradle.properties` / `-P` / environment first, so a CI or release build
+ * that sets the property the normal way is unaffected.
+ */
+fun Project.localProperty(key: String): String {
+    val fromGradle = findProperty(key) as String?
+    if (!fromGradle.isNullOrBlank()) return fromGradle
+
+    val file = rootProject.layout.projectDirectory.file("local.properties").asFile
+    if (!file.exists()) return ""
+
+    val properties = Properties()
+    file.inputStream().use { properties.load(it) }
+    return properties.getProperty(key).orEmpty()
+}
+
 android {
     namespace = "com.auris.app"
     compileSdk = 35
@@ -21,8 +54,8 @@ android {
 
         // Supabase project credentials. Override per build type / via gradle.properties —
         // never commit a service_role key here.
-        buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+        buildConfigField("String", "SUPABASE_URL", "\"${localProperty("SUPABASE_URL")}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProperty("SUPABASE_ANON_KEY")}\"")
         buildConfigField("String", "KITSU_BASE_URL", "\"https://kitsu.io/api/edge\"")
     }
 

@@ -232,14 +232,20 @@ at a 12-byte stride the decoded values are header offsets like `20716` (`class_d
 | Suite | Result |
 | --- | --- |
 | JVM | 278 tests, 4 skipped, **0 failures** |
-| Device (instrumentation) | 43 pass |
-| `RealCatalogExtractionTest` | **6 of 7 pass** |
+| Device (instrumentation) | **67 pass** |
+| `RealVideoResolutionTest` | **3 of 3 pass** — video resolution proven |
+| `RealCatalogExtractionTest` | **6 of 7 pass** — sole failure is animetake, on the Cloudflare block |
 | Conformance (`:source-api-conformance`) | green — but see §5: it cannot see incompleteness |
 
-### What works, proven against a real v16 Aniyomi extension
+### What works, proven against real extensions
 
 Loads and registers · popular · latest · search · details · mapping through `AnimeSourceAdapter`
-into our own model · unknown-entry resilience.
+into our own model · unknown-entry resilience · **the full video-resolution chain** — catalogue →
+details → episode → `getHosterList` → `getVideoList` → absolute URL.
+
+Two extension generations are covered: **v14** (animekhor, the fixture that proved video
+resolution) and **v16** (animetake, which exercises the 14-parameter `Video` constructor). Neither
+of the two West Coast fixtures can load — that is the Mihon ecosystem, a different API generation.
 
 ### ✅ What works — video resolution is PROVEN
 
@@ -285,7 +291,7 @@ branch is the same method but was not exercised by this run, and the manga-side 
 (`getHosterList` for a manga source) remains unverified against a live source. The Keiyoushi
 fixture is a different API generation and cannot load — see §5.
 
-### Gap #13 — the v16 `Video` constructor — is FIXED
+### Gap #13 — the v16 `Video` constructor — CLOSED via a secondary constructor and synthetic bridge
 
 v16 extensions call a 14-parameter constructor, with the `int` mask and `DefaultConstructorMarker`
 that Kotlin appends for defaulted parameters making 16 arguments in the dex call:
@@ -304,7 +310,7 @@ The parameter *names* are provisional — only the shapes are known, from the de
 constants at the call site — and the code says so, because the names are not what linking checks
 and a confident-but-wrong name would be misleading.
 
-### Why animetake's season layer is empty — now answered, and it is not our bug
+### Why animetake fails: a Cloudflare JS challenge, not our code
 
 Previously listed as "unknown whether the season layer has a parse gap or the site lists none". It
 is the **site**, established without guessing:
