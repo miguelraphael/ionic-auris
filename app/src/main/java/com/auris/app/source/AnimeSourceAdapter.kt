@@ -251,8 +251,11 @@ private fun SourceUnit.toSEpisode(): SEpisode = SEpisodeImpl().apply {
 }
 
 private fun Video.toStreamTarget(): StreamTarget = StreamTarget(
-    url = url,
-    headers = headers.orEmpty(),
+    url = videoUrl,
+    // OkHttp `Headers` is the ABI type; the host speaks a flat map. A source that supplies no
+    // headers still yields an empty map rather than a null the player has to special-case.
+    headers = headers?.toMultimap()?.mapValues { (_, values) -> values.firstOrNull().orEmpty() }
+        ?: emptyMap(),
     mimeType = mimeType,
     // Anikku does not label DASH streams; ExoPlayer probes the manifest.
     isAdaptive = mimeType?.contains("dash", ignoreCase = true) ?: false,

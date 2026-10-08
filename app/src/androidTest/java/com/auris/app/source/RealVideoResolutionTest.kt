@@ -31,8 +31,14 @@ import java.io.File
  * [RealCatalogExtractionTest] — rather than something to entangle with proving video resolution.
  *
  * This fixture is the flat generation: it declares `episodeListParse` and **no** `seasonListParse`,
- * so episodes come straight off the details page. It also needs no credentials, which
- * `real-mangasource-extension.apk` does.
+ * so episodes come straight off the details page. It needs no credentials, and its site is live —
+ * all three criteria verified from the dex and with an HTTP probe **before** the APK was
+ * committed, so the build-install cycle is only spent on a candidate that can work.
+ *
+ * It goes through Dailymotion, which is why the dex references Dailymotion's GraphQL hoster API
+ * and a `password`/`oauth/token` string. Those are the **hoster's** concerns — password-protected
+ * Dailymotion videos — and not an extension login requirement, which is the one thing that ruled
+ * out `real-mangasource-extension.apk`.
  *
  * ### Network test
  * These hit a real site and will fail when it is down or changed. That cost is stated rather than
@@ -93,10 +99,24 @@ class RealVideoResolutionTest : ExtensionTestBase() {
      * Tries popular first, then latest. Plenty of sources implement only one of the two — the
      * catalogue contract allows it — and an empty popular page says nothing about whether video
      * resolution works.
+     *
+     * Falls back to a search when neither catalogue page yields anything: some sources advertise a
+     * catalogue they cannot currently serve, and a source that can be *searched* is still perfectly
+     * usable for proving video resolution.
      */
     private suspend fun anyEntry(source: AnimeHttpSource) =
         runCatching { source.getPopularAnime(1).animes.firstOrNull() }.getOrNull()
             ?: runCatching { source.getLatestUpdates(1).animes.firstOrNull() }.getOrNull()
+            ?: runCatching { searchAny(source) }.getOrNull()
+
+    /**
+     * A single entry from search, used when neither catalogue page yields anything.
+     *
+     * The query is deliberately generic rather than tied to the fixture's catalogue, so a source
+     * whose popular/latest pages are empty but whose search works can still be used.
+     */
+    private suspend fun searchAny(source: AnimeHttpSource) =
+        source.getSearchAnime(1, "anime", source.getFilterList()).animes.firstOrNull()
 
     @Test
     fun resolvesARealVideoStreamUrl() = runBlocking {
@@ -177,7 +197,15 @@ class RealVideoResolutionTest : ExtensionTestBase() {
 
         val first = adapter.popular(page = 1).items.firstOrNull()
             ?: adapter.latest(page = 1).items.firstOrNull()
-            ?: fail("the adapter surfaced no catalogue items from popular or latest")
+            ?: adapter.search(
+                page = 1,
+                query = "anime",
+                filters = eu.kanade.tachiyomi.source.model.FilterList(),
+            ).items.firstOrNull()
+            ?: fail(
+                "the adapter surfaced no items from popular, latest or search, so the fixture " +
+                    "site is not currently serving any catalogue",
+            )
 
         val details = adapter.details(first)
         val units = adapter.units(first)
@@ -202,6 +230,6 @@ class RealVideoResolutionTest : ExtensionTestBase() {
     private fun fail(message: String): Nothing = throw AssertionError(message)
 
     private companion object {
-        const val FLAT_EXTENSION_PACKAGE = "eu.kanade.tachiyomi.animeextension.en.kimoitv"
+        const val FLAT_EXTENSION_PACKAGE = "eu.kanade.tachiyomi.animeextension.en.animekhor"
     }
 }

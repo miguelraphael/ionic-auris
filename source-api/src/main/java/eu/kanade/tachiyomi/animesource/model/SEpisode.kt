@@ -80,24 +80,75 @@ class SEpisodeImpl : SEpisode {
  * implement [eu.kanade.tachiyomi.animesource.online.ResolvableAnimeSource] and the host
  * calls `resolveVideo` before playback.
  */
-interface Video {
-    var url: String
-    var quality: String
-    var headers: Map<String, String>?
-    var mimeType: String?
-    var subtitleUrl: String?
-    var audioUrl: String?
-}
+/**
+ * A resolved, playable video.
+ *
+ * ### An `open class`, because an interface cannot be instantiated
+ * This was an `interface`. Extensions **construct** videos — `Video(url, quality, videoUrl,
+ * headers, subtitleTracks, audioTracks)` — and an interface has no constructor, so the call site
+ * died with:
+ *
+ * ```
+ * java.lang.InstantiationError: eu.kanade.tachiyomi.animesource.model.Video
+ * ```
+ *
+ * The constructor above is read from a real extension's dex, along with the members it reads back
+ * (`ffmpegStreamArgs`, `mpvArgs`, `videoTitle`). All parameters carry defaults so the host and the
+ * mock extension can still write `Video()` and set properties afterwards; the full-arity
+ * constructor is what Kotlin emits, and it is the descriptor extensions link against.
+ *
+ * `VideoImpl` below remains the host-side impl with mutable properties, for our own model.
+ */
+open class Video(
+    url: String = "",
+    quality: String = "",
+    videoUrl: String = url,
+    headers: okhttp3.Headers? = null,
+    subtitleTracks: List<Any> = emptyList(),
+    audioTracks: List<Any> = emptyList(),
+) {
+    open var url: String = url
+    open var quality: String = quality
 
-class VideoImpl : Video {
-    override var url: String = ""
-    override var quality: String = ""
-    override var headers: Map<String, String>? = null
-    override var mimeType: String? = null
-    override var subtitleUrl: String? = null
-    override var audioUrl: String? = null
+    /**
+     * The direct media URL when it differs from [url].
+     *
+     * Computed rather than stored, because the real distinction is "embed page vs media file": a
+     * source that only ever sets `url` (most do) must fall back to it, and a value captured from
+     * a constructor argument goes stale the moment the host assigns `url` afterwards — which is
+     * how the mock extension and every `Video()`-then-assign caller work.
+     */
+    open val videoUrl: String get() = videoUrlOverride.ifBlank { url }
+
+    /** Set only by a source that genuinely distinguishes the embed page from the media file. */
+    internal var videoUrlOverride: String = videoUrl
+
+    open val headers: okhttp3.Headers? = headers
+    open val subtitleTracks: List<Any> = subtitleTracks
+    open val audioTracks: List<Any> = audioTracks
+
+    /** Extra `ffmpeg` arguments a source may need to demux its stream. */
+    open val ffmpegStreamArgs: List<String> = emptyList()
+
+    /** Extra `mpv` arguments for sources served through the player's own demuxer. */
+    open val mpvArgs: List<String> = emptyList()
+
+    /** Human-readable title, used by the player when a source labels its own qualities. */
+    open val videoTitle: String = url
+
+    // ---- Host-side conveniences, not part of the extension ABI ----
+
+    var mimeType: String? = null
+    var subtitleUrl: String? = null
+    var audioUrl: String? = null
 
     override fun toString(): String = "Video(url=$url, quality=$quality)"
+}
+
+/** The host-side implementation, kept as a convenient mutable factory for our own model. */
+class VideoImpl : Video() {
+    override var url: String = ""
+    override var quality: String = ""
 }
 
 /** A host that serves videos for an episode; first entry is the preferred one. */

@@ -170,7 +170,7 @@ from a GPL app.**
 
 ## 5. ⚠️ ABI drift — read this before changing `:source-api`
 
-> **Eleven ABI breaks were found in one week, and a fully green build passed through every one of
+> **Thirteen ABI breaks have now been found, and a fully green build passed through every one of
 > them.** The cause was structural, not bad luck: `mock-extension` is written against our own
 > interfaces, so it matches by construction. **Every "real APK" claim in this project was
 > self-referential until real extensions were loaded.**
@@ -188,6 +188,8 @@ from a GPL app.**
 | 9 | `AnimeFilter` subtypes were `final` | Kotlin default; extensions subclass them |
 | 10 | `RequestsKt.GET/POST` lacked `CacheControl?` | Compiles fine, fails at first request |
 | 11 | `OkHttpExtensionsKt`, `Track`, `asJsoup(charset)` | Each one member at a time |
+| 12 | `Video` was an `interface` | Interface, no constructor: `InstantiationError`. Found by the fixture that finally worked. |
+| 13 | v16 `Video` 16-param constructor absent | **Open.** `NoSuchMethodError` on animetake v16.9 |
 
 **Every one presented identically to a user: the extension loads and registers zero sources.**
 
@@ -239,35 +241,55 @@ at a 12-byte stride the decoded values are header offsets like `20716` (`class_d
 Loads and registers · popular · latest · search · details · mapping through `AnimeSourceAdapter`
 into our own model · unknown-entry resilience.
 
-### What does not — video resolution is UNPROVEN
+### ✅ What works — video resolution is PROVEN
 
-**`AnimeSourceAdapter.pages()` remains inferred, not observed.** The same status it has held since
-the project began, despite two separate attempts to prove it. **Treat anything built on it —
-the manga reader and the episode player — as untested against a live source.**
+**`AnimeSourceAdapter.pages()` is now observed against a live source.** The catalogue →
+details → episode → `getHosterList` → `getVideoList` → absolute-URL chain runs end to end, and the
+result additionally survives mapping through the adapter into our own model, so a pass cannot come
+from the extension alone. **3 of 3 `RealVideoResolutionTest` tests pass.**
 
-Two fixtures were used, and both dead-ended for different reasons. Neither cause has been
-distinguished from a gap in our own layer, because distinguishing them by guessing is what produced
-eleven ABI breaks.
+The fixture that made it work:
+
+| Fixture | Extension | Why it worked |
+| --- | --- | --- |
+| `real-flat-episode-extension.apk` | `eu.kanade.tachiyomi.animeextension.en.animekhor` v14.29 | Flat episodes (`episodeListParse`, **no** `seasonListParse`), no credentials, and a live site serving real episode links. It goes through Dailymotion, so the dex references Dailymotion's GraphQL hoster API — which is why it contains `password` and `oauth/token` strings. Those are the **hoster's** concerns, not an extension login. |
+
+The two that failed, kept as the record of what was ruled out:
 
 | Fixture | Extension | Shape | Outcome |
 | --- | --- | --- | --- |
-| `real-anime-catalog-extension.apk` | `eu.kanade.tachiyomi.animeextension.en.animetake` v16.9 | **Season-based.** Declares `seasonListParse`, overrides no `getEpisodeList` — episodes hang off a season. | `getSeasonList` returns empty for every real title tried (e.g. "One Piece"), so the season → episode chain never starts. Unknown whether the season layer has a parse gap or the site lists none. |
-| `real-flat-episode-extension.apk` | `eu.kanade.tachiyomi.animeextension.en.kimoitv` v14.1 | **Flat.** Declares `episodeListParse`, no `seasonListParse`, no login. | Loads and registers correctly, but its site returns **no entries at all** for either popular or latest, so the chain never starts. Site is v14.1 and its scraper is likely stale. |
+| `real-anime-catalog-extension.apk` | `…en.animetake` v16.9 | **Season-based.** Declares `seasonListParse`, overrides no `getEpisodeList`. | `getSeasonList` returns empty for every real title tried, so episodes — which hang off a season — are never reached. Also needs the 16-parameter `Video` constructor below, so it cannot serve the chain even if seasons did. |
+| *(superseded)* | `…en.kimoitv` v14.1 | Flat, no login. | Loaded and registered, but its site returned no entries for popular, latest or search. Dead endpoint, superseded in the same fixture slot. |
 
-**To resume:** substitute a third fixture. The requirements, verified by inspecting candidate dex
-rather than guessing — declare `episodeListParse` and **not** `seasonListParse`; require no
-credentials; and have a catalogue that currently returns entries. Check those three with `dexdump`
-*before* committing the APK, which costs seconds and avoids a full build-install cycle per
-candidate. The live repos are `yuzono/anime-repo` (`index.json`; `index.min.json` is a stub) and
-`salmanbappi/extensions-repo` (98 entries).
+### Gap #12, found by the working fixture
 
-**The test is committed and waiting.** `RealVideoResolutionTest` drives exactly the chain
-`pages()` sits on — catalogue → details → episode → `getHosterList` → `getVideoList` → absolute URL
-— and additionally asserts the result survives mapping through the adapter into our own model, so a
-pass cannot come from the extension alone. It fails today for the reasons above. **It needs a
-cooperating fixture, not more guessing.**
+`Video` was an **interface**, so it could not be instantiated. Extensions construct videos
+directly — `Video(url, quality, videoUrl, headers, subtitleTracks, audioTracks)` — and the call
+site died with `InstantiationError: …model.Video`. Now an `open class` with that exact
+constructor plus the three members the dex reads back (`ffmpegStreamArgs`, `mpvArgs`,
+`videoTitle`), verified descriptor-for-descriptor with `javap`.
 
-This is the first task after launch.
+Two details that only the running test settled, both of which a from-memory guess would have got
+wrong:
+
+- **`videoUrl` must be computed, not stored.** Captured from the constructor argument, it goes
+  stale the moment the host assigns `url` afterwards — which is how the mock extension and every
+  `Video()`-then-assign caller work, so the streams all resolved to the empty string.
+- **`headers` is `okhttp3.Headers`, not `Map<String, String>`.** The host converts at
+  `toStreamTarget()`, since the ABI type is the one that appears in the descriptor.
+
+### What is still unverified
+
+**Manga page extraction.** `AnimeSourceAdapter.pages()` is now proven for **anime**. The manga
+branch is the same method but was not exercised by this run, and the manga-side extraction path
+(`getHosterList` for a manga source) remains unverified against a live source. The Keiyoushi
+fixture is a different API generation and cannot load — see §5.
+
+**The 16-parameter `Video` constructor.** v16 extensions (animetake) call
+`Video(String, String, Integer, Integer, Headers, boolean, <6× List>, String, boolean, int,
+DefaultConstructorMarker)`. Our `Video` has the 6-parameter form only, so v16 sources fail on it.
+This is **gap #13**, known and unfixed, and it is why the animetake fixture still fails. Fixing it
+means adding that constructor — do it from the dex, not from memory.
 
 ### Environment note
 
