@@ -104,6 +104,7 @@ android {
             include("real-mangasource-extension.apk")
             include("real-keiyoushi-manga-extension.apk")
             include("real-anime-catalog-extension.apk")
+            include("real-flat-episode-extension.apk")
         }
         into(layout.buildDirectory.dir("androidTestAssets"))
         dependsOn(":mock-extension:assembleDebug")
