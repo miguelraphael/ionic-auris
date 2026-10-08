@@ -17,12 +17,28 @@ import java.nio.charset.Charset
  * The declared charset is read here purely as a guard: it is validated so that a bogus
  * value surfaces as a loggable fact rather than an exception thrown from deep inside the
  * parser far away from the response that caused it.
+ *
+ * ### The `charset` parameter is part of the ABI
+ * Extensions call `asJsoup(someCharset)`, which Kotlin compiles to
+ * `asJsoup$default(Response, String, int, Object)`. A zero-parameter `asJsoup()` emits neither
+ * that bridge nor a two-argument overload, so the call site fails with
+ * `NoSuchMethodError: asJsoup$default`. Adding a defaulted parameter produces both descriptors
+ * and keeps the no-argument call sites reading naturally.
  */
-fun Response.asJsoup(): Document {
+fun Response.asJsoup(charset: String? = null): Document {
+    // The explicit charset, when the extension supplies one, wins over OkHttp's own detection —
+    // a source that knows its site is shift_jis says so, and the header is often absent or
+    // wrong on these hosts.
+    val resolvedCharset = charset
+        ?.takeIf { it.isNotBlank() }
+        ?.let { name -> runCatching { Charset.forName(name) }.getOrNull() }
+
     // Resolve relative links against the request URL rather than the document's own base.
     val base = request.url.toString()
-    val html = body?.string()
-        ?: throw IllegalStateException("Response body was null for $base")
+    val html = body?.let { responseBody ->
+        resolvedCharset?.let { responseBody.byteStream().reader(it).readText() }
+            ?: responseBody.string()
+    } ?: throw IllegalStateException("Response body was null for $base")
 
     return Jsoup.parse(html, base)
 }

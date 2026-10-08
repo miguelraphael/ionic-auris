@@ -178,10 +178,15 @@ class DexAbiReader private constructor(private val dex: RandomAccessFile) : Clos
     private fun typeDescriptor(index: Int): String = stringAt(uintAt(typeIdsOffset + index * 4L))
 
     private fun protoDescriptor(index: Int): String {
-        // proto_ids_item is 8 bytes: ushort shorty_idx, ushort return_type_idx,
-        // uint parameters_off. Reading it as 12 bytes with the return type at +4 sends
-        // parameters_off into garbage, which produces a wild offset and an EOFException that
-        // looks nothing like a table-layout mistake.
+        // proto_ids_item is **8 bytes**: ushort shorty_idx, ushort return_type_idx,
+        // uint parameters_off — per the official dex format. Reading it as 12 bytes with
+        // 4-byte indices (a common misreading, and one this code originally made) puts
+        // parameters_off in the middle of the next entry, producing a wild offset that
+        // surfaces as an EOFException with no hint of a table-layout mistake.
+        //
+        // Worth stating because it is easy to "fix" in the wrong direction: at a 12-byte
+        // stride the decoded values come out as 20716 and 24556, which are class_defs_off
+        // and data_off — unmistakable header offsets rather than type indices.
         val base = protoIdsOffset + index * 8L
         val returnTypeIdx = ushortAt(base + 2)
         val parametersOff = uintAt(base + 4)
