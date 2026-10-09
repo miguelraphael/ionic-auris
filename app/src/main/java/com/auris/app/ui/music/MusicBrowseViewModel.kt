@@ -50,6 +50,18 @@ data class MusicBrowseUiState(
     val isResolving: Boolean = false,
     val message: String? = null,
     val nowPlayingId: String? = null,
+    /**
+     * Artwork discovered after a row was first rendered, keyed by video id.
+     *
+     * InnerTube's `musicResponsiveListItemRenderer` for song rows returns an **empty thumbnail
+     * array**, so the initial render has nothing to show and every row drew a blank square. The
+     * `player` response does carry thumbnails, and `resolveTrack` already reads them — they were
+     * simply never handed back to the UI.
+     *
+     * Kept as a map rather than written onto the rows because rows are rebuilt on every
+     * catalogue refresh; a per-row field would be lost the moment the list re-rendered.
+     */
+    val resolvedArtwork: Map<String, String> = emptyMap(),
 ) {
     val isEmpty: Boolean get() = results.isEmpty() && !isLoading && error == null
 }
@@ -77,6 +89,9 @@ class MusicBrowseViewModel(
 
     private var controller: MediaController? = null
     private var searchJob: kotlinx.coroutines.Job? = null
+
+    /** Artwork learned from `player` responses, by video id. Never evicted: it is small. */
+    private val resolvedArtwork = mutableMapOf<String, String>()
 
     /** Why the last playback attempt got no stream, so the failure can be reported honestly. */
     private var lastRefusal: InnerTubePlayerResponse.PlayabilityStatus? = null
@@ -155,6 +170,7 @@ class MusicBrowseViewModel(
         }
 
         _state.value = _state.value.withResults(collected, isLoading = false)
+        prefetchArtwork(collected)
     }
 
     private fun MusicBrowseUiState.withResults(
@@ -261,6 +277,14 @@ class MusicBrowseViewModel(
         val stream = response.audioStreams.firstOrNull { it.isPlayable() } ?: return null
         val details = response.videoDetails
 
+        // The artwork the search row was missing. Recorded here rather than returned, so a
+        // later refresh of the catalogue cannot undo it, and so resolving a *failed* track
+        // (which returns null above) still leaves its artwork behind for the next render.
+        val artwork = details?.thumbnails?.lastOrNull()
+        if (artwork != null) {
+            resolvedArtwork[videoId] = artwork
+        }
+
         return listOf(
             MusicTrack(
                 videoId = videoId,
@@ -268,12 +292,54 @@ class MusicBrowseViewModel(
                 artist = details?.author,
                 album = null,
                 durationMs = stream.durationMs ?: details?.lengthSeconds?.times(1000),
-                artworkUrl = details?.thumbnails?.lastOrNull(),
-                largeArtworkUrl = details?.thumbnails?.lastOrNull(),
+                artworkUrl = artwork,
+                largeArtworkUrl = artwork,
                 playlistId = null,
                 trackIndex = null,
             ),
         )
+    }
+
+    /**
+     * Fetches artwork for rows that arrived without it, so the squares fill without a tap.
+     *
+     * Song rows from `musicResponsiveListItemRenderer` carry an empty thumbnail array — the whole
+     * reason blank squares were visible at all — and the `player` response is the only place the
+     * artwork exists. [resolveTrack] already reads it, so this reuses that path purely for the
+     * side effect on [resolvedArtwork].
+     *
+     * Bounded and sequential on purpose: InnerTube has no documented rate limit, and firing a
+     * `player` request per row would be the fastest way to get the client throttled. The first
+     * screenful is what the user is looking at, so that is what gets warmed.
+     */
+    private fun prefetchArtwork(items: List<InnerTubeMusicItem>) {
+        val missing = items
+            .flatMap { it.tracks }
+            .filter { it.artworkUrl.isNullOrBlank() && !resolvedArtwork.containsKey(it.videoId) }
+            .take(ARTWORK_PREFETCH_LIMIT)
+
+        if (missing.isEmpty()) return
+
+        viewModelScope.launch {
+            missing.forEach { track ->
+                // A failure is expected and harmless: the row simply stays blank. Nothing here
+                // is worth interrupting the user over.
+                runCatching {
+                    client.resolveAudioStream(track.videoId)
+                        .getOrNull()
+                        ?.videoDetails
+                        ?.thumbnails
+                        ?.lastOrNull()
+                }.onSuccess { artwork ->
+                    if (artwork != null) {
+                        resolvedArtwork[track.videoId] = artwork
+                        _state.value = _state.value.copy(
+                            resolvedArtwork = resolvedArtwork.toMap(),
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun collectionTracks(browseId: String): List<MusicTrack> =
@@ -388,6 +454,15 @@ class MusicBrowseViewModel(
 
         /** Per seed, so three seeds do not each load a full 40-row page. */
         private const val SEED_LIMIT = 15
+
+        /**
+         * How many rows to warm artwork for per catalogue load.
+         *
+         * One screenful is what the user is actually looking at. Warming more would spend
+         * requests on rows they have not scrolled to, against a service with no documented
+         * rate limit to reason about.
+         */
+        private const val ARTWORK_PREFETCH_LIMIT = 12
 
         fun factory(
             client: InnerTubeClient,
