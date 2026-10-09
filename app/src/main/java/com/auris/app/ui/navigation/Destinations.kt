@@ -40,10 +40,20 @@ object Routes {
     const val MUSIC_BROWSE = "music/browse"
     const val SETTINGS = "settings"
 
+    /**
+     * A source's catalogue, addressed by [SourceResolver.keyOf]'s key.
+     *
+     * The only route in the app that addresses a *source* rather than a library entry, which is
+     * why it has to exist: without it an installed extension can never be browsed.
+     */
+    const val CATALOGUE = "catalogue/{sourceKey}"
+
     fun player(entryId: String) = "player/$entryId"
     fun animeDetail(entryId: String) = "anime/$entryId"
     fun mangaReader(entryId: String, unitIndex: Int) = "manga/reader/$entryId/$unitIndex"
     fun episodePlayer(entryId: String, unitIndex: Int) = "play/episode/$entryId/$unitIndex"
     const val diagnostics = DIAGNOSTICS
     const val settings = SETTINGS
+
+    fun catalogue(sourceKey: String) = "catalogue/$sourceKey"
 }

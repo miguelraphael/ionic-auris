@@ -39,6 +39,8 @@ import com.auris.app.ui.diagnostics.DiagnosticsRoute
 import com.auris.app.ui.player.EpisodePlayer
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.ui.settings.SettingsScreen
+import com.auris.app.ui.source.CatalogueScreen
+import com.auris.app.ui.source.CatalogueViewModel
 import com.auris.app.ui.settings.SettingsViewModel
 import com.auris.app.data.remote.music.InnerTubeClient
 import com.auris.app.ui.music.MusicBrowseScreen
@@ -84,6 +86,10 @@ fun AurisNavHost(
     extensionRepository: ExtensionRepository,
     /** Shared with the extensions screen: one repository, one signing key. */
     extensionRepoStore: com.auris.app.data.repository.ExtensionRepoStore,
+    /** Loads sources so a catalogue route can resolve them. */
+    extensionLoader: com.auris.app.source.ExtensionLoader,
+    /** Adds a browsed catalogue title to the library and opens it. */
+    onCatalogueItemClick: (com.auris.app.source.SourceItem) -> Unit,
     extensionRepo: ExtensionRepo = ExtensionRepo.DEFAULT,
     /** Receives a resolved, playable stream. ExoPlayer hosting is the next slice. */
     /** Process-scoped so the player survives navigation between episodes. */
@@ -195,6 +201,13 @@ fun AurisNavHost(
                 // Was a no-op: the Diagnostics button existed but had no destination before
                 // Settings existed. Now wired, with Diagnostics reachable from inside Settings.
                 onOpenSettings = { navController.navigate(Routes.settings) },
+                // Tapping a source's name browses it; the toggle on the right still
+                // enables/disables. Without this there is no path from installing an extension
+                // to ever seeing its content.
+                onOpenCatalogue = { sourceKey ->
+                    sourceKey.takeIf { it.isNotBlank() }
+                        ?.let { navController.navigate(Routes.catalogue(it)) }
+                },
                 bottomPadding = 32.dp + WindowInsets.navigationBars
                     .asPaddingValues()
                     .calculateBottomPadding(),
@@ -328,6 +341,37 @@ fun AurisNavHost(
                 onResetRepo = settingsViewModel::resetRepo,
                 onOpenExtensions = { navController.navigate(Routes.EXTENSIONS) },
                 onOpenDiagnostics = { navController.navigate(Routes.diagnostics) },
+            )
+        }
+
+        // A source's catalogue. The bridge between an installed extension and any content the
+        // user can see; before this existed an extension could be installed but never browsed.
+        composable(
+            route = Routes.CATALOGUE,
+            arguments = listOf(
+                navArgument("sourceKey") { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val sourceKey = entry.arguments?.getString("sourceKey").orEmpty()
+
+            val catalogueViewModel: CatalogueViewModel = viewModel(
+                key = "catalogue-$sourceKey",
+                factory = CatalogueViewModel.factory(
+                    extensionLoader = extensionLoader,
+                    sourceKey = sourceKey,
+                ),
+            )
+            val catalogueState by catalogueViewModel.state.collectAsStateWithLifecycle()
+
+            CatalogueScreen(
+                state = catalogueState,
+                onModeChange = catalogueViewModel::selectMode,
+                onQueryChange = catalogueViewModel::onQueryChange,
+                onRetry = catalogueViewModel::retry,
+                // Opening a catalogue title goes through the existing library-detail route,
+                // so the item is added to the library first. That keeps the detail screen's
+                // single contract unchanged rather than adding a parallel route for source items.
+                onItemClick = onCatalogueItemClick,
             )
         }
 

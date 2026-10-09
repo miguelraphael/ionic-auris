@@ -69,6 +69,9 @@ fun AurisApp(
     innerTubeClient: com.auris.app.data.remote.music.InnerTubeClient? = null,
     extensionRepository: com.auris.app.data.repository.ExtensionRepository,
     extensionRepoStore: com.auris.app.data.repository.ExtensionRepoStore,
+    extensionLoader: com.auris.app.source.ExtensionLoader,
+    /** Adds a browsed catalogue title to the library, then opens it. */
+    onCatalogueItemClick: (com.auris.app.source.SourceItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
@@ -98,6 +101,8 @@ fun AurisApp(
             innerTubeClient = innerTubeClient,
             extensionRepository = extensionRepository,
             extensionRepoStore = extensionRepoStore,
+            extensionLoader = extensionLoader,
+            onCatalogueItemClick = onCatalogueItemClick,
             extensionsViewModelFactory = extensionsViewModelFactory,
             extensionRepo = extensionRepo,
             modifier = Modifier.fillMaxSize(),

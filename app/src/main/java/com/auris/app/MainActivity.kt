@@ -1,6 +1,7 @@
 package com.auris.app
 
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -36,6 +37,16 @@ class MainActivity : ComponentActivity() {
                         innerTubeClient = container.innerTubeClient,
                         extensionRepository = container.extensionRepository,
                         extensionRepoStore = container.extensionRepoStore,
+                        extensionLoader = container.extensionLoader,
+                        // Opening a browsed title goes through the existing library-detail
+                        // route, so it is added to the library first rather than adding a
+                        // parallel route for source items.
+                        // TODO: add the browsed item to the library, then navigate to
+                        // Routes.animeDetail(entry.id). Needs a SourceItem -> LibraryEntryEntity
+                        // mapping carrying source_id/source_key, which ExtensionContentRepository
+                        // does not have yet. Left unwired rather than half-built: the catalogue
+                        // is browsable, and this is the one remaining hop.
+                        onCatalogueItemClick = { },
                         extensionsViewModelFactory = ExtensionsViewModel.Factory(
                             context = applicationContext,
                             client = container.extensionRepositoryClient,

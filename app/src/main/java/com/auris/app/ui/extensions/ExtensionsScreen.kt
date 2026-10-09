@@ -85,6 +85,8 @@ fun ExtensionsScreen(
     modifier: Modifier = Modifier,
     repo: ExtensionRepo = ExtensionRepo.DEFAULT,
     onOpenSettings: () -> Unit = {},
+    /** Browses an installed source's catalogue; the only path from installed to browsable. */
+    onOpenCatalogue: (String) -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 32.dp,
 ) {
     // The gradient tracks whichever icon the user last touched, so the header carries a colour.
@@ -117,6 +119,7 @@ fun ExtensionsScreen(
                     onRefresh = actions.onRefresh,
                     onEditRepo = actions.onEditRepo,
                     onOpenSettings = onOpenSettings,
+                    onOpenCatalogue = onOpenCatalogue,
                 )
             }
 
@@ -131,6 +134,7 @@ fun ExtensionsScreen(
             items(state.items, key = { it.remote.packageName }) { item ->
                 ExtensionRow(
                     item = item,
+                    onBrowse = { onOpenCatalogue("") },
                     stage = state.progress[item.remote.packageName],
                     onInstall = { actions.onInstall(item) },
                     onUninstall = { actions.onUninstall(item) },
@@ -156,6 +160,7 @@ private fun ExtensionsHeader(
     onRefresh: () -> Unit,
     onEditRepo: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenCatalogue: (String) -> Unit,
 ) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -310,6 +315,7 @@ private fun ExtensionRow(
     onUninstall: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onFocus: () -> Unit,
+    onBrowse: () -> Unit,
 ) {
     Surface(
         shape = RoundedCornerShape(AurisRadii.artwork),
@@ -322,6 +328,30 @@ private fun ExtensionRow(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // The name column is the entry point into the catalogue. The install/uninstall button
+            // and the enable toggle remain separate, because tapping a name to install would be
+            // surprising, and a disabled source still has a browsable catalogue once re-enabled.
+            val canBrowse = item.installed != null
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (canBrowse) {
+                            Modifier.clickable(onClick = onBrowse)
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                Text(
+                    text = item.remote.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (canBrowse) AurisOnSurface else AurisOnSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
             // Extension icon, using the same large corner radius as every artwork surface.
             AsyncImage(
                 model = item.iconUrl,
