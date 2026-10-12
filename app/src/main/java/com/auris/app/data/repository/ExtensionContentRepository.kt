@@ -10,6 +10,8 @@ import com.auris.app.source.SourceItem
 import com.auris.app.source.SourceUnit
 import com.auris.app.source.StreamTarget
 import com.auris.app.source.toMediaSource
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /**
  * Resolves a library entry back to the extension it came from, and fetches its content.
@@ -158,10 +160,53 @@ class ExtensionContentRepository(
         bookmark = 0,
     )
 
-    /** The extension backing this content is not available. */
-    class UnavailableException(message: String) : Exception(message)
+    /**
+     * Creates a [LibraryEntryEntity] from a [SourceItem] for a given source.
+     *
+     * This is the bridge between the catalogue UI (which works with [SourceItem]s) and the
+     * library persistence layer (which stores [LibraryEntryEntity]). The source's package name
+     * and Aniyomi source ID are embedded so the entry can be resolved back to its extension.
+     */
+    fun entryForSourceItem(
+        sourceItem: SourceItem,
+        sourcePackageName: String,
+        sourceAniyomiId: Long,
+        mediaType: com.auris.app.core.model.MediaType
+    ): LibraryEntryEntity {
+        val now = System.currentTimeMillis()
+        return LibraryEntryEntity(
+            // Core identity
+            id = java.util.UUID.randomUUID().toString(),
+            remoteId = java.util.UUID.randomUUID().toString(),
+            userId = null,
+            // Core identity
+            remoteMediaId = sourceItem.url,
+            mediaType = mediaType,
+            sourceId = sourceAniyomiId.toString(),
+            sourceKey = sourceItem.url,
+            // Display metadata
+            title = sourceItem.title,
+            subtitle = sourceItem.author,
+            author = sourceItem.author,
+            artworkUrl = sourceItem.thumbnailUrl,
+            // Anime-specific metadata (nullable for manga/music)
+            releaseYear = sourceItem.year,
+            score = 0,
+            isFavorite = false,
+            categories = emptyList(),
+            lastPositionMs = 0L,
+            isDeleted = false,
+            syncState = com.auris.app.core.model.SyncState.LOCAL_ONLY,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            lastActivityAt = System.currentTimeMillis(),
+        )
+    }
 
     private companion object {
         const val TAG = "AurisContent"
     }
+
+    /** The extension backing this content is not available. */
+    class UnavailableException(message: String) : Exception(message)
 }

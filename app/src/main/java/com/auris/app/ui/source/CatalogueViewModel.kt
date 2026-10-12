@@ -144,4 +144,34 @@ class CatalogueViewModel(
             mediaType: MediaType = MediaType.ANIME,
         ): ViewModelProvider.Factory = Factory(extensionLoader, sourceKey, mediaType)
     }
+
+    /**
+     * Handles a catalogue item click: resolves the source, creates a library entry,
+     * upserts it, and navigates to the detail screen.
+     */
+    fun onItemClick(
+        item: com.auris.app.source.SourceItem,
+        navController: androidx.navigation.NavController,
+        libraryRepository: com.auris.app.data.repository.LibraryRepository,
+        extensionContentRepository: com.auris.app.data.repository.ExtensionContentRepository
+    ) {
+        viewModelScope.launch {
+            val sourceKey = _state.value.sourceKey
+            val resolved = SourceResolver.resolveLoaded(extensionLoader, sourceKey)
+            if (resolved == null) return@launch
+
+            val sourcePackageName = resolved.packageName
+            val sourceAniyomiId = resolved.aniyomiId
+
+            val entry = extensionContentRepository.entryForSourceItem(
+                sourceItem = item,
+                sourcePackageName = sourcePackageName,
+                sourceAniyomiId = sourceAniyomiId,
+                mediaType = mediaType
+            )
+
+            val saved = libraryRepository.upsert(entry)
+            navController.navigate(com.auris.app.ui.navigation.Routes.animeDetail(saved.id))
+        }
+    }
 }

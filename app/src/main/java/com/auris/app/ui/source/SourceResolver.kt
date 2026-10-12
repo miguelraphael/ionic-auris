@@ -83,6 +83,20 @@ object SourceResolver {
         )
     }
 
+    /**
+     * Resolves a key to the underlying [LoadedSource] for cases where the source's
+     * identity (package name, Aniyomi ID) is needed.
+     */
+    fun resolveLoaded(loader: ExtensionLoader, key: String): LoadedSource? {
+        val (packageName, id) = key.split("::", limit = 2).takeIf { it.size == 2 }
+            ?: return null
+        val sourceId = id.toLongOrNull() ?: return null
+
+        return loader.sources.firstOrNull { candidate ->
+            candidate.packageName == packageName && candidate.source.id == sourceId
+        }
+    }
+
     /** The display name for [key], for the screen title before the first load completes. */
     fun nameOf(loader: ExtensionLoader, key: String): String? =
         loader.sources

@@ -365,13 +365,14 @@ fun AurisNavHost(
 
             CatalogueScreen(
                 state = catalogueState,
+                viewModel = catalogueViewModel,
                 onModeChange = catalogueViewModel::selectMode,
                 onQueryChange = catalogueViewModel::onQueryChange,
                 onRetry = catalogueViewModel::retry,
-                // Opening a catalogue title goes through the existing library-detail route,
-                // so the item is added to the library first. That keeps the detail screen's
-                // single contract unchanged rather than adding a parallel route for source items.
-                onItemClick = onCatalogueItemClick,
+                navController = navController,
+                libraryRepository = libraryRepository,
+                extensionContentRepository = extensionContentRepository,
+                modifier = Modifier,
             )
         }
 

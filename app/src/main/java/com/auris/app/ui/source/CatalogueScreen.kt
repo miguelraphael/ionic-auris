@@ -65,10 +65,13 @@ import com.auris.app.ui.theme.rememberArtworkPaletteValue
 @Composable
 fun CatalogueScreen(
     state: CatalogueUiState,
+    viewModel: CatalogueViewModel,
     onModeChange: (CatalogueUiState.Mode) -> Unit,
     onQueryChange: (String) -> Unit,
     onRetry: () -> Unit,
-    onItemClick: (SourceItem) -> Unit,
+    navController: androidx.navigation.NavController,
+    libraryRepository: com.auris.app.data.repository.LibraryRepository,
+    extensionContentRepository: com.auris.app.data.repository.ExtensionContentRepository,
     modifier: Modifier = Modifier,
 ) {
     val palette = rememberArtworkPaletteValue(artworkKey = state.items.firstOrNull()?.thumbnailUrl)
@@ -93,7 +96,7 @@ fun CatalogueScreen(
                 state.error != null -> CatalogueError(state.error, onRetry)
                 state.isLoading -> LoadingGrid()
                 state.isEmpty -> EmptyCatalogue(state)
-                else -> CatalogueGrid(state, onItemClick)
+                else -> CatalogueGrid(state, { item -> viewModel.onItemClick(item, navController, libraryRepository, extensionContentRepository) })
             }
         }
     }
