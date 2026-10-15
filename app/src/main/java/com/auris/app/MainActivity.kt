@@ -38,10 +38,6 @@ class MainActivity : ComponentActivity() {
                         extensionRepository = container.extensionRepository,
                         extensionRepoStore = container.extensionRepoStore,
                         extensionLoader = container.extensionLoader,
-                        // Opening a browsed title goes through the existing library-detail
-                        // route, so it is added to the library first rather than adding a
-                        // parallel route for source items.
-                        onCatalogueItemClick = { },
                         extensionsViewModelFactory = ExtensionsViewModel.Factory(
                             context = applicationContext,
                             client = container.extensionRepositoryClient,

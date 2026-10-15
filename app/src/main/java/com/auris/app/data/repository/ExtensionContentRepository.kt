@@ -10,8 +10,10 @@ import com.auris.app.source.SourceItem
 import com.auris.app.source.SourceUnit
 import com.auris.app.source.StreamTarget
 import com.auris.app.source.toMediaSource
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 /**
  * Resolves a library entry back to the extension it came from, and fetches its content.
@@ -67,6 +69,11 @@ class ExtensionContentRepository(
     /**
      * Fetches episodes/chapters for [entry] from its extension.
      *
+     * Runs on IO: extensions routinely block (`runBlocking`, RxJava
+     * `toBlocking`) and the callers sit on the main thread — verified as a
+     * main-thread stall inside `AnimeKhor.videoListParse`. Centralised here so
+     * no caller has to remember to dispatch.
+     *
      * @return the units, or a failure explaining why none are available. An empty list is a
      *   legitimate result — a freshly aired show with no episodes listed yet.
      */
@@ -77,7 +84,7 @@ class ExtensionContentRepository(
             )
 
         return runCatching {
-            source.units(entry.toSourceItem())
+            withContext(Dispatchers.IO) { source.units(entry.toSourceItem()) }
         }.onFailure {
             log(TAG, "Unit fetch failed for ${entry.id}: ${it.message}")
         }
@@ -113,7 +120,9 @@ class ExtensionContentRepository(
         val source = resolveSource(entry)
             ?: return Result.failure(UnavailableException("Source ${entry.sourceId} is not installed"))
 
-        return runCatching { source.streams(entry.toSourceItem(), unit) }
+        return runCatching {
+            withContext(Dispatchers.IO) { source.streams(entry.toSourceItem(), unit) }
+        }
     }
 
     /**
@@ -133,7 +142,9 @@ class ExtensionContentRepository(
                 UnavailableException("Source ${entry.sourceId} does not expose chapter pages"),
             )
 
-        return runCatching { reader.pages(entry.toSourceItem(), unit) }
+        return runCatching {
+            withContext(Dispatchers.IO) { reader.pages(entry.toSourceItem(), unit) }
+        }
             .onFailure { log(TAG, "Page fetch failed for ${entry.id}/${unit.index}: ${it.message}") }
     }
 
@@ -163,9 +174,10 @@ class ExtensionContentRepository(
     /**
      * Creates a [LibraryEntryEntity] from a [SourceItem] for a given source.
      *
-     * This is the bridge between the catalogue UI (which works with [SourceItem]s) and the
-     * library persistence layer (which stores [LibraryEntryEntity]). The source's package name
-     * and Aniyomi source ID are embedded so the entry can be resolved back to its extension.
+     * Identity tuple is (mediaType, sourceId, sourceKey): `sourceId` is Aniyomi's
+     * stable numeric id as a string, `sourceKey` and `remoteMediaId` are the
+     * source-relative URL. One UUID backs both `id` and `remoteId` so the row
+     * upserts cleanly to Supabase without a client-side re-key.
      */
     fun entryForSourceItem(
         sourceItem: SourceItem,
@@ -173,23 +185,20 @@ class ExtensionContentRepository(
         sourceAniyomiId: Long,
         mediaType: com.auris.app.core.model.MediaType
     ): LibraryEntryEntity {
+        val id = java.util.UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         return LibraryEntryEntity(
-            // Core identity
-            id = java.util.UUID.randomUUID().toString(),
-            remoteId = java.util.UUID.randomUUID().toString(),
+            id = id,
+            remoteId = id,
             userId = null,
-            // Core identity
-            remoteMediaId = sourceItem.url,
             mediaType = mediaType,
             sourceId = sourceAniyomiId.toString(),
             sourceKey = sourceItem.url,
-            // Display metadata
+            remoteMediaId = sourceItem.url,
             title = sourceItem.title,
             subtitle = sourceItem.author,
             author = sourceItem.author,
             artworkUrl = sourceItem.thumbnailUrl,
-            // Anime-specific metadata (nullable for manga/music)
             releaseYear = sourceItem.year,
             score = 0,
             isFavorite = false,
@@ -197,9 +206,9 @@ class ExtensionContentRepository(
             lastPositionMs = 0L,
             isDeleted = false,
             syncState = com.auris.app.core.model.SyncState.LOCAL_ONLY,
-            createdAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis(),
-            lastActivityAt = System.currentTimeMillis(),
+            createdAt = now,
+            updatedAt = now,
+            lastActivityAt = now,
         )
     }
 

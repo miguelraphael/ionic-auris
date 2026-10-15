@@ -29,6 +29,16 @@ class SyncScheduler(private val context: Context) {
 
     private val networkConstraints = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
+        .build()
+
+    /**
+     * Battery gating for the periodic floor only: expedited one-shots support
+     * network and storage constraints alone, and building expedited work with
+     * anything else throws IllegalArgumentException — which used to break every
+     * library write that requested a sync.
+     */
+    private val periodicConstraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
         .setRequiresBatteryNotLow(true)
         .build()
 
@@ -53,7 +63,7 @@ class SyncScheduler(private val context: Context) {
         val request = PeriodicWorkRequestBuilder<LibrarySyncWorker>(
             intervalMinutes, TimeUnit.MINUTES,
         )
-            .setConstraints(networkConstraints)
+            .setConstraints(periodicConstraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
             .addTag(TAG_SYNC)
             .build()

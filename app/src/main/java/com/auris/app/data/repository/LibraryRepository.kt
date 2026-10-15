@@ -51,6 +51,24 @@ class LibraryRepository(
 
     fun observeEntry(id: String): Flow<LibraryEntryEntity?> = libraryDao.observeById(id)
 
+    /**
+     * Finds the existing row for a catalogue title, if any.
+     *
+     * `@Upsert` keys on the primary key `id`, not on the unique index
+     * (media_type, source_id, source_key), so re-upserting a freshly built entry
+     * with a new random id would violate the unique index instead of reusing the
+     * row. Callers therefore look up first and reuse the existing id.
+     * Implemented over the existing `findByRemoteMediaId` query — no schema change.
+     */
+    suspend fun findBySource(
+        mediaType: MediaType,
+        sourceId: String,
+        sourceKey: String,
+    ): LibraryEntryEntity? = withContext(ioDispatcher) {
+        libraryDao.findByRemoteMediaId(mediaType, sourceKey)
+            .firstOrNull { it.sourceId == sourceId && it.sourceKey == sourceKey }
+    }
+
     fun observeUnits(entryId: String): Flow<List<LibraryUnitEntity>> =
         libraryDao.observeUnits(entryId)
 

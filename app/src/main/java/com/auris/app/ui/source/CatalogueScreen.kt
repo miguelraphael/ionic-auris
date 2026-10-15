@@ -1,7 +1,8 @@
-package com.auris.app.ui.source
+ package com.auris.app.ui.source
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,14 +67,13 @@ import com.auris.app.ui.theme.rememberArtworkPaletteValue
 @Composable
 fun CatalogueScreen(
     state: CatalogueUiState,
-    viewModel: CatalogueViewModel,
+    onItemClick: (SourceItem) -> Unit,
     onModeChange: (CatalogueUiState.Mode) -> Unit,
     onQueryChange: (String) -> Unit,
     onRetry: () -> Unit,
-    navController: androidx.navigation.NavController,
-    libraryRepository: com.auris.app.data.repository.LibraryRepository,
-    extensionContentRepository: com.auris.app.data.repository.ExtensionContentRepository,
     modifier: Modifier = Modifier,
+    /** Returns to the extensions list; this screen draws no nav pill. */
+    onBack: () -> Unit = {},
 ) {
     val palette = rememberArtworkPaletteValue(artworkKey = state.items.firstOrNull()?.thumbnailUrl)
 
@@ -83,7 +84,7 @@ fun CatalogueScreen(
         modifier = modifier,
     ) {
         Column(Modifier.fillMaxSize()) {
-            CatalogueHeader(state)
+            CatalogueHeader(state, onBack)
 
             ModeTabs(selected = state.mode, onSelect = onModeChange)
 
@@ -96,17 +97,39 @@ fun CatalogueScreen(
                 state.error != null -> CatalogueError(state.error, onRetry)
                 state.isLoading -> LoadingGrid()
                 state.isEmpty -> EmptyCatalogue(state)
-                else -> CatalogueGrid(state, { item -> viewModel.onItemClick(item, navController, libraryRepository, extensionContentRepository) })
+                else -> CatalogueGrid(state, onItemClick = onItemClick)
             }
         }
     }
+
+
 }
 
 // ---- Header ------------------------------------------------------------------
 
 @Composable
-private fun CatalogueHeader(state: CatalogueUiState) {
+private fun CatalogueHeader(state: CatalogueUiState, onBack: () -> Unit) {
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 56.dp)) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(AurisSurface)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onBack,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = AurisOnSurface,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
         Text(
             text = state.sourceName.ifBlank { "Catalogue" },
             style = MaterialTheme.typography.displayLarge,
@@ -158,7 +181,16 @@ private fun ModeTabs(
 
 @Composable
 private fun CatalogueSearchField(query: String, onQueryChange: (String) -> Unit) {
-    var field by remember(query) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(query)) }
+    // Cursor pinned to the end; see ExtensionSearchField for why the default
+    // start selection reverses typed input on every query recomposition.
+    var field by remember(query) {
+        mutableStateOf(
+            androidx.compose.ui.text.input.TextFieldValue(
+                query,
+                androidx.compose.ui.text.TextRange(query.length),
+            )
+        )
+    }
 
     Surface(
         shape = RoundedCornerShape(AurisRadii.button),

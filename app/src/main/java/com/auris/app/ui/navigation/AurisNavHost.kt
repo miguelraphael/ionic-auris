@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -61,6 +62,7 @@ import com.auris.app.ui.extensions.actions
 import com.auris.app.source.repo.ExtensionRepo
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * The single NavHost for the app.
@@ -88,8 +90,6 @@ fun AurisNavHost(
     extensionRepoStore: com.auris.app.data.repository.ExtensionRepoStore,
     /** Loads sources so a catalogue route can resolve them. */
     extensionLoader: com.auris.app.source.ExtensionLoader,
-    /** Adds a browsed catalogue title to the library and opens it. */
-    onCatalogueItemClick: (com.auris.app.source.SourceItem) -> Unit,
     extensionRepo: ExtensionRepo = ExtensionRepo.DEFAULT,
     /** Receives a resolved, playable stream. ExoPlayer hosting is the next slice. */
     /** Process-scoped so the player survives navigation between episodes. */
@@ -208,6 +208,8 @@ fun AurisNavHost(
                     sourceKey.takeIf { it.isNotBlank() }
                         ?.let { navController.navigate(Routes.catalogue(it)) }
                 },
+                // No nav pill on this screen, so the header carries its own back.
+                onBack = { navController.popBackStack() },
                 bottomPadding = 32.dp + WindowInsets.navigationBars
                     .asPaddingValues()
                     .calculateBottomPadding(),
@@ -359,20 +361,28 @@ fun AurisNavHost(
                 factory = CatalogueViewModel.factory(
                     extensionLoader = extensionLoader,
                     sourceKey = sourceKey,
+                    extensionContentRepository = extensionContentRepository,
+                    libraryRepository = libraryRepository,
                 ),
             )
             val catalogueState by catalogueViewModel.state.collectAsStateWithLifecycle()
 
+            // The ViewModel owns the upsert and emits the persisted id; navigation
+            // itself stays here in the UI layer — no NavController in the ViewModel.
+            LaunchedEffect(catalogueViewModel) {
+                catalogueViewModel.openDetail.collectLatest { entryId ->
+                    navController.navigate(Routes.animeDetail(entryId))
+                }
+            }
+
             CatalogueScreen(
                 state = catalogueState,
-                viewModel = catalogueViewModel,
+                onItemClick = catalogueViewModel::onItemClick,
                 onModeChange = catalogueViewModel::selectMode,
                 onQueryChange = catalogueViewModel::onQueryChange,
                 onRetry = catalogueViewModel::retry,
-                navController = navController,
-                libraryRepository = libraryRepository,
-                extensionContentRepository = extensionContentRepository,
                 modifier = Modifier,
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -438,6 +448,7 @@ fun AurisNavHost(
                 bottomPadding = 32.dp + WindowInsets.navigationBars
                     .asPaddingValues()
                     .calculateBottomPadding(),
+                onBack = { navController.popBackStack() },
             )
         }
     }

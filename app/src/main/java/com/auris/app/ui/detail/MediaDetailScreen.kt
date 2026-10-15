@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
@@ -126,6 +127,8 @@ fun MediaDetailScreen(
     modifier: Modifier = Modifier,
     onRetry: () -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 32.dp,
+    /** Returns to wherever this title was opened from; no nav pill is drawn here. */
+    onBack: () -> Unit = {},
 ) {
     val palette = rememberArtworkPaletteValue(artworkKey = state.gradientArtworkUrl)
 
@@ -146,6 +149,7 @@ fun MediaDetailScreen(
                 DetailHero(
                     state = state,
                     palette = palette,
+                    onBack = onBack,
                 )
             }
 
@@ -191,6 +195,7 @@ fun MediaDetailScreen(
 private fun DetailHero(
     state: MediaDetailUiState,
     palette: ArtworkPalette,
+    onBack: () -> Unit,
 ) {
     Column {
         Box(
@@ -230,6 +235,31 @@ private fun DetailHero(
                         .size(20.dp),
                     strokeWidth = 2.dp,
                     color = AurisAccent,
+                )
+            }
+
+            // On-screen back: this screen draws no nav pill, and the system gesture
+            // is undiscoverable over a full-bleed hero. Scrimmed circle so it stays
+            // legible against bright covers.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 20.dp, top = 56.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = onBack,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }

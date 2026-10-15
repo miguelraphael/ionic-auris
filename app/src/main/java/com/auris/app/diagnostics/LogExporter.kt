@@ -79,6 +79,9 @@ class LogExporter(
         writer.println("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         writer.println("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
         writer.println("App version: ${appVersionName()} (${appVersionCode()})")
+        // Distinguishes sideloads: versionCode never changes for debug builds,
+        // but the APK install time does.
+        writer.println("Installed/updated: ${installTime()}")
         writer.println()
     }
 
@@ -138,26 +141,35 @@ class LogExporter(
         // another app throws FileUriExposedException, and it would be a sandbox escape besides.
         val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "Auris diagnostic logs")
-            putExtra(
-                Intent.EXTRA_TEXT,
-                "Auris diagnostic bundle. Attach the .txt file — most chat apps strip the " +
-                    "attachment if the body is empty.",
-            )
-            // Without this the target app cannot read the URI we just granted it.
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-
         context.startActivity(
-            Intent.createChooser(intent, "Share Auris logs").apply {
+            Intent.createChooser(shareIntent(uri), "Share Auris logs").apply {
                 // The chooser is launched from a non-Activity context (the exporter may run from
                 // a service), so it needs its own task.
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             },
         )
+    }
+
+    /**
+     * The share intent for a bundle URI.
+     *
+     * Internal for tests: a missing read grant fails silently on the receiving
+     * side as `SecurityException`, so the grant shape is asserted directly.
+     */
+    internal fun shareIntent(uri: Uri): Intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_SUBJECT, "Auris diagnostic logs")
+        putExtra(
+            Intent.EXTRA_TEXT,
+            "Auris diagnostic bundle. Attach the .txt file — most chat apps strip the " +
+                "attachment if the body is empty.",
+        )
+        // Both are required, not either/or: the flag alone does not survive the
+        // chooser on all ROMs (verified: Oplus/ColorOS denied the read with the
+        // flag but no ClipData), and ClipData without the flag grants nothing.
+        clipData = android.content.ClipData.newRawUri("Auris logs", uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
     // ---- Redaction ----------------------------------------------------------
@@ -177,6 +189,11 @@ class LogExporter(
     private fun appVersionCode(): Long = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
     }.getOrDefault(0L)
+
+    private fun installTime(): String = runCatching {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", Locale.US).format(Date(info.lastUpdateTime))
+    }.getOrDefault("unknown")
 
     companion object {
         private const val TAG = "AurisDiagnostics"

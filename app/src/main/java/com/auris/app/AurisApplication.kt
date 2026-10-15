@@ -3,6 +3,11 @@ package com.auris.app
 import android.app.Application
 import android.util.Log
 import androidx.work.Configuration
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import uy.kohesive.injekt.Injekt
 import com.auris.app.data.sync.SyncScheduler
 
@@ -26,8 +31,9 @@ class AurisApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        registerExtensionHostServices()
         container = DefaultAppContainer(this)
+        registerExtensionHostServices()
+        reloadInstalledExtensions()
 
         // Floor under progress sync and remote pulls. Individual writes call
         // SyncScheduler.requestSync() for immediate delivery.
@@ -37,21 +43,20 @@ class AurisApplication : Application(), Configuration.Provider {
     val syncScheduler: SyncScheduler get() = container.syncScheduler
 
     /**
-     * Registers the [Application] with Injekt so extensions can reach it.
+     * Registers the host services extensions resolve out of Injekt.
      *
-     * ### Why this is not optional
-     * Aniyomi's source-api uses Injekt as its dependency-injection seam, and a real extension's
-     * factory resolves `Injekt.get<Application>()` while building its configuration — typically
-     * to obtain a `SharedPreferences` for its login or mirror preference.
+     * Runs after [container] exists but before any extension can load (all
+     * container fields are lazy, so construction loads nothing), since the
+     * loader reads these at factory-instantiation time.
      *
-     * Without the registration the factory throws
-     * `InjektionException: No registered instance or factory for type class android.app.Application`,
-     * which surfaces as an extension that loads and then silently registers **zero sources**. That
-     * is the same invisible failure the missing `AnimeFilter` types caused, one layer further
-     * down, and it is only visible because the extension is real.
-     *
-     * Done in `onCreate` before any extension can load, since the loader reads this at
-     * factory-instantiation time.
+     * ### Why each registration exists
+     * - `Application`: a real extension's factory resolves it to obtain
+     *   `SharedPreferences` for login/mirror settings. Without it the factory
+     *   throws `InjektionException` and registers **zero sources**.
+     * - `Json`: `keiyoushi.utils` — the shared toolkit most Aniyomi extensions
+     *   are built on — resolves it in a static initializer. Without it the first
+     *   catalogue fetch dies as `NoClassDefFoundError` on the OkHttp dispatcher
+     *   and takes the whole process down (verified: AnimeOnsen popular fetch).
      */
     private fun registerExtensionHostServices() {
         runCatching {
@@ -61,9 +66,49 @@ class AurisApplication : Application(), Configuration.Provider {
             // app must still boot for the ones that do not.
             Log.w(TAG, "Could not register Application with Injekt: ${error.message}")
         }
+        runCatching {
+            Injekt.addSingletonFactory<kotlinx.serialization.json.Json> { container.json }
+        }.onFailure { error ->
+            Log.w(TAG, "Could not register Json with Injekt: ${error.message}")
+        }
     }
 
     private companion object {
         const val TAG = "AurisApplication"
+    }
+
+    /** Survives longer than any screen; cancelled only with the process. */
+    private val initScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Re-loads installed, enabled extensions after a process restart.
+     *
+     * Installing loads the APK immediately, but nothing re-ran that step on the
+     * next launch: the APKs sat in the extensions directory while the registry
+     * stayed empty, so every library entry reported "extension not installed"
+     * and no catalogue source could resolve. Loading here — off the main
+     * thread, per-APK failures contained inside the loader — restores the
+     * pre-restart state before any screen needs it. Disabled extensions stay
+     * unloaded, matching the toggle's meaning.
+     */
+    private fun reloadInstalledExtensions() {
+        initScope.launch {
+            runCatching {
+                val enabled = container.extensionRepository.enabled()
+                    .first()
+                    .map { it.packageName }
+                    .toSet()
+                val apks = container.extensionsDir
+                    .listFiles { file -> file.isFile && file.extension == "apk" }
+                    ?.filter { it.nameWithoutExtension in enabled }
+                    .orEmpty()
+                if (apks.isNotEmpty()) {
+                    val loaded = container.extensionLoader.loadAll(apks)
+                    Log.i(TAG, "Reloaded ${loaded.size} installed extension(s)")
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "Could not reload installed extensions: ${error.message}")
+            }
+        }
     }
 }

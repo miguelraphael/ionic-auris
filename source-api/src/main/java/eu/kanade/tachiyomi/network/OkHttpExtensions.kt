@@ -36,6 +36,16 @@ import kotlin.coroutines.resumeWithException
 suspend fun <T> Call.awaitSuccess(): T = suspendCall() as T
 
 /**
+ * Plain suspending execution, without the success check.
+ *
+ * Newer extensions (and `keiyoushi.utils` parallel helpers) link
+ * `OkHttpExtensionsKt.await:(Lokhttp3/Call;Lkotlin/coroutines/Continuation;)`
+ * directly, so the host must expose exactly this name in this file facade —
+ * routing anywhere else fails to link with `NoSuchMethodError`.
+ */
+suspend fun Call.await(): Response = suspendCall()
+
+/**
  * Executes this call, suspending until it completes.
  *
  * Cancellable, so cancelling playback cancels the in-flight request rather than letting it

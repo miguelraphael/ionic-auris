@@ -134,6 +134,28 @@ data class ExtensionListItem(
     /** Icon URL, following the repository's `icon/<apk>` convention. */
     val iconUrl: String
         get() = "${repo.directoryUrl}/icon/${remote.apkFileName}"
+
+    /**
+     * Catalogue route key for this extension's first advertised source.
+     *
+     * Null when the extension advertises no sources: such a row leads nowhere,
+     * and its name stays inert rather than navigating to a dead catalogue.
+     * Multi-source extensions browse their first source; single-source
+     * extensions — the common anime case — are exact.
+     */
+    val catalogueKey: String?
+        get() = remote.sources?.firstOrNull()?.let { "${remote.packageName}::${it.id}" }
+
+    /**
+     * Display name with the repository brand stripped.
+     *
+     * Index entries are branded — "Aniyomi: AnimeKhor" — and the brand is
+     * identical across every row of a repo while eating a third of the title
+     * width, so rows truncate to the same indistinguishable prefix. The repo
+     * is already identified by the screen, making the prefix pure noise here.
+     */
+    val shortName: String
+        get() = remote.name.substringAfter(": ", remote.name)
 }
 
 /** Stage of an in-flight install, keyed by package name in the UI state. */

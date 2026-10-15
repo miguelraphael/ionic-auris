@@ -35,6 +35,8 @@ data class ExtensionsUiActions(
     val onRetry: () -> Unit = {},
     val onFocus: (ExtensionListItem) -> Unit = { },
     val onDismissMessage: () -> Unit = {},
+    val onQueryChange: (String) -> Unit = {},
+    val onLoadMore: () -> Unit = {},
 )
 
 /** Everything the extensions screen renders. */
@@ -51,7 +53,16 @@ data class ExtensionsUiState(
     val focusIconKey: String? = null,
     val progress: Map<String, InstallProgress.Stage> = emptyMap(),
     val message: String? = null,
-)
+    /** Current search text; blank means no filtering. */
+    val query: String = "",
+    /** How many of [items] the list renders; the footer grows this page. */
+    val visibleCount: Int = PAGE_SIZE,
+) {
+    companion object {
+        /** One page of rows; small enough to keep first layout fast on 250+ repos. */
+        const val PAGE_SIZE = 50
+    }
+}
 
 /**
  * State holder for the extensions screen.
@@ -84,6 +95,7 @@ class ExtensionsViewModel(
     private val repo: StateFlow<ExtensionRepo> = repoStore.repo
     private val remoteIndex = MutableStateFlow<List<ExtensionListItem>>(emptyList())
     private val showNsfw = MutableStateFlow(true)
+    private val queryFlow = MutableStateFlow("")
     private val focusIcon = MutableStateFlow<String?>(null)
     private val progress = MutableStateFlow<Map<String, InstallProgress.Stage>>(emptyMap())
 
@@ -103,11 +115,12 @@ class ExtensionsViewModel(
                 remoteIndex,
                 repo,
                 showNsfw,
-            ) { installed, remote, currentRepo, includeNsfw ->
+                queryFlow,
+            ) { installed, remote, currentRepo, includeNsfw, query ->
                 val byPackage = installed.associateBy { it.packageName }
                 val items = remote
                     .map { it.copy(installed = byPackage[it.remote.packageName]) }
-                    .filter { includeNsfw || !it.remote.isNsfw }
+                    .filter { it.matchesListFilter(query, includeNsfw) }
 
                 Quad(
                     items = items,
@@ -115,6 +128,7 @@ class ExtensionsViewModel(
                     installedCount = installed.size,
                     total = remote.size,
                     updates = items.count { it.hasUpdate },
+                    query = query,
                 )
             }.collect { snapshot ->
                 _state.value = _state.value.copy(
@@ -124,6 +138,7 @@ class ExtensionsViewModel(
                     updates = snapshot.updates,
                     repoUrl = snapshot.repo.baseUrl,
                     showNsfw = showNsfw.value,
+                    query = snapshot.query,
                 )
             }
         }
@@ -135,6 +150,7 @@ class ExtensionsViewModel(
         val installedCount: Int,
         val total: Int,
         val updates: Int,
+        val query: String,
     )
 
     /** Re-reads the index. Safe to call repeatedly. */
@@ -186,6 +202,25 @@ class ExtensionsViewModel(
 
     fun setNsfwVisible(visible: Boolean) {
         showNsfw.value = visible
+    }
+
+    /**
+     * Filters the list by name, package name or language. Unfiltered search would
+     * scan every keystroke against 250+ rows remotely; this filters the already
+     * loaded index in memory, so typing never fires a request.
+     */
+    fun onQueryChange(query: String) {
+        queryFlow.value = query
+        // A new query reshuffles the list, so the page restarts rather than
+        // showing rows 50+ of a result set the user has not scrolled.
+        _state.value = _state.value.copy(visibleCount = ExtensionsUiState.PAGE_SIZE)
+    }
+
+    /** Grows the rendered window by one page. */
+    fun loadMore() {
+        _state.value = _state.value.copy(
+            visibleCount = _state.value.visibleCount + ExtensionsUiState.PAGE_SIZE,
+        )
     }
 
     fun consumeMessage() {
@@ -247,7 +282,14 @@ class ExtensionsViewModel(
 
                 extensionLoader.load(target, identity.packageName)
             }.onSuccess {
-                _state.value = _state.value.copy(message = "Installed ${item.remote.name}")
+                // Without this the row's spinner never clears: the stage stays at
+                // INSTALLING and the row keeps rendering the progress indicator
+                // even though Room already reports the extension as installed.
+                progress.value = progress.value - packageName
+                _state.value = _state.value.copy(
+                    progress = progress.value,
+                    message = "Installed ${item.remote.name}",
+                )
             }.onFailure { error ->
                 Log.w(TAG, "Install failed for $packageName", error)
                 setStage(packageName, InstallProgress.Stage.FAILED)
@@ -368,4 +410,6 @@ fun ExtensionsViewModel.actions(): ExtensionsUiActions = ExtensionsUiActions(
     onRetry = ::refresh,
     onFocus = ::focus,
     onDismissMessage = ::consumeMessage,
+    onQueryChange = ::onQueryChange,
+    onLoadMore = ::loadMore,
 )

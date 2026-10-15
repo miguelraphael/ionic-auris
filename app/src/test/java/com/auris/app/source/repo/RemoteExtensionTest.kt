@@ -274,4 +274,84 @@ class RemoteExtensionTest {
         signatureHash = "sha",
         enabled = enabled,
     )
+
+    // ---- Catalogue key --------------------------------------------------------
+
+    @Test
+    fun catalogueKeyJoinsPackageAndFirstSourceId() {
+        val item = ExtensionListItem(
+            remote = RemoteExtension(
+                name = "Aniyomi: AnimeKhor",
+                packageName = "animeextension.en.animekhor",
+                apkFileName = "x.apk",
+                lang = "en",
+                versionCode = 30,
+                versionName = "14.30",
+                sources = listOf(
+                    RemoteSource(id = 123456789L, lang = "en", name = "AnimeKhor"),
+                ),
+            ),
+            repo = ExtensionRepo.DEFAULT,
+            installed = null,
+        )
+
+        // Matches SourceResolver.keyOf's `package::id` shape, so the catalogue
+        // route resolves back to the loaded source.
+        assertEquals("animeextension.en.animekhor::123456789", item.catalogueKey)
+    }
+
+    @Test
+    fun catalogueKeyIsNullWithoutSources() {        val item = ExtensionListItem(
+            remote = RemoteExtension(
+                name = "Helper",
+                packageName = "p",
+                apkFileName = "x.apk",
+                lang = "en",
+                versionCode = 1,
+                versionName = "1",
+                sources = null,
+            ),
+            repo = ExtensionRepo.DEFAULT,
+            installed = null,
+        )
+
+        // A sourceless row must stay inert rather than open a dead catalogue.
+        assertNull(item.catalogueKey)
+    }
+
+    @Test
+    fun shortNameStripsRepoBrand() {
+        val item = ExtensionListItem(
+            remote = RemoteExtension(
+                name = "Aniyomi: AnimeKhor",
+                packageName = "p",
+                apkFileName = "x.apk",
+                lang = "en",
+                versionCode = 1,
+                versionName = "1",
+            ),
+            repo = ExtensionRepo.DEFAULT,
+            installed = null,
+        )
+
+        assertEquals("AnimeKhor", item.shortName)
+    }
+
+    @Test
+    fun shortNameKeepsUnbrandedNames() {
+        val item = ExtensionListItem(
+            remote = RemoteExtension(
+                name = "Standalone",
+                packageName = "p",
+                apkFileName = "x.apk",
+                lang = "en",
+                versionCode = 1,
+                versionName = "1",
+            ),
+            repo = ExtensionRepo.DEFAULT,
+            installed = null,
+        )
+
+        assertEquals("Standalone", item.shortName)
+    }
 }
