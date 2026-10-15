@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.auris.app.data.local.entity.ExtensionEntity
+import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.source.repo.ExtensionRepo
@@ -49,6 +50,8 @@ data class SettingsUiState(
     val repoEditing: Boolean = false,
     /** Null when the repository publishes no signing key. */
     val repoDeclaredKey: String? = null,
+    /** Null when signed out; the auth gate owns that case, not this screen. */
+    val accountEmail: String? = null,
     val extensions: List<ExtensionSecurity> = emptyList(),
     val verifiedCount: Int = 0,
     val pinnedCount: Int = 0,
@@ -70,6 +73,7 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val extensionRepository: ExtensionRepository,
     private val repoStore: ExtensionRepoStore,
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
 
     private val message = MutableStateFlow<String?>(null)
@@ -92,6 +96,14 @@ class SettingsViewModel(
 
         extensionRepository.installed()
             .onEach { installed -> publish(installed) }
+            .launchIn(viewModelScope)
+
+        // The gate owns the signed-out case; here the email is display-only,
+        // and sign-out routes back to the gate through the same flow.
+        authRepository.session
+            .onEach { session ->
+                _state.value = _state.value.copy(accountEmail = session?.email)
+            }
             .launchIn(viewModelScope)
     }
 
@@ -235,8 +247,7 @@ class SettingsViewModel(
     }
 
     /** Forgets the custom repository and returns to the built-in default. */
-    fun resetRepo() {
-        repoStore.reset()
+    fun resetRepo() {        repoStore.reset()
         _state.value = _state.value.copy(
             repoEditing = false,
             message = "Repository reset to the default.",
@@ -248,20 +259,33 @@ class SettingsViewModel(
         _state.value = _state.value.copy(message = null)
     }
 
+    /**
+     * Signs out and returns to the login gate.
+     *
+     * No navigation here: clearing the session flips the gate flow, which
+     * routes on its own. The library rows stay on device; signing back in as
+     * the same user re-syncs them rather than duplicating.
+     */
+    fun signOut() {
+        viewModelScope.launch { authRepository.signOut() }
+    }
+
     class Factory(
         private val extensionRepository: ExtensionRepository,
         private val repoStore: ExtensionRepoStore,
+        private val authRepository: AuthRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SettingsViewModel(extensionRepository, repoStore) as T
+            SettingsViewModel(extensionRepository, repoStore, authRepository) as T
     }
 
     companion object {
         fun factory(
             extensionRepository: ExtensionRepository,
             repoStore: ExtensionRepoStore,
-        ): ViewModelProvider.Factory = Factory(extensionRepository, repoStore)
+            authRepository: AuthRepository,
+        ): ViewModelProvider.Factory = Factory(extensionRepository, repoStore, authRepository)
     }
 }
 

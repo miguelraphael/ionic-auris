@@ -67,6 +67,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     nsfwVisible: Boolean = false,
     onNsfwVisibleChange: (Boolean) -> Unit = {},
+    onSignOut: () -> Unit = {},
 ) {
     Box(
         modifier = modifier
@@ -77,6 +78,18 @@ fun SettingsScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 130.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            item { SectionTitle("Account") }
+
+            item {
+                SettingRow(
+                    title = state.accountEmail ?: "Signed in",
+                    subtitle = "Your library syncs to this account",
+                    onClick = null,
+                )
+            }
+
+            item { SmallButton(text = "Sign out", onClick = onSignOut) }
+
             item { SectionTitle("Extension repository") }
 
             item {

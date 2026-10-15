@@ -91,6 +91,11 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 # Json.decodeFromStream, whose impl lives in this artifact since 1.8 — without
 # it the call dies as NoClassDefFoundError inside the loaded extension.
 kotlinx-serialization-json-okio = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json-okio", version.ref = "serialization" }
+# Ktor engine for supabase-kt: without it the client throws at first use
+# ("Failed to find HTTP client engine"). Pinned to the exact core version
+# supabase-kt resolves (3.0.0-rc-1) — a mismatched engine links but fails
+# at runtime with abstract-method errors.
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version = "3.0.0-rc-1" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }

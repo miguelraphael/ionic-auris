@@ -22,6 +22,7 @@ import com.auris.app.data.sync.TransientSyncException
  *   kitsu_id      text,
  *   kitsu_slug    text,
  *   mal_id        bigint,
+ *   title         text not null,
  *   artwork_url   text,
  *   subtitle      text,
  *   author        text,
@@ -37,6 +38,7 @@ import com.auris.app.data.sync.TransientSyncException
  *   is_favorite   boolean not null default false,
  *   categories    text[] not null default '{}',
  *   last_position_ms bigint not null default 0,
+ *   created_at    timestamptz not null default now(),
  *   updated_at    timestamptz not null default now()
  * );
  * create unique index on library_entries (user_id, media_type, source_id, source_key);

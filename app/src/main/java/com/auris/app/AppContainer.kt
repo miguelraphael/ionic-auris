@@ -12,6 +12,7 @@ import com.auris.app.data.remote.music.InnerTubeClient
 import com.auris.app.data.remote.music.InnerTubeParser
 import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
+import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
@@ -22,11 +23,14 @@ import com.auris.app.diagnostics.AppStateCollector
 import com.auris.app.ui.player.EpisodePlayer
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
 
 /**
@@ -66,6 +70,10 @@ interface AppContainer {
     val extensionRepositoryClient: ExtensionRepositoryClient
     /** Where installed extension APKs live. Outside the DB so they survive a data reset. */
     val extensionsDir: java.io.File
+    /** Process lifetime; owns the auth session mirror. Cancelled only on teardown. */
+    val applicationScope: CoroutineScope
+    /** Email/password auth, mirrored into sync_sessions for the gate and worker. */
+    val authRepository: AuthRepository
     val syncScheduler: SyncScheduler
     val supabaseLibraryDataSource: SupabaseLibraryDataSource
     val supabaseClient: SupabaseClient
@@ -238,6 +246,26 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             syncScheduler = syncScheduler,
             ioDispatcher = ioDispatcher,
             json = json,
+        )
+    }
+
+    override val applicationScope: CoroutineScope by lazy {
+        CoroutineScope(SupervisorJob() + ioDispatcher)
+    }
+
+    /**
+     * Email/password auth.
+     *
+     * Lazy like everything else, so a missing Supabase URL fails at the login
+     * screen with the container's message rather than at app start.
+     */
+    override val authRepository: AuthRepository by lazy {
+        AuthRepository(
+            auth = supabaseClient.auth,
+            syncDao = syncDao,
+            syncScheduler = syncScheduler,
+            appScope = applicationScope,
+            ioDispatcher = ioDispatcher,
         )
     }
 }

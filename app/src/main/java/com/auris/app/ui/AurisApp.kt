@@ -15,19 +15,27 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.entity.LibraryEntryEntity
+import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
+import com.auris.app.ui.auth.AuthScreen
+import com.auris.app.ui.auth.AuthViewModel
 import com.auris.app.ui.player.EpisodePlayer
 import androidx.lifecycle.ViewModelProvider
 import com.auris.app.source.repo.ExtensionRepo
@@ -36,6 +44,7 @@ import com.auris.app.ui.navigation.AurisNavHost
 import com.auris.app.ui.navigation.Routes
 import com.auris.app.ui.navigation.TopLevelDestination
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * The app shell.
@@ -70,8 +79,39 @@ fun AurisApp(
     extensionRepository: com.auris.app.data.repository.ExtensionRepository,
     extensionRepoStore: com.auris.app.data.repository.ExtensionRepoStore,
     extensionLoader: com.auris.app.source.ExtensionLoader,
+    /**
+     * Mandatory gate: the library syncs per user, so a null session routes to
+     * the login screen before anything else can render. Required, not
+     * nullable, for the same reason the detail screen's repositories are.
+     */
+    authRepository: com.auris.app.data.repository.AuthRepository,
     modifier: Modifier = Modifier,
 ) {
+    // Gate readiness first: the initial null is "not loaded yet", which is
+    // indistinguishable from "signed out" — showing the login screen on it
+    // would flash it at every signed-in cold start.
+    var gateReady by remember { mutableStateOf(false) }
+    val session by authRepository.session
+        .collectAsStateWithLifecycle(initialValue = null)
+    LaunchedEffect(Unit) {
+        authRepository.session.first()
+        gateReady = true
+    }
+
+    if (!gateReady) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+        )
+        return
+    }
+
+    if (session == null) {
+        AuthGate(authRepository = authRepository, modifier = modifier)
+        return
+    }
+
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -100,6 +140,7 @@ fun AurisApp(
             extensionRepository = extensionRepository,
             extensionRepoStore = extensionRepoStore,
             extensionLoader = extensionLoader,
+            authRepository = authRepository,
             extensionsViewModelFactory = extensionsViewModelFactory,
             extensionRepo = extensionRepo,
             modifier = Modifier.fillMaxSize(),
@@ -159,4 +200,36 @@ private fun LibraryEntryEntity.destinationRoute(): String = when (mediaType) {
     MediaType.ANIME -> Routes.animeDetail(id)
     MediaType.MANGA -> Routes.mangaReader(id, currentUnitIndex)
     MediaType.MUSIC -> Routes.player(id)
+}
+
+/**
+ * The mandatory gate: no session, no app. Success needs no callback — the
+ * repository persists the session and this same flow re-emits, routing into
+ * the shell on its own.
+ */
+@Composable
+private fun AuthGate(
+    authRepository: AuthRepository,
+    modifier: Modifier = Modifier,
+) {
+    val authViewModel: AuthViewModel = viewModel(
+        key = "auth",
+        factory = AuthViewModel.factory(authRepository),
+    )
+    val authState by authViewModel.state.collectAsStateWithLifecycle()
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        AuthScreen(
+            state = authState,
+            onEmailChange = authViewModel::onEmailChange,
+            onPasswordChange = authViewModel::onPasswordChange,
+            onToggleMode = authViewModel::toggleMode,
+            onSubmit = authViewModel::submit,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
 }

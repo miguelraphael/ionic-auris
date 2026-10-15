@@ -90,6 +90,8 @@ fun AurisNavHost(
     extensionRepoStore: com.auris.app.data.repository.ExtensionRepoStore,
     /** Loads sources so a catalogue route can resolve them. */
     extensionLoader: com.auris.app.source.ExtensionLoader,
+    /** Owns the Settings account section; required, like the detail repositories. */
+    authRepository: com.auris.app.data.repository.AuthRepository,
     extensionRepo: ExtensionRepo = ExtensionRepo.DEFAULT,
     /** Receives a resolved, playable stream. ExoPlayer hosting is the next slice. */
     /** Process-scoped so the player survives navigation between episodes. */
@@ -330,6 +332,7 @@ fun AurisNavHost(
                 factory = SettingsViewModel.factory(
                     extensionRepository = extensionRepository,
                     repoStore = extensionRepoStore,
+                    authRepository = authRepository,
                 ),
             )
             val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
@@ -343,6 +346,7 @@ fun AurisNavHost(
                 onResetRepo = settingsViewModel::resetRepo,
                 onOpenExtensions = { navController.navigate(Routes.EXTENSIONS) },
                 onOpenDiagnostics = { navController.navigate(Routes.diagnostics) },
+                onSignOut = settingsViewModel::signOut,
             )
         }
 

@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
                         extensionRepository = container.extensionRepository,
                         extensionRepoStore = container.extensionRepoStore,
                         extensionLoader = container.extensionLoader,
+                        authRepository = container.authRepository,
                         extensionsViewModelFactory = ExtensionsViewModel.Factory(
                             context = applicationContext,
                             client = container.extensionRepositoryClient,

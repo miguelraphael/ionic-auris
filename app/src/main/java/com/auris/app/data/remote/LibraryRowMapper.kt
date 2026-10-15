@@ -14,6 +14,13 @@ import kotlinx.serialization.Serializable
  * A dedicated DTO rather than a `Map`: a typo in a column name becomes a compile error
  * instead of a silently-null field, and the payload doubles as the outbox serialization
  * format for [LibraryEntryEntity].
+ *
+ * ### Wire types must match Postgres, not Room
+ * Timestamps cross as ISO-8601 strings (`timestamptz`), never epoch millis:
+ * a JSON number into a `timestamptz` column is a 400 on every upsert. Columns
+ * that exist only locally (`localArtworkPath`, sync bookkeeping) are absent
+ * here on purpose — the server can never return them, and sending unknown
+ * keys fails the write.
  */
 @Serializable
 data class LibraryEntryRow(
@@ -31,8 +38,6 @@ data class LibraryEntryRow(
     @SerialName("author") val author: String? = null,
     @SerialName("description") val description: String? = null,
     @SerialName("artwork_url") val artworkUrl: String? = null,
-    /** Local-only: never sent to the server, so it round-trips as null. */
-    @SerialName("local_artwork_path") val localArtworkPath: String? = null,
     @SerialName("genres") val genres: List<String> = emptyList(),
     @SerialName("release_year") val releaseYear: Int? = null,
     @SerialName("status") val status: String = EntryStatus.PLANNED.name,
@@ -44,8 +49,8 @@ data class LibraryEntryRow(
     @SerialName("is_favorite") val isFavorite: Boolean = false,
     @SerialName("categories") val categories: List<String> = emptyList(),
     @SerialName("last_position_ms") val lastPositionMs: Long = 0L,
-    @SerialName("created_at") val createdAt: Long? = null,
-    @SerialName("updated_at") val updatedAt: Long? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
 )
 
 /**
@@ -82,8 +87,8 @@ fun LibraryEntryEntity.toRow(userId: String, now: InstantMillis): LibraryEntryRo
         isFavorite = isFavorite,
         categories = categories.map { it.name },
         lastPositionMs = lastPositionMs,
-        createdAt = createdAt,
-        updatedAt = now,
+        createdAt = iso8601(createdAt),
+        updatedAt = iso8601(now),
     )
 
 /**
@@ -102,7 +107,8 @@ fun LibraryEntryRow.toEntity(): LibraryEntryEntity = LibraryEntryEntity(
     kitsuSlug = kitsuSlug,
     malId = malId,
     artworkUrl = artworkUrl,
-    localArtworkPath = localArtworkPath,
+    // Local-only path: the server never returns one, so a pulled row starts unset.
+    localArtworkPath = null,
     title = title,
     subtitle = subtitle,
     author = author,
@@ -121,10 +127,19 @@ fun LibraryEntryRow.toEntity(): LibraryEntryEntity = LibraryEntryEntity(
     },
     lastPositionMs = lastPositionMs,
     syncState = SyncState.SYNCED,
-    createdAt = createdAt ?: System.currentTimeMillis(),
-    updatedAt = updatedAt ?: System.currentTimeMillis(),
-    remoteUpdatedAt = updatedAt,
+    createdAt = parseInstant(createdAt),
+    updatedAt = parseInstant(updatedAt),
+    remoteUpdatedAt = parseInstant(updatedAt),
 )
+
+/** Epoch millis from an ISO-8601 `timestamptz`, or now when absent/unparseable. */
+private fun parseInstant(value: String?): Long =
+    runCatching {
+        java.time.Instant.parse(value).toEpochMilli()
+    }.getOrDefault(System.currentTimeMillis())
+
+private fun iso8601(epochMillis: Long): String =
+    java.time.Instant.ofEpochMilli(epochMillis).toString()
 
 /** Epoch-millis alias, so call sites don't need a java.time import. */
 typealias InstantMillis = Long
