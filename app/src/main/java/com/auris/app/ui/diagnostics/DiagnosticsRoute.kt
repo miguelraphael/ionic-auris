@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.auris.app.data.remote.music.InvidiousProbe
 import com.auris.app.data.remote.music.MusicStreamProbe
 import com.auris.app.diagnostics.AppStateCollector
 import com.auris.app.diagnostics.AurisLogBuffer
@@ -36,6 +37,7 @@ import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 /**
  * Wires [DiagnosticsScreen] to the exporter.
@@ -52,6 +54,7 @@ fun DiagnosticsRoute(
     },
     appStateCollector: AppStateCollector? = null,
     probeFactory: (Context) -> MusicStreamProbe = { MusicStreamProbe(probeHttpClient) },
+    invidiousProbeFactory: (Context) -> InvidiousProbe = { InvidiousProbe(invidiousProbeHttpClient) },
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -63,6 +66,8 @@ fun DiagnosticsRoute(
     var message by remember { mutableStateOf<String?>(null) }
     var isProbing by remember { mutableStateOf(false) }
     var probeLines by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isInvidiousProbing by remember { mutableStateOf(false) }
+    var invidiousProbeLines by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // Counts are re-read after an export, because logging during the export (which there
     // certainly is — the exporter itself logs) changes them.
@@ -80,6 +85,8 @@ fun DiagnosticsRoute(
             message = message,
             probeLines = probeLines,
             isProbing = isProbing,
+            invidiousProbeLines = invidiousProbeLines,
+            isInvidiousProbing = isInvidiousProbing,
         ),
         onGenerateLogs = {
             scope.launch {
@@ -129,6 +136,31 @@ fun DiagnosticsRoute(
             // Anchored by a marker so the start of the report is easy to find in the log bundle.
             android.util.Log.i("AurisMusicProbe", "report:\n$report")
         },
+        onProbeInvidious = {
+            scope.launch {
+                isInvidiousProbing = true
+                invidiousProbeLines = emptyList()
+                message = null
+
+                runCatching {
+                    invidiousProbeFactory(context).probe().collect { result ->
+                        invidiousProbeLines = invidiousProbeLines + result.report()
+                    }
+                }.onFailure { error ->
+                    invidiousProbeLines = invidiousProbeLines +
+                        "probe failed: ${error.message ?: error::class.java.simpleName}"
+                }
+
+                isInvidiousProbing = false
+            }
+        },
+        onCopyInvidiousResults = {
+            val report = invidiousProbeLines.joinToString("\n")
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            clipboard?.setPrimaryClip(ClipData.newPlainText("Auris invidious probe", report))
+            message = "Probe results copied to the clipboard"
+            android.util.Log.i("AurisInvidiousProbe", "report:\n$report")
+        },
         modifier = modifier,
     )
 }
@@ -141,3 +173,19 @@ fun DiagnosticsRoute(
  * expect to reuse.
  */
 private val probeHttpClient: OkHttpClient by lazy { OkHttpClient() }
+
+/**
+ * HTTP client for the Invidious probe.
+ *
+ * Separate from [probeHttpClient] because this one makes a different *kind* of call: a ranged
+ * download that follows a cross-host CDN redirect. Public instances are frequently slow, and the
+ * stream leg needs longer than a default 10-second read timeout to be a fair test rather than a
+ * timeout that looks like a refusal.
+ */
+private val invidiousProbeHttpClient: OkHttpClient by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(60, TimeUnit.SECONDS)
+        .build()
+}

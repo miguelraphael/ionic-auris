@@ -161,31 +161,68 @@ known to YouTube. So attestation is **achievable** — the doc's earlier "cannot
 is **not sufficient**. The gate that remains is a signed-in account, which is exactly why every
 large third-party client (e.g. ArchiveTune) solves this by *authenticating* rather than bypassing.
 
-**One open variable:** that experiment ran from a **datacenter IP**, and YouTube's refusal of
-unauthenticated `/player` is frequently IP-reputation driven. From a residential or mobile IP the
-same request *may* succeed. The decisive test is therefore **on-device, from the handset's own
-network** — not from CI, and not from a server.
+**The datacenter-IP hypothesis has been tested and is false.** The same probe was re-run from the
+handset itself, on a residential network (Wi-Fi behind a home router, `192.168.1.4`), and the
+answers were **identical to the server's**:
+
+| Client | On the handset, residential IP |
+| --- | --- |
+| `WEB_REMIX` | `UNPLAYABLE` — "Video unavailable" |
+| `WEB` | `UNPLAYABLE` — "Video unavailable" |
+| `MWEB` | `UNPLAYABLE` — "The page needs to be reloaded." |
+| `ANDROID_MUSIC` | `LOGIN_REQUIRED` — **"Please sign in"** |
+| `TVHTML5_SIMPLY_EMBEDDED_PLAYER` | `ERROR` — "YouTube is no longer supported in this application or device." |
+| `WEB_EMBEDDED_PLAYER` | `ERROR` — "This video is unavailable" |
+
+`title` came back on the web clients throughout, so the requests were well-formed and the videos
+were known. The wall is therefore neither IP reputation nor attestation: **it is the account, on
+any network.** The route is closed, and no further resolution code is justified.
+
+*(`ANDROID` and `IOS` answered HTTP 400 in that run — the probe's client context for those two is
+incomplete. That is a defect in the probe, not a finding: neither could overturn the result when
+`ANDROID_MUSIC`, the closest identity, states the gate outright.)*
 
 An important consequence: because attestation was never the gate, the cipher/deobfuscation
-subsystem (signature + `n` transform) was never built — and should not be, until a client identity
-is seen returning formats at all. A `signatureCipher` only needs deobfuscating after `/player`
-has decided to serve one.
+subsystem (signature + `n` transform) was never built — and must not be. A `signatureCipher` only
+needs deobfuscating after `/player` has decided to serve one, and it never does.
 
-### Decision: YouTube audio extraction is DEFERRED
+### Decision: stream through a public Invidious instance, behind a seam
 
-**Status: not implemented in this release, deliberately.** Two independent blockers, either of
-which alone is sufficient:
+**Status: chosen 2026-10.** The *first-party* route — Auris talking to YouTube's own InnerTube
+endpoints — is **closed**, and stays closed; the evidence is in *Verified 2026-10* above. What
+remains is a **proxied** route: a public [Invidious](https://invidious.io) instance, which solves
+the attestation we could not (server-side) and hands back a plain audio URL.
 
-**1. Licensing.** Every viable route is GPL-3.0. Auris has **no `LICENSE` file** — all rights
-reserved by default — so linking one would force the entire app to GPL and open-source. That is the
-project owner's call, not an engineering one, and it has not been made.
+**Licensing — and why this is not the GPL problem again.** Invidious is **AGPL-3.0**, but Auris
+consumes its **HTTP API** and nothing else. Consuming a network service is not creating a
+derivative work, and AGPL §13 binds whoever *operates* the server, not the client — so Auris
+stays closed-source, exactly as it is today. NewPipeExtractor was rejected for the opposite
+reason: it is a **library linked into the APK**, which does force the whole app to GPL. The one
+rule this imposes: **do not copy Invidious source into this tree.**
 
-**2. Technical.** The gate is an authenticated account, not attestation. A complete BotGuard
-attestation was performed and it did not unblock playback — see *Verified 2026-10* below. The
-earlier claim here, that a WebView "cannot run inside a `MediaSessionService`", was wrong in
-principle: the *app process* can host a WebView while the service plays, and the service is not
-where minting would have to live. It is moot regardless, because minting a PO token is not what
-unblocks `/player`.
+**Technical — verified 2026-10, end to end:**
+
+| Step | Result |
+| --- | --- |
+| `GET /api/v1/videos/{id}` on `invidious.f5.si` | HTTP 200, 26 adaptive formats, direct `googlevideo.com` URLs |
+| Ranged GET on the returned audio URL | HTTP 206, the **full 1,628,559-byte track** at 2.4 MB/s |
+| That request began as a `302` | A CDN node redirect, not an IP lock — following it delivers real Opus |
+
+So the catalogue is genuine YouTube Music, **no account is involved**, and the circumvention
+happens on the instance rather than in this app.
+
+**The cost, which is real.** Of 11 instances listed, **exactly one** has its API open; the rest
+answer `403 Endpoint disabled`, `401`, or `forbidden`. The trend is instances *closing* their
+APIs. This route therefore depends on **a single volunteer's server**, and one that closes or
+dies takes playback with it. That is precisely why the client is not built against an instance
+but against a **configurable, health-checked list with failover and a resolved-URL cache** — so a
+dead instance is a settings change rather than a broken app. Auris remains strictly client-side;
+no self-hosted server is required or assumed.
+
+**Terms of service.** Still unofficial access to YouTube, but the circumvention is the instance
+operator's, not ours — and materially different from the JioSaavn-proxy route that was declined,
+which redistributed a *paid* catalogue. Invidious is a free-software front end for publicly
+viewable videos.
 
 ### What was evaluated
 
@@ -195,6 +232,8 @@ unblocks `/player`.
 | ArchiveTune (6.9k stars) | **Rejected.** Verified from its own `libs.versions.toml`: it depends on `com.github.TeamNewPipe:NewPipeExtractor`. So it inherits the same GPL-3.0 problem — plus it is an *app*, not a library, so nothing is importable. |
 | Obsidian-Music | **Irrelevant.** Apache-2.0 and Media3-based, but the repository contains **no source** — only `README.md`, `LICENSE`, `update.json` and screenshots. It is also a *local-file* player with no streaming at all. |
 | BotGuard attestation | **Attempted and found insufficient.** A valid, video-id-bound PO token was minted end-to-end offline (2026-10) and `/player` still refused every client identity. See *Verified 2026-10*. |
+| Invidious (public instance) | **Chosen.** AGPL-3.0, but consumed as an HTTP API — no copyleft in the APK, and no account. Verified 2026-10 to deliver a full audio track. Its one weakness is instance availability, which the `MusicSource` seam is built to absorb. |
+| Authenticated cookies (own account) | **Not chosen.** Technically the only unblocked *first-party* path, but it puts bearer credentials for the user's entire Google account into the app. Held in reserve, below. |
 
 ArchiveTune is the most useful data point in that table, and not for the reason it might appear: its
 own legal disclaimer states it **"does not bypass YouTube's technical protections"** — it
@@ -204,17 +243,18 @@ That makes this a product decision about accounts, not an outstanding engineerin
 
 ### If this is revisited
 
-The only unblocked path is user-supplied authenticated cookies (their own account). That is a ToS
-call for the project owner, and the UI work is: a sign-in screen, cookie persistence in the existing
+The fallback, if the instance route ever proves unusable, is user-supplied authenticated
+cookies (their own account) — the only unblocked *first-party* path. That is a ToS call for the
+project owner, and the UI work is: a sign-in screen, cookie persistence in the existing
 `sync_sessions`-style secure storage, and expiry handling in `StreamRefusal`. `InnerTubeClient` is
-already built so this is a config change — but **it should be an explicit decision, never inherited
-from a GPL app.**
+already built, so this is a config change — but **it should be an explicit decision, never
+inherited from a GPL app.**
 
 Two caveats before that decision is taken. First, **security**: Google session cookies are
 bearer credentials for the user's entire Google account, not just YouTube Music. Any store that
 holds them is a high-value target, and a leaked cookie cannot be scoped down. Second, **order of
-operations**: run the on-device probe from *Verified 2026-10* first. If a residential IP returns
-formats unauthenticated, this entire section is moot.
+operations**: the on-device probe is the gate. A server-side success from a datacenter has now
+been wrong twice, so nothing about playback is decided from a server result.
 
 ---
 

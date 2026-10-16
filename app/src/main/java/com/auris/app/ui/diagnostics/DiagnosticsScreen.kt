@@ -58,6 +58,9 @@ data class DiagnosticsUiState(
     /** One line per client identity, from the unauthenticated stream-access probe. */
     val probeLines: List<String> = emptyList(),
     val isProbing: Boolean = false,
+    /** One line per Invidious instance, from the reachability-and-playback probe. */
+    val invidiousProbeLines: List<String> = emptyList(),
+    val isInvidiousProbing: Boolean = false,
 )
 
 /**
@@ -75,6 +78,9 @@ data class DiagnosticsUiState(
  *   identities. Also injected, for the same reason — the probe needs an HTTP client and a
  *   dispatcher, neither of which belongs in a composable.
  * @param onCopyProbeResults copies the probe lines to the clipboard.
+ * @param onProbeInvidious runs the Invidious probe: reachability of each instance, then a ranged
+ *   GET on the audio URL it resolves, so "bytes arrived" is measured rather than assumed.
+ * @param onCopyInvidiousResults copies those lines to the clipboard.
  */
 @Composable
 fun DiagnosticsScreen(
@@ -83,6 +89,8 @@ fun DiagnosticsScreen(
     onBack: () -> Unit,
     onProbeStreamAccess: () -> Unit = {},
     onCopyProbeResults: () -> Unit = {},
+    onProbeInvidious: () -> Unit = {},
+    onCopyInvidiousResults: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
@@ -299,6 +307,109 @@ fun DiagnosticsScreen(
                         ) {
                             Column(Modifier.padding(12.dp)) {
                                 state.probeLines.forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                        ),
+                                        color = AurisOnSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Invidious playback probe.
+            //
+            // Separate from the probe above because it answers the *opposite* question. That one
+            // asks whether YouTube will talk to us directly (it will not). This one asks whether
+            // the route that does work — a public instance in front of YouTube — reaches this
+            // device, and the ranged GET is the part that matters: a `200` from the API says the
+            // instance resolved a URL, not that this network can pull audio from it.
+            Surface(
+                shape = RoundedCornerShape(AurisRadii.artworkSmall),
+                color = AurisSurface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Invidious playback probe",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = AurisOnSurface,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Resolves audio through the public Invidious instances and then " +
+                            "reads the first 64 KiB of the stream itself — a status code cannot " +
+                            "tell you whether audio actually arrives. Run it on Wi-Fi, then again " +
+                            "on mobile data; the answer can differ.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AurisOnSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(AurisRadii.button),
+                            color = if (state.isInvidiousProbing) AurisTrack else AurisAccent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    enabled = !state.isInvidiousProbing,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = onProbeInvidious,
+                                )
+                                .padding(vertical = 12.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = if (state.isInvidiousProbing) "Probing…" else "Run probe",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (state.isInvidiousProbing) {
+                                        AurisOnSurfaceVariant
+                                    } else {
+                                        AurisBackground
+                                    },
+                                )
+                            }
+                        }
+
+                        if (state.invidiousProbeLines.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(AurisRadii.button),
+                                color = AurisTrack,
+                                modifier = Modifier
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = onCopyInvidiousResults,
+                                    )
+                                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                            ) {
+                                Text(
+                                    text = "Copy",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = AurisOnSurface,
+                                )
+                            }
+                        }
+                    }
+
+                    if (state.invidiousProbeLines.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(AurisRadii.chip),
+                            color = AurisTrack,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                state.invidiousProbeLines.forEach { line ->
                                     Text(
                                         text = line,
                                         style = MaterialTheme.typography.bodySmall.copy(
