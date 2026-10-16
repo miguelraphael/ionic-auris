@@ -264,6 +264,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             auth = supabaseClient.auth,
             syncDao = syncDao,
             syncScheduler = syncScheduler,
+            remote = supabaseLibraryDataSource,
             appScope = applicationScope,
             ioDispatcher = ioDispatcher,
         )

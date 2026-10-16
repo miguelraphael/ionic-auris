@@ -2,6 +2,7 @@ package com.auris.app.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,6 +69,7 @@ fun SettingsScreen(
     nsfwVisible: Boolean = false,
     onNsfwVisibleChange: (Boolean) -> Unit = {},
     onSignOut: () -> Unit = {},
+    onDeleteAccount: () -> Unit = {},
 ) {
     Box(
         modifier = modifier
@@ -89,6 +91,14 @@ fun SettingsScreen(
             }
 
             item { SmallButton(text = "Sign out", onClick = onSignOut) }
+
+            item {
+                DestructiveButton(
+                    text = "Delete account",
+                    enabled = !state.isDeletingAccount,
+                    onClick = onDeleteAccount,
+                )
+            }
 
             item { SectionTitle("Extension repository") }
 
@@ -470,6 +480,31 @@ private fun SmallButton(text: String, onClick: () -> Unit) {
             text = text,
             style = MaterialTheme.typography.labelLarge,
             color = AurisBackground,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
+        )
+    }
+}
+
+/**
+ * Irreversible action styling: error container, disabled while running so a
+ * second tap cannot fire a duplicate delete mid-handover to the login gate.
+ */
+@Composable
+private fun DestructiveButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(AurisRadii.chip),
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier.clickable(
+            enabled = enabled,
+            indication = null,
+            interactionSource = remember { MutableInteractionSource() },
+            onClick = onClick,
+        ),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onError,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
         )
     }

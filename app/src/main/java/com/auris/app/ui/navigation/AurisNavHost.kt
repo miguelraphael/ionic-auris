@@ -347,6 +347,7 @@ fun AurisNavHost(
                 onOpenExtensions = { navController.navigate(Routes.EXTENSIONS) },
                 onOpenDiagnostics = { navController.navigate(Routes.diagnostics) },
                 onSignOut = settingsViewModel::signOut,
+                onDeleteAccount = settingsViewModel::deleteAccount,
             )
         }
 

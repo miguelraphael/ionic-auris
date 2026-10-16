@@ -57,6 +57,8 @@ data class SettingsUiState(
     val pinnedCount: Int = 0,
     val unrecordedCount: Int = 0,
     val message: String? = null,
+    /** Guards the irreversible delete against double-taps. */
+    val isDeletingAccount: Boolean = false,
 ) {
     /** True when nothing at all has been pinned yet, so the screen can explain rather than list. */
     val isEmpty: Boolean get() = extensions.isEmpty()
@@ -268,6 +270,29 @@ class SettingsViewModel(
      */
     fun signOut() {
         viewModelScope.launch { authRepository.signOut() }
+    }
+
+    /**
+     * Deletes the account's server library, signs out, and returns to the
+     * login gate through the session flow — same routing as sign-out, no
+     * navigation here. Failures surface as a message and keep the session,
+     * so a half-deleted account is impossible from the user's side.
+     */
+    fun deleteAccount() {
+        if (_state.value.isDeletingAccount) return
+        _state.value = _state.value.copy(isDeletingAccount = true, message = null)
+        viewModelScope.launch {
+            authRepository.deleteAccount()
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        isDeletingAccount = false,
+                        message = error.message?.takeIf { it.isNotBlank() }
+                            ?: "Could not delete the account. Check your connection and try again.",
+                    )
+                }
+            // Success clears the session, which drops this screen for the gate;
+            // the flag intentionally stays on so nothing else can fire mid-handover.
+        }
     }
 
     class Factory(

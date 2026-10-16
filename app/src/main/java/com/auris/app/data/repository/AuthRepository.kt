@@ -2,6 +2,7 @@ package com.auris.app.data.repository
 
 import com.auris.app.data.local.SyncDao
 import com.auris.app.data.local.entity.SyncSessionEntity
+import com.auris.app.data.remote.SupabaseLibraryDataSource
 import com.auris.app.data.sync.SyncScheduler
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.SignOutScope
@@ -35,6 +36,7 @@ class AuthRepository(
     private val auth: Auth,
     private val syncDao: SyncDao,
     private val syncScheduler: SyncScheduler,
+    private val remote: SupabaseLibraryDataSource,
     appScope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -90,6 +92,34 @@ class AuthRepository(
     suspend fun signOut() {
         runCatching { auth.signOut(SignOutScope.GLOBAL) }
         withContext(ioDispatcher) { syncDao.clearSession() }
+    }
+
+    /**
+     * Deletes the account's server library, signs out, and clears the session.
+     *
+     * ### Why no `auth.admin.deleteUser`
+     * That call needs the service_role key, which must never ship in the app —
+     * and GoTrue offers no self-delete for regular users. So deletion here
+     * means: every row owned by this user is removed (RLS owner policy), then
+     * the session is revoked and dropped, which routes back to the login gate
+     * through the session flow. The `auth.users` identity itself can only be
+     * removed server-side (dashboard or a privileged function).
+     *
+     * ### All-or-nothing ordering
+     * The remote wipe runs first because it needs the session: once signed
+     * out, RLS denies everything. If the wipe throws (offline, rejected), the
+     * session is kept and the error surfaces — signing out anyway would orphan
+     * server data under a live account with no way back to it.
+     */
+    suspend fun deleteAccount(): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            val userId = auth.currentSessionOrNull()?.user?.id
+                ?: syncDao.currentSession()?.userId
+                ?: error("Not signed in")
+            remote.deleteAllEntries(userId)
+            runCatching { auth.signOut(SignOutScope.GLOBAL) }
+            syncDao.clearSession()
+        }
     }
 
     private suspend fun persistCurrent() {

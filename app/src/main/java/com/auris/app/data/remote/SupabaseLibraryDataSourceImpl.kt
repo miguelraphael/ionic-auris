@@ -54,6 +54,18 @@ class SupabaseLibraryDataSourceImpl(
         }
     }
 
+    override suspend fun deleteAllEntries(userId: String) {
+        withContext(Dispatchers.IO) {
+            call("delete all for $userId") {
+                postgrest.from(TABLE).delete {
+                    filter {
+                        eq("user_id", userId)
+                    }
+                }
+            }
+        }
+    }
+
     override suspend fun fetchEntries(userId: String, since: Long?): List<LibraryEntryEntity> {
         return withContext(Dispatchers.IO) {
             val rows: List<LibraryEntryRow> = call("pull") {

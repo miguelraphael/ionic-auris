@@ -55,6 +55,12 @@ interface SupabaseLibraryDataSource {
     suspend fun deleteEntry(userId: String, entryId: String)
 
     /**
+     * Deletes every row owned by [userId]. Used by account deletion, where
+     * per-row deletes would be a round trip per title for no benefit.
+     */
+    suspend fun deleteAllEntries(userId: String)
+
+    /**
      * @param since high-water mark in epoch millis, or null for a full pull.
      * @return remote rows, newest first.
      */
