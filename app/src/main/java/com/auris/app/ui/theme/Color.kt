@@ -38,27 +38,52 @@ val BrandOrange = Color(0xFFFB923C)
 /** The brand sweep, cyan to orange. UI chrome only — never tint the logo with it. */
 val BrandGradient = listOf(BrandCyan, BrandIndigo, BrandPurple, BrandOrange)
 
-// ---- Reference UI surfaces (sampled from UI/music-player-UI.jpg at 1080x2400) ----
+// ---- Glass ----
+// On an OLED base, elevation is a pane of light rather than a lighter grey. Every
+// card, chip, bar and field is one of these fills, which is what makes the whole app
+// read like the auth gate. Real backdrop blur needs API 31 and the app's floor is 26,
+// so the frost is layered translucency, not a blur.
+
+/** Standard panel fill: cards, list rows, header buttons, nav pill. */
+val GlassFill = Color(0x1AFFFFFF)
+
+/** Lower half of a pane's fill — it dims as it falls away from the light. */
+val GlassFillSubtle = Color(0x0AFFFFFF)
+
+/** Rail behind progress bars and unselected chips. */
+val GlassTrack = Color(0x12FFFFFF)
+
+/** Lit top edge of a pane. */
+val GlassEdge = Color(0x33FFFFFF)
+
+/** Bottom edge, where the rim falls into shadow. */
+val GlassEdgeSubtle = Color(0x0DFFFFFF)
+
+/** Input field fill, a touch brighter than a panel so it reads as inset glass. */
+val GlassField = Color(0x0FFFFFFF)
+
+// ---- Elevated surfaces ----
 
 /**
- * Root app background: true OLED black, slightly lifted off pure #000 so elevation
- * (surfaces, glass) still reads as a layer rather than a hole. The artwork gradient
- * fades into this.
+ * Root app background: true OLED black, slightly lifted off pure #000 so glass still
+ * reads as a layer rather than a hole. Artwork gradients fade into this.
  */
 val AurisBackground = Color(0xFF0B0B0E)
 
-/** Floating nav pill surface. */
-val AurisSurface = Color(0xFF2C303C)
+/** Floating nav pill, cards, sheets — a frosted pane rather than a solid grey. */
+val AurisSurface = GlassFill
 
-/** Progress bar unfilled track. */
-val AurisTrack = Color(0xFF252A2E)
+/** Progress bar rail and unselected chip fill. */
+val AurisTrack = GlassTrack
 
 /** Seek / volume bar fill. */
 val AurisAccent = Color(0xFF86B4FF)
 
 val AurisOnSurface = Color(0xFFE8EAF0)
 val AurisOnSurfaceVariant = Color(0xFF9AA0AE)
-val AurisOutline = Color(0xFF3A404D)
+
+/** Hairline rim, translucent so it lights up whatever sits behind it. */
+val AurisOutline = GlassEdge
 
 /** The logo gradient, used for splash marks, selected-nav pills and focus rings. */
 val LogoGradient = listOf(AurisBlue, AurisViolet, AurisMagenta, AurisOrange)

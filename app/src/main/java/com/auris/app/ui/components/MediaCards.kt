@@ -91,6 +91,10 @@ fun MediaArtwork(
 /**
  * Standard library / discover grid cell: square rounded art with a title, subtitle and an
  * optional progress bar pinned to the bottom of the art.
+ *
+ * Only the artwork is clipped to [ArtworkShape] (inside [MediaArtwork]). The card body is left
+ * unclipped on purpose: clipping the whole column rounded the title and subtitle off at their
+ * corners, which is what made long titles look cut off at the edges.
  */
 @Composable
 fun MediaGridCard(
@@ -103,7 +107,6 @@ fun MediaGridCard(
 ) {
     Column(
         modifier = modifier
-            .clip(ArtworkShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

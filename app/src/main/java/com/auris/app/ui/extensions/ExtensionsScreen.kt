@@ -1,8 +1,8 @@
 package com.auris.app.ui.extensions
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +72,8 @@ import com.auris.app.ui.theme.AurisOutline
 import com.auris.app.ui.theme.AurisRadii
 import com.auris.app.ui.theme.AurisSurface
 import com.auris.app.ui.theme.AurisTrack
+import com.auris.app.ui.theme.GlassEdge
+import com.auris.app.ui.theme.GlassFill
 import com.auris.app.ui.theme.rememberArtworkPaletteValue
 import kotlin.math.roundToInt
 
@@ -201,31 +203,16 @@ private fun ExtensionsHeader(
     onBack: () -> Unit,
 ) {
     Column {
+        // Nav row: back on the left, the actions on the right, so the title below owns the full
+        // width. Side-packing the title between the back button and three 44dp actions left it
+        // ~108dp and wrapped "Extensions" onto two lines.
         Row(verticalAlignment = Alignment.CenterVertically) {
             HeaderIconButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
                 onClick = onBack,
             )
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "Extensions",
-                    style = MaterialTheme.typography.displayLarge,
-                    color = AurisOnSurface,
-                )
-                Text(
-                    text = if (isLoading) {
-                        "Loading ${repo.shortName ?: repo.name}…"
-                    } else {
-                        "$installed of $extensions installed" +
-                            if (updates > 0) " · $updates update${if (updates == 1) "" else "s"}" else ""
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = AurisOnSurfaceVariant,
-                )
-            }
-
+            Spacer(Modifier.weight(1f))
             HeaderIconButton(
                 icon = Icons.Filled.Refresh,
                 contentDescription = "Refresh",
@@ -248,6 +235,26 @@ private fun ExtensionsHeader(
                 onClick = onOpenSettings,
             )
         }
+
+        Spacer(Modifier.height(12.dp))
+
+        Text(
+            text = "Extensions",
+            style = MaterialTheme.typography.headlineMedium,
+            color = AurisOnSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = if (isLoading) {
+                "Loading ${repo.shortName ?: repo.name}…"
+            } else {
+                "$installed of $extensions installed" +
+                    if (updates > 0) " · $updates update${if (updates == 1) "" else "s"}" else ""
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = AurisOnSurfaceVariant,
+        )
 
         Spacer(Modifier.height(14.dp))
 
@@ -363,10 +370,9 @@ private fun ExtensionRow(
 ) {
     Surface(
         shape = RoundedCornerShape(AurisRadii.artwork),
-        color = AurisSurface.copy(alpha = 0.55f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, AurisOutline.copy(alpha = 0.35f), RoundedCornerShape(AurisRadii.artwork)),
+        color = GlassFill,
+        border = BorderStroke(1.dp, GlassEdge),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         // Two lines: the title gets the full row width — extension names are long
         // and a side-packed title truncates mid-word on phones — with the icon,

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
@@ -122,7 +123,9 @@ fun HomeScreen(
                         title = entry.title,
                         subtitle = entry.author,
                         progress = entry.progress.takeIf { it > 0f },
-                        modifier = Modifier.size(width = 150.dp, height = 210.dp),
+                        // Width only: the card sizes to its content, so the 2-line title is never
+                        // squeezed out by a fixed height.
+                        modifier = Modifier.width(150.dp),
                         onClick = { onEntryClick(entry) },
                     )
                 }
@@ -137,7 +140,7 @@ fun HomeScreen(
                         title = entry.title,
                         subtitle = entry.currentUnitTitle ?: entry.subtitle,
                         progress = entry.progress.takeIf { it > 0f },
-                        modifier = Modifier.size(width = 120.dp, height = 200.dp),
+                        modifier = Modifier.width(120.dp),
                         onClick = { onEntryClick(entry) },
                     )
                 }
@@ -152,7 +155,7 @@ fun HomeScreen(
                         title = entry.title,
                         subtitle = entry.currentUnitTitle ?: entry.subtitle,
                         progress = entry.progress.takeIf { it > 0f },
-                        modifier = Modifier.size(width = 120.dp, height = 200.dp),
+                        modifier = Modifier.width(120.dp),
                         onClick = { onEntryClick(entry) },
                     )
                 }

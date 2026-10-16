@@ -8,7 +8,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,6 +50,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.auris.app.ui.theme.AurisAccent
+import com.auris.app.ui.theme.AurisBackdrop
 import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisLogo
 import com.auris.app.ui.theme.AurisOnSurface
@@ -59,18 +59,9 @@ import com.auris.app.ui.theme.AurisRadii
 import com.auris.app.ui.theme.AurisTrack
 import com.auris.app.ui.theme.BrandIndigo
 import com.auris.app.ui.theme.BrandPurple
-
-// ---- Glass tokens -----------------------------------------------------------------
-// Aurora fills read as frosted panes on the OLED base without a real backdrop blur,
-// which only exists from API 31 and would silently no-op on the app's API 26 floor.
-
-private val GlassCardTop = Color.White.copy(alpha = 0.10f)
-private val GlassCardBottom = Color.White.copy(alpha = 0.03f)
-private val GlassCardEdgeTop = Color.White.copy(alpha = 0.22f)
-private val GlassCardEdgeBottom = Color.White.copy(alpha = 0.05f)
-private val GlassFieldFill = Color.White.copy(alpha = 0.06f)
-private val GlassFieldEdge = Color.White.copy(alpha = 0.10f)
-private val GhostEdge = Color.White.copy(alpha = 0.16f)
+import com.auris.app.ui.theme.GlassCard
+import com.auris.app.ui.theme.GlassEdge
+import com.auris.app.ui.theme.GlassField
 
 /**
  * Mandatory sign-in gate: the library syncs per user, so there is no
@@ -86,27 +77,7 @@ fun AuthScreen(
     modifier: Modifier = Modifier,
     onDemoAccount: () -> Unit = {},
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(AurisBackground),
-    ) {
-        // Brand glow: a soft indigo-to-purple sweep behind the glass, so the card
-        // has something to sit on top of rather than floating on flat black.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            BrandIndigo.copy(alpha = 0.30f),
-                            AurisBackground.copy(alpha = 0f),
-                            BrandPurple.copy(alpha = 0.16f),
-                        ),
-                    ),
-                ),
-        )
-
+    AurisBackdrop(modifier = modifier) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -244,34 +215,6 @@ fun AuthScreen(
     }
 }
 
-/**
- * Frosted pane the auth controls sit on: a translucent fill, a brighter top edge
- * that falls away toward the bottom, and rounded corners. The linear-gradient
- * border is what sells the "lit from above" glass read.
- */
-@Composable
-private fun GlassCard(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val shape = RoundedCornerShape(AurisRadii.sheet)
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(
-                Brush.verticalGradient(listOf(GlassCardTop, GlassCardBottom)),
-            )
-            .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(listOf(GlassCardEdgeTop, GlassCardEdgeBottom)),
-                shape = shape,
-            )
-            .padding(horizontal = 18.dp, vertical = 20.dp),
-        content = content,
-    )
-}
-
 /** Primary call to action, filled with the indigo-to-purple brand sweep. */
 @Composable
 private fun PrimaryButton(
@@ -327,7 +270,7 @@ private fun GhostButton(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .border(width = 1.dp, color = GhostEdge, shape = shape)
+            .border(width = 1.dp, color = GlassEdge, shape = shape)
             .clickable(
                 enabled = enabled,
                 indication = null,
@@ -411,8 +354,8 @@ private fun AuthField(
 
     Surface(
         shape = RoundedCornerShape(AurisRadii.button),
-        color = GlassFieldFill,
-        border = BorderStroke(1.dp, GlassFieldEdge),
+        color = GlassField,
+        border = BorderStroke(1.dp, GlassEdge),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(

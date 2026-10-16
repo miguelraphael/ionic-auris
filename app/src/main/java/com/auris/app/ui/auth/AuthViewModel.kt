@@ -70,6 +70,18 @@ class AuthViewModel(
         )
     }
 
+    /**
+     * Clears the transient state when the gate becomes visible again.
+     *
+     * The gate ViewModel is Activity-scoped, so it outlives a successful sign-in. On success
+     * [isLoading] is deliberately left on until the gate routes away — but signing out later
+     * re-shows the *same* instance, and without this reset the button would still be spinning
+     * with every field disabled, leaving no way to sign back in until the process is killed.
+     */
+    fun onGateShown() {
+        _state.value = _state.value.copy(isLoading = false, error = null, notice = null)
+    }
+
     fun submit() {
         val email = _state.value.email.trim()
         val password = _state.value.password

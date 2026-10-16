@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
-import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,8 +43,8 @@ import androidx.compose.ui.unit.Dp
 import com.auris.app.ui.navigation.TopLevelDestination
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
-import com.auris.app.ui.theme.AurisSurface
 import com.auris.app.ui.theme.NavPillShape
+import com.auris.app.ui.theme.glassPanel
 
 /**
  * Floating, pill-shaped bottom navigation.
@@ -80,8 +79,7 @@ fun FloatingNavigationBar(
                 .padding(bottom = 28.dp)
                 .widthIn(max = maxWidth)
                 .height(50.dp)
-                .clip(NavPillShape)
-                .background(AurisSurface)
+                .glassPanel(NavPillShape)
                 .selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,

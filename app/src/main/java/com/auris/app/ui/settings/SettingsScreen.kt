@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -33,15 +32,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.unit.dp
 import com.auris.app.ui.theme.AurisAccent
+import com.auris.app.ui.theme.AurisBackdrop
 import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisRadii
 import com.auris.app.ui.theme.AurisSurface
+import com.auris.app.ui.theme.BrandIndigo
+import com.auris.app.ui.theme.BrandPurple
 
 /**
  * Settings.
@@ -71,11 +76,7 @@ fun SettingsScreen(
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(AurisBackground),
-    ) {
+    AurisBackdrop(modifier = modifier) {
         LazyColumn(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 130.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -90,7 +91,7 @@ fun SettingsScreen(
                 )
             }
 
-            item { SmallButton(text = "Sign out", onClick = onSignOut) }
+            item { BrandButton(text = "Sign out", onClick = onSignOut) }
 
             item {
                 DestructiveButton(
@@ -456,7 +457,7 @@ private fun InfoBanner(text: String, isWarning: Boolean) {
         color = if (isWarning) {
             MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
         } else {
-            AurisSurface.copy(alpha = 0.7f)
+            AurisSurface
         },
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -481,6 +482,29 @@ private fun SmallButton(text: String, onClick: () -> Unit) {
             style = MaterialTheme.typography.labelLarge,
             color = AurisBackground,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
+        )
+    }
+}
+
+/**
+ * The screen's primary action, filled with the same indigo-to-purple brand sweep as the sign-in
+ * gate's call to action. Secondary actions stay [SmallButton], so Settings carries the gate's
+ * hierarchy instead of a row of identical accent pills.
+ */
+@Composable
+private fun BrandButton(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(AurisRadii.chip))
+            .background(Brush.horizontalGradient(listOf(BrandIndigo, BrandPurple)))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White,
         )
     }
 }

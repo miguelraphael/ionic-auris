@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android 12+ splash screen.
+
+      The platform defaults the splash background to the window background and the icon to the
+      launcher icon — a flat white outline on a charcoal tile, which is neither the app's OLED base
+      nor the lockup the login screen shows. Both are pinned here so the splash is the same OLED
+      black plus the same logo as the auth gate.
+
+      The icon is a pre-padded copy of logo_full_light (see drawable-nodpi/splash_logo.png): the
+      platform masks the splash icon to a circle, and the raw lockup bleeds to the canvas edge, so
+      the padding is what keeps the wordmark from being clipped.
+    -->
+    <style name="Theme.Auris" parent="Theme.Auris.Base">
+        <item name="android:windowSplashScreenBackground">@color/auris_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/auris_background</item>
+    </style>
+</resources>

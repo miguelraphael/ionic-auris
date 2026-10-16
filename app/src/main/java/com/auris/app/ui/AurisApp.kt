@@ -43,6 +43,9 @@ import com.auris.app.ui.components.FloatingNavigationBar
 import com.auris.app.ui.navigation.AurisNavHost
 import com.auris.app.ui.navigation.Routes
 import com.auris.app.ui.navigation.TopLevelDestination
+import com.auris.app.ui.theme.AurisBackdrop
+import com.auris.app.ui.theme.AurisBackground
+import com.auris.app.ui.theme.AurisLogo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
@@ -99,11 +102,16 @@ fun AurisApp(
     }
 
     if (!gateReady) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
-        )
+        // Splash: the same OLED + brand backdrop and the same lockup the gate shows, so the
+        // handoff from the system splash to the login screen is one continuous frame.
+        AurisBackdrop(modifier = modifier) {
+            AurisLogo(
+                includeWordmark = true,
+                size = 148.dp,
+                background = AurisBackground,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
         return
     }
 
@@ -122,11 +130,7 @@ fun AurisApp(
 
     val showNavBar = TopLevelDestination.entries.any { it.route == currentRoute }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
+    AurisBackdrop(modifier = modifier) {
         AurisNavHost(
             navController = navController,
             library = library,
@@ -217,6 +221,10 @@ private fun AuthGate(
         factory = AuthViewModel.factory(authRepository),
     )
     val authState by authViewModel.state.collectAsStateWithLifecycle()
+
+    // The ViewModel is Activity-scoped and survives a sign-out, so clearing the transient state
+    // here is what lets the user sign back in without killing the app. See [AuthViewModel.onGateShown].
+    LaunchedEffect(Unit) { authViewModel.onGateShown() }
 
     Box(
         modifier = modifier

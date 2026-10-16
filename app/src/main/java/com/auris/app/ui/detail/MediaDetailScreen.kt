@@ -420,7 +420,7 @@ private fun Synopsis(synopsis: String) {
 private fun MetadataUnavailableNote() {
     Surface(
         shape = RoundedCornerShape(AurisRadii.chip),
-        color = AurisSurface.copy(alpha = 0.6f),
+        color = AurisSurface,
     ) {
         Text(
             // Stated, not hidden. A user who sees a bare title cannot tell whether the lookup
@@ -477,10 +477,10 @@ private fun UnitRow(
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 5.dp)
             .clip(RoundedCornerShape(AurisRadii.artworkSmall))
-            .background(if (isCurrent) AurisAccent.copy(alpha = 0.10f) else AurisSurface.copy(alpha = 0.45f))
+            .background(if (isCurrent) AurisAccent.copy(alpha = 0.10f) else AurisSurface)
             .border(
                 width = 1.dp,
-                color = if (isCurrent) AurisAccent.copy(alpha = 0.5f) else AurisOutline.copy(alpha = 0.3f),
+                color = if (isCurrent) AurisAccent.copy(alpha = 0.5f) else AurisOutline,
                 shape = RoundedCornerShape(AurisRadii.artworkSmall),
             )
             .clickable(
@@ -599,7 +599,7 @@ private fun EmptyBlock(label: String) {
 private fun TransientNotice(message: String) {
     Surface(
         shape = RoundedCornerShape(AurisRadii.artworkSmall),
-        color = AurisSurface.copy(alpha = 0.8f),
+        color = AurisSurface,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 4.dp),

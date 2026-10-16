@@ -356,7 +356,7 @@ private fun MessageBanner(message: String, isError: Boolean) {
     Surface(
         shape = RoundedCornerShape(AurisRadii.chip),
         color = if (isError) MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
-        else AurisSurface.copy(alpha = 0.8f),
+        else AurisSurface,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 4.dp),
