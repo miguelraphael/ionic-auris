@@ -1,32 +1,35 @@
 package com.auris.app.ui.music
 
-import com.auris.app.data.remote.music.InnerTubePlayerResponse
+import com.auris.app.data.remote.music.StreamRefusalInfo
 
 /**
  * Why a playback attempt produced no stream.
  *
  * ### The distinction this exists to preserve
- * InnerTube answers every stream request from an unauthenticated client with `UNPLAYABLE` and an
- * empty format list — the track is present and playable, the *request* is what was declined. That
- * is verified live for `WEB_REMIX`, `ANDROID_MUSIC` and every other client identity tried.
+ * "No audio" has three different causes and they call for three different actions:
  *
- * The naive message for that state is "Nothing playable", which is wrong twice: it implies the
- * track is missing, and it implies retrying might help. Neither is true. The user needs to be
- * told the request was refused, because the only fix is a different resolution strategy.
+ * 1. **The track cannot be played** — private, removed, region-blocked. Choosing another song is
+ *    the only remedy, and retrying is wasted effort.
+ * 2. **A provider answered but declined** — YouTube refuses unauthenticated first-party requests
+ *    outright (verified 2026-10), and a public Invidious instance can answer that it has no
+ *    formats for a track. Retrying may work later, but not against the same provider.
+ * 3. **No provider answered** — every configured instance was unreachable, or none is configured
+ *    at all. This is a *settings* problem, and telling the user the track is unavailable would
+ *    send them looking for a different song when the fix is in Settings.
  *
- * The split is by whether `playabilityStatus.reason` describes *this track*. A reason naming the
- * content — private, removed, region-blocked — will never work and choosing another song is the
- * remedy. Anything else is about the request.
+ * Collapsing these into "Nothing playable" is wrong in all three cases, so they are kept apart.
+ * The split between 1 and 2 is by whether the reason names content — "private", "removed",
+ * "not available" — and the split for 3 is that there was no refusal at all, only an error.
  */
 object StreamRefusal {
 
     /**
-     * `playabilityStatus.reason` fragments that describe the track rather than the request.
+     * Reason fragments that describe the track rather than the request.
      *
-     * Matched as substrings because YouTube phrases these freely ("This video is private",
-     * "Video unavailable in your country"). Order and breadth matter more than precision here:
-     * a reason wrongly classified as per-track sends the user to pick another song, while one
-     * wrongly classified as a request failure sends them to retry something that never will.
+     * Matched as substrings because providers phrase these freely ("This video is private",
+     * "Video unavailable in your country"). Order and breadth matter more than precision: a
+     * reason wrongly classified as per-track sends the user to pick another song, while one
+     * wrongly classified as a provider failure sends them to retry something that never will.
      */
     private val CONTENT_REASONS = listOf(
         "private",
@@ -43,14 +46,14 @@ object StreamRefusal {
     private val CONTENT_STATUSES = setOf("UNPLAYABLE", "ERROR")
 
     /**
-     * Whether [playability] means the track itself cannot be played.
+     * Whether [refusal] means the track itself cannot be played.
      *
-     * False for a null status, which means the response carried no playability information and
-     * the failure is somewhere else entirely — reporting that as a refusal would be a guess.
+     * False for a null refusal, which means no provider gave an answer and the failure is
+     * somewhere else entirely — reporting that as a track problem would be a guess.
      */
-    fun isAboutContent(playability: InnerTubePlayerResponse.PlayabilityStatus?): Boolean {
-        val status = playability?.status ?: return false
-        val reason = playability.reason ?: return false
+    fun isAboutContent(refusal: StreamRefusalInfo?): Boolean {
+        val status = refusal?.status ?: return false
+        val reason = refusal.reason ?: return false
         return status in CONTENT_STATUSES &&
             CONTENT_REASONS.any { reason.contains(it, ignoreCase = true) }
     }
@@ -59,15 +62,23 @@ object StreamRefusal {
      * The message shown when playback could not start.
      *
      * @param title the track the user tapped, so the message names what they asked for
-     * @param playability what the server said, or null when there was no playability status
+     * @param refusal what the provider said, or null when it never answered
+     * @param error why no provider answered, when that is what happened
      */
-    fun describe(title: String, playability: InnerTubePlayerResponse.PlayabilityStatus?): String =
-        when {
-            playability == null -> "Could not start \"$title\""
-            isAboutContent(playability) ->
-                "\"$title\" is unavailable: ${playability.reason}"
+    fun describe(
+        title: String,
+        refusal: StreamRefusalInfo?,
+        error: String? = null,
+    ): String = when {
+        refusal == null && error != null ->
+            "Could not reach an audio source for \"$title\" ($error)"
 
-            else ->
-                "YouTube declined to serve audio for \"$title\" (${playability.status})"
-        }
+        refusal == null -> "Could not start \"$title\""
+
+        isAboutContent(refusal) -> "\"$title\" is unavailable: ${refusal.reason}"
+
+        // A provider answered and declined, but the reason says nothing about the track — so the
+        // status is quoted rather than interpreted, and the user is not told the song is gone.
+        else -> "No audio was served for \"$title\" (${refusal.status})"
+    }
 }

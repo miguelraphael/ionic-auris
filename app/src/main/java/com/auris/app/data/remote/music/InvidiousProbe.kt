@@ -6,8 +6,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -53,8 +51,8 @@ data class InvidiousProbeResult(
             },
         )
         append(" title=").append(title?.take(28)?.let { "\"$it\"" } ?: "-")
-        error?.let { append(" error=\"").append(it.take(60)).append("\"") }
-        streamError?.let { append(" streamError=\"").append(it.take(60)).append("\"") }
+        error?.let { append(" error=\"").append(it.oneLine().take(60)).append("\"") }
+        streamError?.let { append(" streamError=\"").append(it.oneLine().take(60)).append("\"") }
     }
 }
 
@@ -216,58 +214,4 @@ class InvidiousProbe(
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
         private const val TAG = "AurisInvidiousProbe"
     }
-}
-
-/**
- * What an `/api/v1/videos/{id}` body reduces to.
- *
- * [bestAudioUrl] is the highest-bitrate audio-only format's URL. Audio-only is preferred because
- * playing a muxed video format for a music app wastes an order of magnitude of bandwidth — the
- * same reasoning as [InnerTubeParser].
- */
-internal data class InvidiousVideoSummary(
-    val title: String? = null,
-    val audioFormats: Int = 0,
-    val totalFormats: Int = 0,
-    val bestAudioUrl: String? = null,
-    val error: String? = null,
-)
-
-/**
- * Reduces a `/api/v1/videos` body to what the probe reports.
- *
- * Split out from the transport so it can be tested against captured bodies — the counts and the
- * chosen URL are the entire signal, and they are read by hand off a phone, so getting them wrong
- * would waste the round trip.
- *
- * An `error` field is honoured explicitly: an instance that is up but refusing returns
- * `{"error":"..."}` with HTTP 200, and reading that as "zero formats" would look identical to a
- * track nobody has.
- */
-internal fun parseInvidiousVideo(body: String, json: Json): InvidiousVideoSummary {
-    val root = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull()
-        ?: return InvidiousVideoSummary(error = "unparseable body (${body.take(60)})")
-
-    root["error"].str()?.let { return InvidiousVideoSummary(error = it) }
-
-    // `adaptiveFormats` carry the audio-only streams. `formatStreams` are progressive and
-    // video+audio muxed; they are counted for the total so a response that only offers them
-    // does not read as an empty failure, but they are not what playback should use.
-    val adaptive = (root["adaptiveFormats"] as? JsonArray).orEmpty()
-    val progressive = (root["formatStreams"] as? JsonArray).orEmpty()
-    val all = adaptive + progressive
-
-    val audio = all.mapNotNull { it as? JsonObject }.filter { format ->
-        format["type"].str()?.startsWith("audio/", ignoreCase = true) == true
-    }
-
-    // Highest bitrate wins; a null bitrate loses to any known one but still beats nothing.
-    val best = audio.maxByOrNull { format -> format["bitrate"].str()?.toIntOrNull() ?: 0 }
-
-    return InvidiousVideoSummary(
-        title = root["title"].str(),
-        audioFormats = audio.size,
-        totalFormats = all.size,
-        bestAudioUrl = best?.get("url").str(),
-    )
 }

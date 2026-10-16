@@ -207,6 +207,12 @@ rule this imposes: **do not copy Invidious source into this tree.**
 | `GET /api/v1/videos/{id}` on `invidious.f5.si` | HTTP 200, 26 adaptive formats, direct `googlevideo.com` URLs |
 | Ranged GET on the returned audio URL | HTTP 206, the **full 1,628,559-byte track** at 2.4 MB/s |
 | That request began as a `302` | A CDN node redirect, not an IP lock — following it delivers real Opus |
+| The same probe from the **handset**, on its own network | `invidious.f5.si http=200 audio=4 forms=27 stream=206/65536` — 64 KiB of real audio arrived on the device. `inv.nadeko.net 403 "Endpoint disabled"`, `invidious.nerdvpn.de 401` |
+
+The last row is the one that decides it. A datacenter success has been misleading twice on this
+project, so the route was only treated as real once a phone on a residential network pulled bytes.
+An `Invidious playback probe` in **Settings → Diagnostics** re-runs that check on demand.
+
 
 So the catalogue is genuine YouTube Music, **no account is involved**, and the circumvention
 happens on the instance rather than in this app.
@@ -223,6 +229,46 @@ no self-hosted server is required or assumed.
 operator's, not ours — and materially different from the JioSaavn-proxy route that was declined,
 which redistributed a *paid* catalogue. Invidious is a free-software front end for publicly
 viewable videos.
+
+### The seam, as built (2026-10)
+
+Two providers sit behind `MusicSource`, and **deliberately only one of them moved**:
+
+| Half | Provider | Why not the other |
+| --- | --- | --- |
+| **Catalogue** — search, albums, playlists | YouTube Music's own InnerTube API | Invidious search answers `type=video` and `type=channel` only (verified 2026-10): **no album rows**. Routing the catalogue through it would silently delete albums from every screen. |
+| **Audio** — the stream | public Invidious instances | InnerTube is refused outright for unauthenticated clients. This is the half that needs a proxy, so it is the only half that depends on one. |
+
+That split is the point. The fragile dependency — one volunteer's server — carries only the half
+that cannot work without it. When every instance is down the user can still browse, and can still
+fix playback from Settings; the alternative design couples the two and blacks out the whole pillar.
+
+- `MusicSource` (`data/remote/music/MusicSource.kt`) is the interface the UI depends on.
+  `MusicStreamResolver` is the narrower half that varies. `DefaultMusicSource` composes them.
+- `InvidiousSource` implements the resolver:
+  - **configurable list** — `InvidiousInstanceStore` (SharedPreferences, mirroring
+    `ExtensionRepoStore`), edited in **Settings → Music**. One instance is shipped
+    (`invidious.f5.si`), because a list of known-dead hosts is only slower than no list.
+  - **failover** — tried in configured order, with the instance list read *per track*, so a new
+    entry takes effect on the next song rather than the next launch.
+  - **health tracking** — an instance that fails is deprioritised for two minutes. It is
+    *deprioritised*, not banned: if nothing else is left it is tried again, because one extra round
+    trip beats refusing to play.
+  - **resolved-URL cache** — the general rule here is that stream URLs are never cached, since an
+    InnerTube URL expires in ~6 h and a stale one fails as a 403 that reads like a network error.
+    Invidious is different: its `googlevideo.com` URLs carry `expire=<unix seconds>` **in the URL
+    itself**, so `InvidiousParser` reads the real deadline and `AudioStream.isPlayable` enforces
+    it. What is cached is a URL with a *known* deadline — never an unexamined one.
+
+**A refusal about a track is not a failure of an instance.** An instance that is up answers HTTP
+200 with `{"error": ...}` when a video is gone. Treating that as an instance failure would bench a
+perfectly healthy host every time a user tapped a delisted track, so the two are separated:
+non-2xx retires the instance, a 200-with-error is returned as a `ResolvedAudio` refusal.
+
+**Honest failure text.** `StreamRefusal` now distinguishes three cases that all used to read as
+"nothing playable": the *track* is gone (pick another song), a *provider declined* (retrying the
+same provider is pointless), and *no provider answered* (the fix is in Settings). Conflating them
+sends users in circles.
 
 ### What was evaluated
 
@@ -321,11 +367,25 @@ at a 12-byte stride the decoded values are header offsets like `20716` (`class_d
 
 | Suite | Result |
 | --- | --- |
-| JVM | 278 tests, 4 skipped, **0 failures** |
+| JVM | 327 tests, 4 skipped, **0 failures** |
 | Device (instrumentation) | **67 pass** |
 | `RealVideoResolutionTest` | **3 of 3 pass** — video resolution proven |
 | `RealCatalogExtractionTest` | **6 of 7 pass** — sole failure is animetake, on the Cloudflare block |
 | Conformance (`:source-api-conformance`) | green — but see §5: it cannot see incompleteness |
+
+### Music playback
+
+The route is proven from the handset (§4, *verified 2026-10*), and the seam it plugs into is built:
+`MusicSource` → `DefaultMusicSource` (InnerTube catalogue) + `InvidiousSource` (resolver, instance
+list, failover, health cooldown, resolved-URL cache), editable in **Settings → Music**. 38 of the
+JVM tests above cover that seam — reduction, failover, cooldown, cache expiry, refusal handling,
+and instance-URL normalisation.
+
+**What is not yet observed: a track actually playing in the app.** The probe proves the *network*;
+it does not prove the ViewModel → `MusicPlaybackService` → ExoPlayer wiring, which is exercised only
+by tapping a track on a device. Consistent with the rule above, that is the gate before this is
+called done.
+
 
 ### What works, proven against real extensions
 

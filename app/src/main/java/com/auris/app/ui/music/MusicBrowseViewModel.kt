@@ -5,14 +5,11 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.auris.app.data.local.entity.LibraryEntryEntity
-import com.auris.app.data.remote.music.AudioStream
-import com.auris.app.data.remote.music.InnerTubeClient
-import com.auris.app.data.remote.music.InnerTubeMusicItem
-import com.auris.app.data.remote.music.InnerTubePlayerResponse
-import com.auris.app.data.remote.music.InnerTubeSearchParams
+import com.auris.app.data.remote.music.MusicCollectionItem
 import com.auris.app.data.remote.music.MusicLibraryMapper
+import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.data.remote.music.MusicTrack
+import com.auris.app.data.remote.music.StreamRefusalInfo
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.music.MusicPlaybackService
 import com.auris.app.music.buildMediaItem
@@ -71,15 +68,16 @@ data class MusicBrowseUiState(
  *
  * ### Why search is not debounced into oblivion
  * The query is debounced by [SEARCH_DEBOUNCE_MS] so typing does not fire a request per
- * keystroke — but it is not debounced so heavily that results feel stale. InnerTube has no
- * rate limit we can rely on, so the debounce is the only rate control.
+ * keystroke — but it is not debounced so heavily that results feel stale. The catalogue API has
+ * no rate limit we can rely on, so the debounce is the only rate control.
  *
- * ### Streams are resolved per playback
- * InnerTube URLs expire in about six hours, so nothing about them is cached. Every tap resolves
- * again, and the resolved URL is handed straight to the controller.
+ * ### Streams are resolved per playback, through the seam
+ * Nothing here knows *which* provider serves audio. That is [MusicSource]'s business, which is
+ * what let the audio half move from a first-party client to public Invidious instances without
+ * this class changing beyond the interface it calls.
  */
 class MusicBrowseViewModel(
-    private val client: InnerTubeClient,
+    private val source: MusicSource,
     private val libraryRepository: LibraryRepository,
     private val context: Context,
 ) : ViewModel() {
@@ -94,7 +92,10 @@ class MusicBrowseViewModel(
     private val resolvedArtwork = mutableMapOf<String, String>()
 
     /** Why the last playback attempt got no stream, so the failure can be reported honestly. */
-    private var lastRefusal: InnerTubePlayerResponse.PlayabilityStatus? = null
+    private var lastRefusal: StreamRefusalInfo? = null
+
+    /** Why no provider answered at all, when that is the reason there is no stream. */
+    private var lastError: String? = null
 
     init {
         connectController()
@@ -137,7 +138,7 @@ class MusicBrowseViewModel(
             }
 
             delay(SEARCH_DEBOUNCE_MS)
-            client.search(query, InnerTubeSearchParams.ALL, limit = BROWSE_LIMIT)
+            source.search(query, BROWSE_LIMIT)
                 .onSuccess { items -> _state.value = _state.value.withResults(items, isLoading = false) }
                 .onFailure { error -> _state.value = _state.value.failed(error) }
         }
@@ -154,10 +155,10 @@ class MusicBrowseViewModel(
      * leave the user with an empty screen.
      */
     private suspend fun discovery() {
-        val collected = mutableListOf<InnerTubeMusicItem>()
+        val collected = mutableListOf<MusicCollectionItem>()
 
-        for (seed in InnerTubeClient.DISCOVERY_SEEDS) {
-            client.search(seed, InnerTubeSearchParams.ALL, limit = SEED_LIMIT)
+        for (seed in source.discoverySeeds) {
+            source.search(seed, SEED_LIMIT)
                 .onSuccess { collected += it }
         }
 
@@ -174,7 +175,7 @@ class MusicBrowseViewModel(
     }
 
     private fun MusicBrowseUiState.withResults(
-        items: List<InnerTubeMusicItem>,
+        items: List<MusicCollectionItem>,
         isLoading: Boolean,
     ): MusicBrowseUiState {
         val rows = items.flatMap { item -> item.toRows() }
@@ -187,7 +188,7 @@ class MusicBrowseViewModel(
         )
     }
 
-    private fun InnerTubeMusicItem.toRows(): List<MusicRow> = buildList {
+    private fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
         tracks.forEach { track ->
             add(
                 MusicRow(
@@ -244,6 +245,7 @@ class MusicBrowseViewModel(
         viewModelScope.launch {
             _state.value = _state.value.copy(isResolving = true, error = null, message = null)
             lastRefusal = null
+            lastError = null
 
             val tracks = when (row.kind) {
                 MusicRow.Kind.TRACK -> resolveTrack(row.id)
@@ -253,7 +255,7 @@ class MusicBrowseViewModel(
             if (tracks.isNullOrEmpty()) {
                 _state.value = _state.value.copy(
                     isResolving = false,
-                    message = StreamRefusal.describe(row.title, lastRefusal),
+                    message = StreamRefusal.describe(row.title, lastRefusal, lastError),
                 )
                 return@launch
             }
@@ -269,18 +271,24 @@ class MusicBrowseViewModel(
     }
 
     private suspend fun resolveTrack(videoId: String): List<MusicTrack>? {
-        val response = client.resolveAudioStream(videoId).getOrNull() ?: return null
+        val resolved = source.resolveAudioStream(videoId).getOrElse { error ->
+            // No provider answered at all — every instance was unreachable, or none is
+            // configured. Recorded so [play] can point at Settings rather than implying the
+            // track is gone.
+            lastError = error.message ?: error::class.java.simpleName
+            return null
+        }
+
         // Recorded before the early return so [play] can say *why* there is no stream rather
         // than reporting a generic failure. See [StreamRefusal].
-        lastRefusal = response.playabilityStatus.takeIf { !it.isPlayable }
+        lastRefusal = resolved.refusal
 
-        val stream = response.audioStreams.firstOrNull { it.isPlayable() } ?: return null
-        val details = response.videoDetails
+        val stream = resolved.stream?.takeIf { it.isPlayable() } ?: return null
 
         // The artwork the search row was missing. Recorded here rather than returned, so a
         // later refresh of the catalogue cannot undo it, and so resolving a *failed* track
         // (which returns null above) still leaves its artwork behind for the next render.
-        val artwork = details?.thumbnails?.lastOrNull()
+        val artwork = resolved.artworkUrl
         if (artwork != null) {
             resolvedArtwork[videoId] = artwork
         }
@@ -288,10 +296,10 @@ class MusicBrowseViewModel(
         return listOf(
             MusicTrack(
                 videoId = videoId,
-                title = details?.title ?: videoId,
-                artist = details?.author,
+                title = resolved.title ?: videoId,
+                artist = resolved.author,
                 album = null,
-                durationMs = stream.durationMs ?: details?.lengthSeconds?.times(1000),
+                durationMs = stream.durationMs ?: resolved.lengthMs,
                 artworkUrl = artwork,
                 largeArtworkUrl = artwork,
                 playlistId = null,
@@ -312,7 +320,7 @@ class MusicBrowseViewModel(
      * `player` request per row would be the fastest way to get the client throttled. The first
      * screenful is what the user is looking at, so that is what gets warmed.
      */
-    private fun prefetchArtwork(items: List<InnerTubeMusicItem>) {
+    private fun prefetchArtwork(items: List<MusicCollectionItem>) {
         val missing = items
             .flatMap { it.tracks }
             .filter { it.artworkUrl.isNullOrBlank() && !resolvedArtwork.containsKey(it.videoId) }
@@ -325,11 +333,7 @@ class MusicBrowseViewModel(
                 // A failure is expected and harmless: the row simply stays blank. Nothing here
                 // is worth interrupting the user over.
                 runCatching {
-                    client.resolveAudioStream(track.videoId)
-                        .getOrNull()
-                        ?.videoDetails
-                        ?.thumbnails
-                        ?.lastOrNull()
+                    source.resolveAudioStream(track.videoId).getOrNull()?.artworkUrl
                 }.onSuccess { artwork ->
                     if (artwork != null) {
                         resolvedArtwork[track.videoId] = artwork
@@ -343,7 +347,7 @@ class MusicBrowseViewModel(
     }
 
     private suspend fun collectionTracks(browseId: String): List<MusicTrack> =
-        client.collection(browseId)
+        source.collection(browseId, COLLECTION_TRACK_LIMIT)
             .getOrNull()
             .orEmpty()
             .flatMap { it.tracks }
@@ -364,11 +368,11 @@ class MusicBrowseViewModel(
         }
 
         val items = tracks.mapNotNull { track ->
-            val stream: AudioStream = client.resolveAudioStream(track.videoId)
-                .getOrNull()
-                ?.audioStreams
-                ?.firstOrNull(AudioStream::isPlayable)
-                ?: return@mapNotNull null
+            val resolved = source.resolveAudioStream(track.videoId).getOrNull()
+            // Remembered so the "nothing playable" path below can say *why*, exactly as a
+            // single-track tap does. First reason wins: one explanation is enough.
+            resolved?.refusal?.let { lastRefusal = lastRefusal ?: it }
+            val stream = resolved?.stream?.takeIf { it.isPlayable() } ?: return@mapNotNull null
 
             buildMediaItem(
                 videoId = track.videoId,
@@ -381,7 +385,13 @@ class MusicBrowseViewModel(
         }
 
         if (items.isEmpty()) {
-            _state.value = _state.value.copy(message = "No playable streams for this selection")
+            _state.value = _state.value.copy(
+                message = StreamRefusal.describe(
+                    tracks.firstOrNull()?.title ?: "this selection",
+                    lastRefusal,
+                    lastError,
+                ),
+            )
             return
         }
 
@@ -431,13 +441,13 @@ class MusicBrowseViewModel(
     }
 
     private class Factory(
-        private val client: InnerTubeClient,
+        private val source: MusicSource,
         private val libraryRepository: LibraryRepository,
         private val context: Context,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            MusicBrowseViewModel(client, libraryRepository, context) as T
+            MusicBrowseViewModel(source, libraryRepository, context) as T
     }
 
     companion object {
@@ -445,8 +455,8 @@ class MusicBrowseViewModel(
          * Debounce before searching.
          *
          * Long enough to avoid a request per keystroke, short enough that results feel
-         * responsive. InnerTube has no documented rate limit, so this is the only rate control
-         * the client has.
+         * responsive. The catalogue API has no documented rate limit, so this is the only rate
+         * control the client has.
          */
         const val SEARCH_DEBOUNCE_MS = 350L
 
@@ -454,6 +464,9 @@ class MusicBrowseViewModel(
 
         /** Per seed, so three seeds do not each load a full 40-row page. */
         private const val SEED_LIMIT = 15
+
+        /** Guard on a large playlist so one album cannot page forever. */
+        private const val COLLECTION_TRACK_LIMIT = 200
 
         /**
          * How many rows to warm artwork for per catalogue load.
@@ -465,9 +478,9 @@ class MusicBrowseViewModel(
         private const val ARTWORK_PREFETCH_LIMIT = 12
 
         fun factory(
-            client: InnerTubeClient,
+            source: MusicSource,
             libraryRepository: LibraryRepository,
             context: Context,
-        ): ViewModelProvider.Factory = Factory(client, libraryRepository, context)
+        ): ViewModelProvider.Factory = Factory(source, libraryRepository, context)
     }
 }

@@ -75,7 +75,7 @@ class InnerTubeClient(
         query: String,
         params: String? = InnerTubeSearchParams.ALL,
         limit: Int = DEFAULT_LIMIT,
-    ): Result<List<InnerTubeMusicItem>> = post(
+    ): Result<List<MusicCollectionItem>> = post(
         endpoint = "search",
         body = json.encodeToString(
             InnerTubeSearchRequest.serializer(),
@@ -98,7 +98,7 @@ class InnerTubeClient(
      * is no id-independent "top songs" browse, the discovery landing page is built from search
      * seeds instead; see [InnerTubeClient.discovery].
      */
-    suspend fun collection(browseId: String, limit: Int = DEFAULT_LIMIT): Result<List<InnerTubeMusicItem>> =
+    suspend fun collection(browseId: String, limit: Int = DEFAULT_LIMIT): Result<List<MusicCollectionItem>> =
         browse(browseId, limit)
 
     /**
@@ -123,7 +123,7 @@ class InnerTubeClient(
     suspend fun browse(
         browseId: String,
         maxTracks: Int = DEFAULT_TRACK_LIMIT,
-    ): Result<List<InnerTubeMusicItem>> = post(
+    ): Result<List<MusicCollectionItem>> = post(
         endpoint = "browse",
         body = json.encodeToString(
             InnerTubeBrowseRequest.serializer(),
@@ -156,7 +156,7 @@ class InnerTubeClient(
     suspend fun browseContinuation(
         continuation: String,
         maxTracks: Int = DEFAULT_TRACK_LIMIT,
-    ): Result<List<InnerTubeMusicItem>> = post(
+    ): Result<List<MusicCollectionItem>> = post(
         endpoint = "browse",
         body = json.encodeToString(
             InnerTubeBrowseRequest.serializer(),

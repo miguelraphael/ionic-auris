@@ -7,16 +7,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Tests for the Invidious probe's reduction.
+ * Tests for the Invidious reduction, shared by the probe and the resolver.
  *
  * ### What these protect, and what they do not
- * The counts, the chosen URL and the `stream=` verdict are the *entire* output, and they are read
- * by hand off a phone screen. A reduction bug would not crash anything — it would send back a
- * confident, wrong answer about whether this instance can serve audio, and a resolver would be
- * built on it. These tests pin the reduction.
+ * The counts, the chosen URL and the `stream=` verdict are the *entire* output of the probe, and
+ * they are read by hand off a phone screen. A reduction bug would not crash anything — it would
+ * send back a confident, wrong answer about whether an instance can serve audio, and a resolver
+ * would be built on it. These tests pin the reduction.
  *
- * They say nothing about the network. Whether `invidious.f5.si` serves audio to a *handset* is the
- * open question, and only the device can answer it.
+ * They say nothing about the network. Whether `invidious.f5.si` serves audio to a *handset* is a
+ * question only a device can answer.
  */
 class InvidiousProbeTest {
 
@@ -28,6 +28,12 @@ class InvidiousProbeTest {
             body = """
                 {
                   "title": "Never Gonna Give You Up",
+                  "author": "Rick Astley",
+                  "lengthSeconds": 213,
+                  "videoThumbnails": [
+                    {"quality":"default","url":"https://i/small.jpg","width":120,"height":90},
+                    {"quality":"maxresdefault","url":"https://i/big.jpg","width":1280,"height":720}
+                  ],
                   "adaptiveFormats": [
                     {"itag":140,"type":"audio/mp4; codecs=\"mp4a.40.2\"","bitrate":"128000","url":"https://r/aac"},
                     {"itag":251,"type":"audio/webm; codecs=\"opus\"","bitrate":"160000","url":"https://r/opus"},
@@ -39,28 +45,54 @@ class InvidiousProbeTest {
         )
 
         assertEquals("Never Gonna Give You Up", summary.title)
+        assertEquals("Rick Astley", summary.author)
+        assertEquals(213_000L, summary.lengthMs)
+        // Largest thumbnail, not the first one offered.
+        assertEquals("https://i/big.jpg", summary.artworkUrl)
         assertEquals(2, summary.audioFormats)
         assertEquals(3, summary.totalFormats)
-        // Opus at 160 kbps beats AAC at 128, and the 4 Mbps *video* format is not a candidate.
+        // Opus at 160 kbps beats AAC at 128, and the 4 Mbps *video* format is not a candidate
+        // while an audio-only one exists.
         assertEquals("https://r/opus", summary.bestAudioUrl)
+        assertEquals("audio/webm; codecs=\"opus\"", summary.bestAudioMimeType)
+        assertEquals(160000, summary.bestAudioBitrate)
         assertNull(summary.error)
     }
 
     @Test
-    fun `progressive formats count toward the total but are not treated as audio`() {
+    fun `a muxed format is a fallback so an instance with no audio-only stream still plays`() {
         val summary = parseInvidiousVideo(
             body = """
-                {"title":"T","formatStreams":[{"itag":18,"type":"video/mp4; codecs=\"avc1\"","url":"https://r/muxed"}]}
+                {"title":"T","formatStreams":[
+                  {"itag":18,"type":"video/mp4; codecs=\"avc1\"","bitrate":"600000","url":"https://r/muxed"}
+                ]}
             """.trimIndent(),
             json = json,
         )
 
-        // They carry audio inside a muxed video track — usable in a pinch, but playing one for a
-        // music app wastes an order of magnitude of bandwidth. Counting it as "audio" would hide
-        // that an instance offers no audio-only stream at all.
+        // `audioFormats` stays zero — there is no audio-only stream, and reporting one would
+        // hide that this instance costs video bandwidth for audio.
         assertEquals(0, summary.audioFormats)
         assertEquals(1, summary.totalFormats)
-        assertNull(summary.bestAudioUrl)
+        // But it is still usable: no surface is attached in an audio session, so only the
+        // bandwidth is wasted. Refusing to play would be worse.
+        assertEquals("https://r/muxed", summary.bestAudioUrl)
+    }
+
+    @Test
+    fun `the lowest-bitrate muxed format is chosen when only muxed formats exist`() {
+        val summary = parseInvidiousVideo(
+            body = """
+                {"title":"T","formatStreams":[
+                  {"itag":22,"type":"video/mp4","bitrate":"2000000","url":"https://r/big"},
+                  {"itag":18,"type":"video/mp4","bitrate":"600000","url":"https://r/small"}
+                ]}
+            """.trimIndent(),
+            json = json,
+        )
+
+        // The video track is never rendered, so its bitrate is pure cost.
+        assertEquals("https://r/small", summary.bestAudioUrl)
     }
 
     @Test
@@ -72,6 +104,8 @@ class InvidiousProbeTest {
 
         assertEquals("This video is not available", summary.error)
         assertEquals(0, summary.totalFormats)
+        // A refusal must not produce a stream, or the resolver would play nothing.
+        assertNull(summary.toAudioStream())
     }
 
     @Test
@@ -86,9 +120,10 @@ class InvidiousProbeTest {
         )
 
         assertEquals(1, summary.audioFormats)
-        // The URL is ciphered, so there is nothing to GET. The probe must report the absence
+        // The URL is ciphered, so there is nothing to GET. The reduction must report the absence
         // rather than invent a URL from the cipher text.
         assertNull(summary.bestAudioUrl)
+        assertNull(summary.toAudioStream())
     }
 
     @Test
@@ -100,6 +135,43 @@ class InvidiousProbeTest {
 
         assertTrue(summary.error!!.startsWith("unparseable body"))
         assertEquals(0, summary.totalFormats)
+    }
+
+    @Test
+    fun `the stream expiry is read out of the url so a cached url has a deadline`() {
+        val summary = parseInvidiousVideo(
+            body = """
+                {"title":"T","adaptiveFormats":[
+                  {"itag":251,"type":"audio/webm","bitrate":"160000",
+                   "url":"https://rr3---sn-abc.googlevideo.com/videoplayback?expire=1792155031&itag=251&mime=audio%2Fwebm"}
+                ]}
+            """.trimIndent(),
+            json = json,
+        )
+
+        val stream = summary.toAudioStream()!!
+
+        assertEquals(1792155031000L, stream.expiresAtMs)
+        // Before the deadline it is playable; at and after it, it is not.
+        assertTrue(stream.isPlayable(nowMs = 1792155031000L - 1))
+        assertTrue(!stream.isPlayable(nowMs = 1792155031000L))
+    }
+
+    @Test
+    fun `a url with no expiry is assumed usable rather than refused`() {
+        val summary = parseInvidiousVideo(
+            body = """
+                {"title":"T","adaptiveFormats":[{"itag":251,"type":"audio/webm","url":"https://r/x"}]}
+            """.trimIndent(),
+            json = json,
+        )
+
+        val stream = summary.toAudioStream()!!
+
+        // Refusing a URL whose lifetime is merely unknown would break playback the moment a
+        // provider changes its query parameters.
+        assertNull(stream.expiresAtMs)
+        assertTrue(stream.isPlayable())
     }
 
     @Test
@@ -137,5 +209,20 @@ class InvidiousProbeTest {
         assertTrue(line.startsWith("inv.nadeko.net"))
         assertTrue(line.contains("http=-"))
         assertTrue(line.contains("error=\"Failed to connect\""))
+    }
+
+    @Test
+    fun `a multi-line error body is collapsed so one instance stays one line`() {
+        // The defect this pins was observed on a device: an nginx 401 page leaked its newlines
+        // into the report and split one result across three log entries.
+        val result = InvidiousProbeResult(
+            instance = "invidious.nerdvpn.de",
+            httpStatus = 401,
+            error = "<html>\n<head><title>401 Authorization Required</title></head>\n</html>",
+        )
+
+        val line = result.report()
+        assertTrue("report must be one line", '\n' !in line)
+        assertTrue(line.contains("401 Authorization Required"))
     }
 }

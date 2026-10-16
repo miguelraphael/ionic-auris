@@ -1,6 +1,6 @@
 package com.auris.app.ui.music
 
-import com.auris.app.data.remote.music.InnerTubePlayerResponse
+import com.auris.app.data.remote.music.StreamRefusalInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,58 +10,74 @@ import org.junit.Test
  * How a failed playback is explained to the user.
  *
  * ### Why this is worth a rule
- * The live API answers *every* stream request from an unauthenticated client with `UNPLAYABLE`
- * and an empty format list — verified on 2026-10 for `WEB_REMIX` and `ANDROID_MUSIC`, and
- * `FAILED_PRECONDITION` for every other client identity tried. The track exists and is
- * playable; the request is what was declined.
+ * "No audio" has three causes that need three different actions, and the naive message —
+ * "Nothing playable" — is wrong for all of them:
  *
- * The naive message for that state, "Nothing playable", is wrong twice: it implies the track is
- * missing, and it implies a retry might help. Neither holds, and a user told to retry something
- * that can never succeed is being sent in circles. Meanwhile a genuinely delisted track needs the
- * opposite advice — pick something else.
+ * - a **delisted or private track**, where picking another song is the only remedy;
+ * - a **provider that declined** the request, where retrying the same provider is pointless
+ *   (YouTube refuses unauthenticated first-party requests outright — verified 2026-10);
+ * - **no provider reachable at all**, where the fix is in Settings, not in the music list.
+ *
+ * A user sent to retry something that can never succeed is being sent in circles, so the split is
+ * pinned here.
  */
 class StreamRefusalTest {
 
-    private fun status(value: String, reason: String?) =
-        InnerTubePlayerResponse.PlayabilityStatus(status = value, reason = reason)
+    private fun refusal(value: String, reason: String?) =
+        StreamRefusalInfo(status = value, reason = reason)
 
-    // ---- The live response: a request failure -------------------------------
+    // ---- A provider declined ------------------------------------------------
 
     @Test
-    fun liveUnplayableWithNoTrackReasonIsARequestFailure() {
-        // The exact response the app receives, reason included.
-        val playability = status("UNPLAYABLE", "Video unavailable")
+    fun liveUnplayableWithNoTrackReasonIsAProviderFailure() {
+        // The exact response an unauthenticated first-party request receives, reason included.
+        val playability = refusal("UNPLAYABLE", "Video unavailable")
 
         assertFalse(StreamRefusal.isAboutContent(playability))
         assertEquals(
-            "YouTube declined to serve audio for \"Espresso\" (UNPLAYABLE)",
+            "No audio was served for \"Espresso\" (UNPLAYABLE)",
             StreamRefusal.describe("Espresso", playability),
         )
     }
 
     @Test
     fun loginRequiredIsARequestFailure() {
-        val playability = status("LOGIN_REQUIRED", null)
+        val playability = refusal("LOGIN_REQUIRED", null)
 
         assertFalse(StreamRefusal.isAboutContent(playability))
-        assertTrue(StreamRefusal.describe("Espresso", playability).contains("declined"))
+        assertTrue(StreamRefusal.describe("Espresso", playability).contains("No audio was served"))
     }
 
     @Test
-    fun aRefusalMessageDoesNotSayTheTrackIsUnplayable() {
-        // The specific wording bug worth pinning: "Nothing playable for Espresso" tells the user
-        // their track is at fault when the server declined the request.
-        val message = StreamRefusal.describe("Espresso", status("UNPLAYABLE", "Video unavailable"))
+    fun aProviderRefusalDoesNotSayTheTrackIsUnplayable() {
+        // The specific wording bug worth pinning: telling the user their track is at fault when
+        // the provider declined the *request*.
+        val message = StreamRefusal.describe("Espresso", refusal("UNPLAYABLE", "Video unavailable"))
 
         assertFalse(message.contains("Nothing playable"))
-        assertTrue(message.contains("declined"))
+        assertTrue(message.contains("No audio was served"))
+    }
+
+    @Test
+    fun anInstanceWithNoFormatsQuotesTheStatusWithoutBlamingTheTrack() {
+        // What a public instance actually answers when it has no audio for a track. The reason
+        // names no content, so the user must not be told the song is gone.
+        val message = StreamRefusal.describe(
+            "Espresso",
+            refusal("UNPLAYABLE", "The instance returned no playable audio format"),
+        )
+
+        assertFalse(StreamRefusal.isAboutContent(
+            refusal("UNPLAYABLE", "The instance returned no playable audio format"),
+        ))
+        assertEquals("No audio was served for \"Espresso\" (UNPLAYABLE)", message)
     }
 
     // ---- Genuinely per-track reasons ----------------------------------------
 
     @Test
     fun privateVideoIsAContentFailure() {
-        val playability = status("UNPLAYABLE", "This video is private")
+        val playability = refusal("UNPLAYABLE", "This video is private")
 
         assertTrue(StreamRefusal.isAboutContent(playability))
         assertEquals(
@@ -72,18 +88,37 @@ class StreamRefusalTest {
 
     @Test
     fun regionBlockedAndRemovedAreContentFailures() {
-        assertTrue(StreamRefusal.isAboutContent(status("ERROR", "Video unavailable in your country")))
-        assertTrue(StreamRefusal.isAboutContent(status("UNPLAYABLE", "This video has been removed")))
-        assertTrue(StreamRefusal.isAboutContent(status("UNPLAYABLE", "Removed for copyright")))
+        assertTrue(StreamRefusal.isAboutContent(refusal("ERROR", "Video unavailable in your country")))
+        assertTrue(StreamRefusal.isAboutContent(refusal("UNPLAYABLE", "This video has been removed")))
+        assertTrue(StreamRefusal.isAboutContent(refusal("UNPLAYABLE", "Removed for copyright")))
+        // The phrasing a public instance uses when the video is gone.
+        assertTrue(StreamRefusal.isAboutContent(refusal("UNPLAYABLE", "This video is not available")))
     }
 
     @Test
-    fun aContentMessageCarriesTheServerReason() {
+    fun aContentMessageCarriesTheProviderReason() {
         // The reason is the actionable part — "removed" and "private" need different responses
         // from the user, so it is passed through rather than summarised away.
-        val message = StreamRefusal.describe("Track", status("UNPLAYABLE", "This video is private"))
+        val message = StreamRefusal.describe("Track", refusal("UNPLAYABLE", "This video is private"))
 
         assertTrue(message.contains("This video is private"))
+    }
+
+    // ---- No provider answered at all ----------------------------------------
+
+    @Test
+    fun noProviderAnsweringPointsAtTheSourceNotTheTrack() {
+        // Every configured instance was unreachable. Telling the user the track is unavailable
+        // would send them hunting for another song when the fix is in Settings.
+        val message = StreamRefusal.describe(
+            title = "Espresso",
+            refusal = null,
+            error = "No Invidious instance could serve this track",
+        )
+
+        assertTrue(message.startsWith("Could not reach an audio source"))
+        assertTrue(message.contains("No Invidious instance could serve this track"))
+        assertFalse(message.contains("unavailable"))
     }
 
     // ---- Boundaries ----------------------------------------------------------
@@ -93,7 +128,7 @@ class StreamRefusalTest {
         // "Sign in to confirm your age" names no track. Reporting it as a content problem would
         // tell the user to choose a different song for a reason that applies to the whole
         // request.
-        val playability = status("LOGIN_REQUIRED", "Sign in to confirm your age")
+        val playability = refusal("LOGIN_REQUIRED", "Sign in to confirm your age")
 
         assertFalse(StreamRefusal.isAboutContent(playability))
     }
@@ -101,22 +136,27 @@ class StreamRefusalTest {
     @Test
     fun aMissingReasonIsNeverTreatedAsAContentFailure() {
         // No reason means nothing can be concluded about the track.
-        assertFalse(StreamRefusal.isAboutContent(status("UNPLAYABLE", null)))
+        assertFalse(StreamRefusal.isAboutContent(refusal("UNPLAYABLE", null)))
     }
 
     @Test
-    fun aMissingPlayabilityStatusIsNotGuessedAt() {
-        // Null means the response carried no playability information, so the failure is
-        // elsewhere; claiming a refusal would be inventing a diagnosis.
+    fun aMissingRefusalIsNotGuessedAt() {
+        // Null means no provider gave an answer, so the failure is elsewhere; claiming a refusal
+        // would be inventing a diagnosis.
         assertFalse(StreamRefusal.isAboutContent(null))
         assertEquals("Could not start \"Track\"", StreamRefusal.describe("Track", null))
+        // With an error and no refusal, the error is what is reported.
+        assertEquals(
+            "Could not reach an audio source for \"Track\" (timeout)",
+            StreamRefusal.describe("Track", null, "timeout"),
+        )
     }
 
     @Test
     fun aShortNumberInAReasonIsNotAYearMatch() {
         // Guards the substring matching from being too eager: a reason that merely contains a
         // digit run must not be classified as a release year or a count.
-        val playability = status("UNPLAYABLE", "Error 2019 occurred")
+        val playability = refusal("UNPLAYABLE", "Error 2019 occurred")
 
         assertFalse(StreamRefusal.isAboutContent(playability))
     }

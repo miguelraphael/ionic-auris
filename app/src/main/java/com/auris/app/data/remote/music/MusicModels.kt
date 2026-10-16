@@ -9,7 +9,7 @@ import kotlinx.serialization.json.JsonElement
  *
  * ### Why the domain models are separate from the wire shape
  * InnerTube responses are deeply nested and undocumented, and their exact shape varies by
- * endpoint and drifts over time. Keeping [InnerTubeMusicItem] and friends as our own types means
+ * endpoint and drifts over time. Keeping [MusicCollectionItem] and friends as our own types means
  * a change in YouTube's JSON is absorbed by the parser rather than propagating into Room, the
  * UI and the tests.
  */
@@ -89,6 +89,41 @@ data class AudioStream(
 }
 
 /**
+ * Why a resolve produced no audio, stated by whichever provider answered.
+ *
+ * Source-agnostic on purpose. The catalogue comes from YouTube's own API while audio comes from
+ * an Invidious instance, so the two can fail for entirely different reasons — a track that
+ * YouTube says is unavailable, versus a public instance that is simply down. Collapsing them
+ * into "nothing playable" would tell the user to retry the one case that can never succeed.
+ */
+data class StreamRefusalInfo(
+    val status: String,
+    val reason: String? = null,
+)
+
+/**
+ * The outcome of asking a provider for a track's audio.
+ *
+ * Carries the metadata that arrived alongside the stream, because a resolve is also the only
+ * place some of it is available: YouTube Music's search rows come back with an **empty thumbnail
+ * array**, and the title/author/artwork are only ever present here.
+ *
+ * A refusal is not a failure. [stream] being null while [refusal] is set means the provider
+ * answered and declined; a `Result` failure means it never answered at all. The distinction is
+ * what [com.auris.app.ui.music.StreamRefusal] turns into honest wording.
+ */
+data class ResolvedAudio(
+    val stream: AudioStream? = null,
+    val refusal: StreamRefusalInfo? = null,
+    val title: String? = null,
+    val author: String? = null,
+    val lengthMs: Long? = null,
+    val artworkUrl: String? = null,
+) {
+    val isPlayable: Boolean get() = stream?.isPlayable() == true
+}
+
+/**
  * InnerTube's request envelope.
  *
  * ### `client` is the whole trick
@@ -144,7 +179,7 @@ data class InnerTubeBrowseRequest(
  * tiles in one ordered list, so this is deliberately loose — [kind] is what the parser
  * determined, and anything it could not classify is dropped rather than guessed at.
  */
-data class InnerTubeMusicItem(
+data class MusicCollectionItem(
     val kind: Kind,
     val tracks: List<MusicTrack> = emptyList(),
     val album: MusicAlbum? = null,
@@ -156,7 +191,7 @@ data class InnerTubeMusicItem(
 /**
  * Response of a `player` request, reduced to what playback needs.
  *
- * Parsed rather than deserialised, for the same reason as [InnerTubeMusicItem].
+ * Parsed rather than deserialised, for the same reason as [MusicCollectionItem].
  *
  * Extracted by the parser rather than deserialised directly, because `streamingData` contains
  * a mix of audio-only and audio+video adaptive formats and only the former are wanted — serving

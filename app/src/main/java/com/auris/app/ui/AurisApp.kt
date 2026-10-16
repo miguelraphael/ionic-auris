@@ -78,7 +78,14 @@ fun AurisApp(
     /** Process-scoped so the player survives navigation between episodes. */
     episodePlayer: EpisodePlayer? = null,
     appStateCollector: com.auris.app.diagnostics.AppStateCollector? = null,
-    innerTubeClient: com.auris.app.data.remote.music.InnerTubeClient? = null,
+    musicSource: com.auris.app.data.remote.music.MusicSource? = null,
+    /**
+     * The Invidious instance list, shared with the audio source.
+     *
+     * Required, not nullable: the resolver reads it per track, so a second store would let
+     * Settings and playback disagree about which instances exist.
+     */
+    invidiousInstanceStore: com.auris.app.data.repository.InvidiousInstanceStore,
     extensionRepository: com.auris.app.data.repository.ExtensionRepository,
     extensionRepoStore: com.auris.app.data.repository.ExtensionRepoStore,
     extensionLoader: com.auris.app.source.ExtensionLoader,
@@ -140,7 +147,8 @@ fun AurisApp(
             extensionContentRepository = extensionContentRepository,
             episodePlayer = episodePlayer,
             appStateCollector = appStateCollector,
-            innerTubeClient = innerTubeClient,
+            musicSource = musicSource,
+            invidiousInstanceStore = invidiousInstanceStore,
             extensionRepository = extensionRepository,
             extensionRepoStore = extensionRepoStore,
             extensionLoader = extensionLoader,

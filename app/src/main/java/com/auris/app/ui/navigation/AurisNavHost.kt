@@ -43,7 +43,7 @@ import com.auris.app.ui.settings.SettingsScreen
 import com.auris.app.ui.source.CatalogueScreen
 import com.auris.app.ui.source.CatalogueViewModel
 import com.auris.app.ui.settings.SettingsViewModel
-import com.auris.app.data.remote.music.InnerTubeClient
+import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.ui.music.MusicBrowseScreen
 import com.auris.app.ui.music.MusicLibraryEntry
 import com.auris.app.ui.music.MusicBrowseViewModel
@@ -97,7 +97,20 @@ fun AurisNavHost(
     /** Process-scoped so the player survives navigation between episodes. */
     episodePlayer: EpisodePlayer? = null,
     appStateCollector: com.auris.app.diagnostics.AppStateCollector? = null,
-    innerTubeClient: InnerTubeClient? = null,
+    /**
+     * The music surface: catalogue and audio, behind one seam.
+     *
+     * Nullable so previews and the episode-only slices can omit it; the music route is guarded.
+     */
+    musicSource: MusicSource? = null,
+    /**
+     * The Invidious instance list, editable from Settings.
+     *
+     * Required rather than nullable on purpose: the audio source reads this list per track, so a
+     * second store built anywhere else would silently disagree with the resolver about which
+     * instances are configured.
+     */
+    invidiousInstanceStore: com.auris.app.data.repository.InvidiousInstanceStore,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -297,14 +310,14 @@ fun AurisNavHost(
 
         // Music browse/search. Reached from the Music pillar on the nav pill.
         composable(Routes.MUSIC_BROWSE) {
-            if (innerTubeClient == null) {
+            if (musicSource == null) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
                 return@composable
             }
             val viewModel: MusicBrowseViewModel = viewModel(
                 key = "music-browse",
                 factory = MusicBrowseViewModel.factory(
-                    client = innerTubeClient,
+                    source = musicSource,
                     libraryRepository = libraryRepository,
                     context = navController.context,
                 ),
@@ -333,6 +346,7 @@ fun AurisNavHost(
                     extensionRepository = extensionRepository,
                     repoStore = extensionRepoStore,
                     authRepository = authRepository,
+                    invidiousInstanceStore = invidiousInstanceStore,
                 ),
             )
             val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
@@ -348,6 +362,10 @@ fun AurisNavHost(
                 onOpenDiagnostics = { navController.navigate(Routes.diagnostics) },
                 onSignOut = settingsViewModel::signOut,
                 onDeleteAccount = settingsViewModel::deleteAccount,
+                onInvidiousDraftChange = settingsViewModel::setInvidiousDraft,
+                onAddInvidiousInstance = settingsViewModel::addInvidiousInstance,
+                onRemoveInvidiousInstance = settingsViewModel::removeInvidiousInstance,
+                onResetInvidiousInstances = settingsViewModel::resetInvidiousInstances,
             )
         }
 
@@ -393,10 +411,6 @@ fun AurisNavHost(
 
         // Diagnostics / log export.
         composable(Routes.DIAGNOSTICS) {
-            if (innerTubeClient == null) {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
-                return@composable
-            }
             DiagnosticsRoute(
                 onBack = { navController.popBackStack() },
                 appStateCollector = appStateCollector,

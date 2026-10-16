@@ -8,12 +8,16 @@ import com.auris.app.data.local.SyncDao
 import com.auris.app.data.remote.SupabaseLibraryDataSource
 import com.auris.app.data.remote.SupabaseLibraryDataSourceImpl
 import com.auris.app.data.remote.kitsu.KitsuClient
+import com.auris.app.data.remote.music.DefaultMusicSource
 import com.auris.app.data.remote.music.InnerTubeClient
 import com.auris.app.data.remote.music.InnerTubeParser
+import com.auris.app.data.remote.music.InvidiousSource
+import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.ExtensionContentRepository
+import com.auris.app.data.repository.InvidiousInstanceStore
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.source.ExtensionLoader
@@ -63,6 +67,16 @@ interface AppContainer {
     val extensionLoader: ExtensionLoader
     val kitsuClient: KitsuClient
     val innerTubeClient: InnerTubeClient
+    /**
+     * The music surface the UI depends on.
+     *
+     * Catalogue from YouTube Music's own API; audio from public Invidious instances. Screens talk
+     * to this, never to either provider, so the audio half can change without touching a
+     * ViewModel.
+     */
+    val musicSource: MusicSource
+    /** The Invidious instances audio is streamed through, persisted and user-editable. */
+    val invidiousInstanceStore: InvidiousInstanceStore
     val kitsuIdentifier: KitsuIdentifier
     val extensionContentRepository: ExtensionContentRepository
     val episodePlayer: EpisodePlayer
@@ -181,6 +195,42 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
      */
     override val innerTubeClient: InnerTubeClient by lazy {
         InnerTubeClient(httpClient, json, InnerTubeParser())
+    }
+
+    override val invidiousInstanceStore: InvidiousInstanceStore by lazy {
+        InvidiousInstanceStore(context.applicationContext)
+    }
+
+    /**
+     * HTTP client for audio resolution through public instances.
+     *
+     * Separate from [httpClient] because these are volunteer-run servers. The shared client's
+     * default 10-second read timeout would turn a merely-busy instance into a failure, and
+     * failover would then skip a host that was working.
+     */
+    private val invidiousHttpClient: okhttp3.OkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * The composed music source.
+     *
+     * The instance list is read through a lambda rather than captured, so an instance added in
+     * Settings takes effect on the next track instead of the next launch.
+     */
+    override val musicSource: MusicSource by lazy {
+        DefaultMusicSource(
+            catalogue = innerTubeClient,
+            resolver = InvidiousSource(
+                httpClient = invidiousHttpClient,
+                json = json,
+                instances = { invidiousInstanceStore.current() },
+            ),
+        )
     }
 
     override val kitsuIdentifier: KitsuIdentifier by lazy {

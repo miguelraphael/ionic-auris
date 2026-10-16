@@ -7,6 +7,7 @@ import com.auris.app.data.local.entity.ExtensionEntity
 import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
+import com.auris.app.data.repository.InvidiousInstanceStore
 import com.auris.app.source.repo.ExtensionRepo
 import com.auris.app.source.repo.SignatureVerifier
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +60,18 @@ data class SettingsUiState(
     val message: String? = null,
     /** Guards the irreversible delete against double-taps. */
     val isDeletingAccount: Boolean = false,
+    /**
+     * The public Invidious instances audio is streamed through, in priority order.
+     *
+     * On this screen because the list is the app's most fragile dependency: as of 2026-10 exactly
+     * one public instance has its API open, so "the host I use closed its API" is an event the
+     * user has to be able to fix without waiting for a release.
+     */
+    val invidiousInstances: List<String> = emptyList(),
+    /** What the user is typing into the add-instance field. */
+    val invidiousDraft: String = "",
+    /** Rejected input, so a typo is explained rather than silently dropped. */
+    val invidiousError: String? = null,
 ) {
     /** True when nothing at all has been pinned yet, so the screen can explain rather than list. */
     val isEmpty: Boolean get() = extensions.isEmpty()
@@ -76,6 +89,7 @@ class SettingsViewModel(
     private val extensionRepository: ExtensionRepository,
     private val repoStore: ExtensionRepoStore,
     private val authRepository: AuthRepository,
+    private val invidiousInstanceStore: InvidiousInstanceStore,
 ) : ViewModel() {
 
     private val message = MutableStateFlow<String?>(null)
@@ -84,6 +98,7 @@ class SettingsViewModel(
             repoUrl = repoStore.current().baseUrl,
             repoName = repoStore.current().name,
             repoDeclaredKey = repoStore.current().signingKeyFingerprint,
+            invidiousInstances = invidiousInstanceStore.current(),
         ),
     )
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -106,6 +121,12 @@ class SettingsViewModel(
             .onEach { session ->
                 _state.value = _state.value.copy(accountEmail = session?.email)
             }
+            .launchIn(viewModelScope)
+
+        // The store is the source of truth, so the resolver (which reads it per track) and this
+        // screen can never disagree about which instances are configured.
+        invidiousInstanceStore.instances
+            .onEach { instances -> _state.value = _state.value.copy(invidiousInstances = instances) }
             .launchIn(viewModelScope)
     }
 
@@ -261,6 +282,49 @@ class SettingsViewModel(
         _state.value = _state.value.copy(message = null)
     }
 
+    // ---- Music: Invidious instances -----------------------------------------
+
+    fun setInvidiousDraft(value: String) {
+        _state.value = _state.value.copy(invidiousDraft = value, invidiousError = null)
+    }
+
+    /**
+     * Adds the drafted instance.
+     *
+     * Validation lives in [InvidiousInstanceStore.normalise] rather than here, so the rule that
+     * decides what may be *stored* is the same rule that accepts it from the field — a second
+     * copy would let the UI accept something the store then silently dropped.
+     */
+    fun addInvidiousInstance() {
+        val raw = _state.value.invidiousDraft
+        val normalised = InvidiousInstanceStore.normalise(raw)
+
+        if (normalised == null) {
+            _state.value = _state.value.copy(
+                invidiousError = "\"${raw.trim()}\" is not a valid instance address",
+            )
+            return
+        }
+
+        if (_state.value.invidiousInstances.contains(normalised)) {
+            _state.value = _state.value.copy(invidiousDraft = "", invidiousError = "Already in the list")
+            return
+        }
+
+        invidiousInstanceStore.add(normalised)
+        _state.value = _state.value.copy(invidiousDraft = "", invidiousError = null)
+    }
+
+    fun removeInvidiousInstance(url: String) {
+        invidiousInstanceStore.remove(url)
+        _state.value = _state.value.copy(invidiousError = null)
+    }
+
+    fun resetInvidiousInstances() {
+        invidiousInstanceStore.reset()
+        _state.value = _state.value.copy(invidiousError = null)
+    }
+
     /**
      * Signs out and returns to the login gate.
      *
@@ -299,10 +363,11 @@ class SettingsViewModel(
         private val extensionRepository: ExtensionRepository,
         private val repoStore: ExtensionRepoStore,
         private val authRepository: AuthRepository,
+        private val invidiousInstanceStore: InvidiousInstanceStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SettingsViewModel(extensionRepository, repoStore, authRepository) as T
+            SettingsViewModel(extensionRepository, repoStore, authRepository, invidiousInstanceStore) as T
     }
 
     companion object {
@@ -310,7 +375,9 @@ class SettingsViewModel(
             extensionRepository: ExtensionRepository,
             repoStore: ExtensionRepoStore,
             authRepository: AuthRepository,
-        ): ViewModelProvider.Factory = Factory(extensionRepository, repoStore, authRepository)
+            invidiousInstanceStore: InvidiousInstanceStore,
+        ): ViewModelProvider.Factory =
+            Factory(extensionRepository, repoStore, authRepository, invidiousInstanceStore)
     }
 }
 

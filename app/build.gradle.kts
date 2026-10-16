@@ -105,6 +105,19 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            /**
+             * Framework stubs return defaults instead of throwing "not mocked".
+             *
+             * Needed because the Invidious resolver logs on the failure paths that its tests exist
+             * to exercise (failover, an unreachable instance, a refusal) — and an unstubbed
+             * `android.util.Log.w` would abort those tests for a reason that has nothing to do
+             * with what they check.
+             *
+             * The trade-off is real and worth stating: a test can no longer rely on a framework
+             * call throwing, so anything whose real behaviour matters still needs Robolectric
+             * (as the Room and log-exporter tests do) or a device.
+             */
+            isReturnDefaultValues = true
             all {
                 // The extension test-support code references androidTest-only classes.
                 // Robolectric only runs the unit-test variants, so keep it out of their

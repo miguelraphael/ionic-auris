@@ -36,10 +36,10 @@ class InnerTubeParser {
     // ---- Search -------------------------------------------------------------
 
     /** Parses a `search` response into tracks, albums and playlists. */
-    fun parseSearch(root: JsonObject): List<InnerTubeMusicItem> = root.collectRenderers()
+    fun parseSearch(root: JsonObject): List<MusicCollectionItem> = root.collectRenderers()
 
     /** Parses a `browse` response into tracks, albums and playlists. */
-    fun parseBrowse(root: JsonObject): List<InnerTubeMusicItem> = root.collectRenderers()
+    fun parseBrowse(root: JsonObject): List<MusicCollectionItem> = root.collectRenderers()
 
     /**
      * Walks the tree collecting every recognised renderer.
@@ -48,10 +48,10 @@ class InnerTubeParser {
      * album and playlist responses, and a depth limit is not stable enough to rely on. Bounded
      * to keep a malformed response from recursing deeply.
      */
-    private fun JsonObject.collectRenderers(depth: Int = 0): List<InnerTubeMusicItem> {
+    private fun JsonObject.collectRenderers(depth: Int = 0): List<MusicCollectionItem> {
         if (depth > MAX_DEPTH) return emptyList()
 
-        val found = mutableListOf<InnerTubeMusicItem>()
+        val found = mutableListOf<MusicCollectionItem>()
 
         // A renderer with no video id cannot be played, so it is dropped rather than surfaced as
         // an empty row — the caller would have nothing to put in `sourceId`.
@@ -59,8 +59,8 @@ class InnerTubeParser {
         this["musicResponsiveListItemRenderer"]?.asObject()?.let { found += parseTrack(it) }
         this["musicTwoRowItemRenderer"]?.asObject()?.let { renderer ->
             renderer.firstTitle()?.let { title ->
-                found += InnerTubeMusicItem(
-                    kind = InnerTubeMusicItem.Kind.ALBUM,
+                found += MusicCollectionItem(
+                    kind = MusicCollectionItem.Kind.ALBUM,
                     album = MusicAlbum(
                         browseId = renderer.browseId() ?: "",
                         title = title,
@@ -75,8 +75,8 @@ class InnerTubeParser {
         this["musicShelfRenderer"]?.asObject()?.let { shelf ->
             val shelfTitle = shelf.firstTitle()
             if (shelfTitle != null) {
-                found += InnerTubeMusicItem(
-                    kind = InnerTubeMusicItem.Kind.PLAYLIST,
+                found += MusicCollectionItem(
+                    kind = MusicCollectionItem.Kind.PLAYLIST,
                     playlist = MusicPlaylist(
                         browseId = shelf.browseId() ?: "",
                         title = shelfTitle,
@@ -99,7 +99,7 @@ class InnerTubeParser {
             }
         }
 
-        return found.filter { it.kind != InnerTubeMusicItem.Kind.UNKNOWN }
+        return found.filter { it.kind != MusicCollectionItem.Kind.UNKNOWN }
     }
 
     // ---- Track --------------------------------------------------------------
@@ -125,9 +125,9 @@ class InnerTubeParser {
      * The subtitle is a list of runs, not one string, so `"Song"` and `"5:54"` are separate runs
      * that have to be joined before the parts can be classified.
      */
-    private fun parseTrack(renderer: JsonObject): InnerTubeMusicItem {
+    private fun parseTrack(renderer: JsonObject): MusicCollectionItem {
         val videoId = renderer.firstVideoId()
-            ?: return InnerTubeMusicItem(InnerTubeMusicItem.Kind.UNKNOWN)
+            ?: return MusicCollectionItem(MusicCollectionItem.Kind.UNKNOWN)
 
         // Labelled first: when accessibilityData is present it is the reliable path.
         val labelledTitle = renderer.flexText("title") ?: renderer.flexText("song")
@@ -155,8 +155,8 @@ class InnerTubeParser {
         val labelledArtist = renderer.flexText("artist")?.let { it.substringBefore("•").trim() }
         val labelledAlbum = renderer.flexText("album")?.let { it.substringBefore("•").trim() }
 
-        return InnerTubeMusicItem(
-            kind = InnerTubeMusicItem.Kind.TRACK,
+        return MusicCollectionItem(
+            kind = MusicCollectionItem.Kind.TRACK,
             tracks = listOf(
                 MusicTrack(
                     videoId = videoId,
@@ -460,7 +460,7 @@ class InnerTubeParser {
     private fun JsonObject.videoDetailsDurationSeconds(): Long? = long("lengthSeconds")
 
     /** Sums track counts so [InnerTubeClient] can decide whether to follow a continuation. */
-    fun totalTracks(items: List<InnerTubeMusicItem>): Int =
+    fun totalTracks(items: List<MusicCollectionItem>): Int =
         items.sumOf { it.tracks.size } + items.sumOf { it.album?.trackCount ?: 0 }
 
     private fun JsonElement.asObject(): JsonObject? = this as? JsonObject
