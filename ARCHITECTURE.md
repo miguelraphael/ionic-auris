@@ -118,8 +118,8 @@ tested live: `WEB_REMIX` and `ANDROID_MUSIC` (200 + `UNPLAYABLE`/`LOGIN_REQUIRED
 missing header.
 
 Per the yt-dlp PO Token Guide (July 2026), PO tokens are now **bound to the video id** — one per
-track — and serving audio requires BotGuard attestation. Running BotGuard means defeating an access
-control, so it is **not attempted here**, and it would compound an unresolved YouTube ToS question.
+track. That reading was tested directly (see *Verified 2026-10*): attestation is achievable, but it
+is **not** the gate, and minting a valid token changes nothing.
 
 The app reports this honestly: `YouTube declined to serve audio for "…" (UNPLAYABLE)`, not
 "Nothing playable", which would point the user at a track that is fine. `StreamRefusal` separates a
@@ -127,6 +127,49 @@ per-track condition (`private`, `removed`, region-blocked) from a request-level 
 only the first is fixed by choosing a different song.
 
 Browse, search, metadata and library all work. Only audio does not.
+
+### Verified 2026-10: a PO token is **not** sufficient
+
+The "BotGuard is the blocker" reading of this wall was tested end-to-end, and it is **wrong**.
+Using only permissively-licensed pieces — `bgutils-js` (**MIT**) for the VM orchestration, and
+Google's own BotGuard interpreter, fetched at runtime — a complete attestation was performed in a
+real JS environment:
+
+| Step | Result |
+| --- | --- |
+| `POST /youtubei/v1/att/get` (`WEB`, `ENGAGEMENT_TYPE_UNBOUND`) | 200 — `bgChallenge` (interpreter URL, ~36 KB bytecode program, `globalName`) |
+| Load interpreter, run `vm.a(program, …)` | OK — `asyncSnapshotFunction` obtained |
+| `asyncSnapshotFunction(…)` | OK — BotGuard response (~4.4 KB) **and** a signal-output function |
+| `Waa/GenerateIT` | 200 — integrity token, TTL 43200 s |
+| `WebPoMinter.mint(videoId)` | OK — **128-char PO token** (and a 176-char visitor-bound variant) |
+
+With that genuine token attached, `/player` was called for **9 client identities × 4 token
+placements** (none / `serviceIntegrityDimensions.poToken` / visitor-bound token / `params`), and
+then again for **3 videos × 2 hosts × 4 clients**. **Every single call returned zero formats and
+an empty `adaptiveFormats`**:
+
+| Client | Result with a valid PO token |
+| --- | --- |
+| `WEB_REMIX`, `WEB`, `MWEB`, `TVHTML5` | `UNPLAYABLE` |
+| `ANDROID_MUSIC` | `LOGIN_REQUIRED` — "Please sign in" |
+| `ANDROID_VR` | `LOGIN_REQUIRED` — "Sign in to confirm you're not a bot" |
+| `TVHTML5_SIMPLY_EMBEDDED_PLAYER` | `ERROR` — "YouTube is no longer supported in this application or device" |
+| `WEB_EMBEDDED_PLAYER` | `ERROR` |
+
+`videoDetails.title` was served throughout, so the requests were well-formed and the videos were
+known to YouTube. So attestation is **achievable** — the doc's earlier "cannot" was wrong — but it
+is **not sufficient**. The gate that remains is a signed-in account, which is exactly why every
+large third-party client (e.g. ArchiveTune) solves this by *authenticating* rather than bypassing.
+
+**One open variable:** that experiment ran from a **datacenter IP**, and YouTube's refusal of
+unauthenticated `/player` is frequently IP-reputation driven. From a residential or mobile IP the
+same request *may* succeed. The decisive test is therefore **on-device, from the handset's own
+network** — not from CI, and not from a server.
+
+An important consequence: because attestation was never the gate, the cipher/deobfuscation
+subsystem (signature + `n` transform) was never built — and should not be, until a client identity
+is seen returning formats at all. A `signatureCipher` only needs deobfuscating after `/player`
+has decided to serve one.
 
 ### Decision: YouTube audio extraction is DEFERRED
 
@@ -137,20 +180,21 @@ which alone is sufficient:
 reserved by default — so linking one would force the entire app to GPL and open-source. That is the
 project owner's call, not an engineering one, and it has not been made.
 
-**2. Technical.** PO tokens are now **bound to the video id**, so serving audio requires BotGuard
-attestation per track. BotGuard is an anti-automation control; defeating it is circumventing an
-access control. It is also incompatible with the architecture: minting needs a WebView, and a
-WebView cannot run inside a `MediaSessionService` — which is precisely what background audio
-requires. **The fix would break the feature it was meant to restore.**
+**2. Technical.** The gate is an authenticated account, not attestation. A complete BotGuard
+attestation was performed and it did not unblock playback — see *Verified 2026-10* below. The
+earlier claim here, that a WebView "cannot run inside a `MediaSessionService`", was wrong in
+principle: the *app process* can host a WebView while the service plays, and the service is not
+where minting would have to live. It is moot regardless, because minting a PO token is not what
+unblocks `/player`.
 
 ### What was evaluated
 
 | Option | Outcome |
 | --- | --- |
-| NewPipeExtractor | **Rejected.** GPL-3.0. No YouTube Music support, so it discards the album/track model and the `totalUnits` progress mapping. WebView PO-token flow cannot run in a `MediaSessionService`. |
-| ArchiveTune (6.9k stars) | **Rejected.** Verified from its own `libs.versions.toml`: it depends on `com.github.TeamNewPipe:NewPipeExtractor`. So it inherits the same GPL-3.0 and the same WebView constraint — plus it is an *app*, not a library, so nothing is importable. |
+| NewPipeExtractor | **Rejected.** GPL-3.0. No YouTube Music support, so it discards the album/track model and the `totalUnits` progress mapping. |
+| ArchiveTune (6.9k stars) | **Rejected.** Verified from its own `libs.versions.toml`: it depends on `com.github.TeamNewPipe:NewPipeExtractor`. So it inherits the same GPL-3.0 problem — plus it is an *app*, not a library, so nothing is importable. |
 | Obsidian-Music | **Irrelevant.** Apache-2.0 and Media3-based, but the repository contains **no source** — only `README.md`, `LICENSE`, `update.json` and screenshots. It is also a *local-file* player with no streaming at all. |
-| BotGuard attestation | **Not attempted.** Circumventing an access control. |
+| BotGuard attestation | **Attempted and found insufficient.** A valid, video-id-bound PO token was minted end-to-end offline (2026-10) and `/player` still refused every client identity. See *Verified 2026-10*. |
 
 ArchiveTune is the most useful data point in that table, and not for the reason it might appear: its
 own legal disclaimer states it **"does not bypass YouTube's technical protections"** — it
@@ -165,6 +209,12 @@ call for the project owner, and the UI work is: a sign-in screen, cookie persist
 `sync_sessions`-style secure storage, and expiry handling in `StreamRefusal`. `InnerTubeClient` is
 already built so this is a config change — but **it should be an explicit decision, never inherited
 from a GPL app.**
+
+Two caveats before that decision is taken. First, **security**: Google session cookies are
+bearer credentials for the user's entire Google account, not just YouTube Music. Any store that
+holds them is a high-value target, and a leaked cookie cannot be scoped down. Second, **order of
+operations**: run the on-device probe from *Verified 2026-10* first. If a residential IP returns
+formats unauthenticated, this entire section is moot.
 
 ---
 

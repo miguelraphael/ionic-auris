@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.auris.app.diagnostics.LogExporter
@@ -54,6 +55,9 @@ data class DiagnosticsUiState(
     val droppedLines: Int = 0,
     val isExporting: Boolean = false,
     val message: String? = null,
+    /** One line per client identity, from the unauthenticated stream-access probe. */
+    val probeLines: List<String> = emptyList(),
+    val isProbing: Boolean = false,
 )
 
 /**
@@ -67,12 +71,18 @@ data class DiagnosticsUiState(
  *
  * @param onGenerateLogs performs the export and share. Passed in rather than constructed here so
  *   this screen holds no Android dependencies beyond composition.
+ * @param onProbeStreamAccess runs the unauthenticated `/player` probe against several client
+ *   identities. Also injected, for the same reason — the probe needs an HTTP client and a
+ *   dispatcher, neither of which belongs in a composable.
+ * @param onCopyProbeResults copies the probe lines to the clipboard.
  */
 @Composable
 fun DiagnosticsScreen(
     state: DiagnosticsUiState,
     onGenerateLogs: () -> Unit,
     onBack: () -> Unit,
+    onProbeStreamAccess: () -> Unit = {},
+    onCopyProbeResults: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
@@ -104,12 +114,12 @@ fun DiagnosticsScreen(
             // Summary card
             Surface(
                 shape = RoundedCornerShape(AurisRadii.artwork),
-                color = AurisSurface.copy(alpha = 0.6f),
+                color = AurisSurface,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        AurisLogo(background = AurisSurface, size = 32.dp, alpha = 0.8f)
+                        AurisLogo(background = AurisBackground, size = 32.dp, alpha = 0.8f)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -192,7 +202,7 @@ fun DiagnosticsScreen(
                 Spacer(Modifier.height(14.dp))
                 Surface(
                     shape = RoundedCornerShape(AurisRadii.chip),
-                    color = AurisSurface.copy(alpha = 0.8f),
+                    color = AurisSurface,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
@@ -206,10 +216,109 @@ fun DiagnosticsScreen(
 
             Spacer(Modifier.height(28.dp))
 
+            // Stream-access probe.
+            //
+            // Lives on this screen rather than a music one because it answers a question about
+            // the *network*, not about a library or an account: whether YouTube Music will serve
+            // audio to this device without signing in. It is a one-off investigation, not a
+            // setting.
+            Surface(
+                shape = RoundedCornerShape(AurisRadii.artworkSmall),
+                color = AurisSurface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Music stream probe",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = AurisOnSurface,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Asks YouTube Music for audio without signing in, from this " +
+                            "device's network, across every client identity. If Wi-Fi returns " +
+                            "nothing, run it again on mobile data — the answer can differ.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AurisOnSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(AurisRadii.button),
+                            color = if (state.isProbing) AurisTrack else AurisAccent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    enabled = !state.isProbing,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = onProbeStreamAccess,
+                                )
+                                .padding(vertical = 12.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = if (state.isProbing) "Probing…" else "Run probe",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (state.isProbing) AurisOnSurfaceVariant else AurisBackground,
+                                )
+                            }
+                        }
+
+                        // Only offered once there is something to copy — copying an empty
+                        // report would silently succeed and tell nobody anything.
+                        if (state.probeLines.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(AurisRadii.button),
+                                color = AurisTrack,
+                                modifier = Modifier
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = onCopyProbeResults,
+                                    )
+                                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                            ) {
+                                Text(
+                                    text = "Copy",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = AurisOnSurface,
+                                )
+                            }
+                        }
+                    }
+
+                    if (state.probeLines.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(AurisRadii.chip),
+                            color = AurisTrack,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                state.probeLines.forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                        ),
+                                        color = AurisOnSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
             // What the bundle contains, and the redaction notice.
             Surface(
                 shape = RoundedCornerShape(AurisRadii.artworkSmall),
-                color = AurisTrack.copy(alpha = 0.5f),
+                color = AurisTrack,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(16.dp)) {
