@@ -18,10 +18,34 @@ val AurisRose = Color(0xFFE8305A)
 val AurisOrange = Color(0xFFF07818)
 val AurisAmber = Color(0xFFFFA82B)
 
+// ---- Brand gradient (product spec) ----
+// A separate sweep from [LogoGradient]: the logo's own hues must stay tied to the
+// logo asset, whereas these four are the product palette drawn on chrome (glows,
+// accent strokes, highlights) and are free to be more saturated.
+
+/** Electric Cyan. */
+val BrandCyan = Color(0xFF22D3EE)
+
+/** Royal Indigo. */
+val BrandIndigo = Color(0xFF4F46E5)
+
+/** Neon Purple. */
+val BrandPurple = Color(0xFFA855F7)
+
+/** Sunset Orange. */
+val BrandOrange = Color(0xFFFB923C)
+
+/** The brand sweep, cyan to orange. UI chrome only — never tint the logo with it. */
+val BrandGradient = listOf(BrandCyan, BrandIndigo, BrandPurple, BrandOrange)
+
 // ---- Reference UI surfaces (sampled from UI/music-player-UI.jpg at 1080x2400) ----
 
-/** Bottom app background below the artwork gradient fade. */
-val AurisBackground = Color(0xFF161B24)
+/**
+ * Root app background: true OLED black, slightly lifted off pure #000 so elevation
+ * (surfaces, glass) still reads as a layer rather than a hole. The artwork gradient
+ * fades into this.
+ */
+val AurisBackground = Color(0xFF0B0B0E)
 
 /** Floating nav pill surface. */
 val AurisSurface = Color(0xFF2C303C)

@@ -52,6 +52,24 @@ class AuthViewModel(
         )
     }
 
+    /**
+     * Fills the form with the placeholder demo credentials for a UI walkthrough.
+     *
+     * Deliberately not a sign-in: nothing is sent and no session is forged, so the
+     * button cannot become a bypass. The user still presses Sign in, which runs the
+     * exact same path as a hand-typed login. Switches to sign-in mode so the prefilled
+     * pair matches the action the user is about to take.
+     */
+    fun useDemoAccount() {
+        _state.value = _state.value.copy(
+            isRegisterMode = false,
+            email = DEMO_EMAIL,
+            password = DEMO_PASSWORD,
+            error = null,
+            notice = null,
+        )
+    }
+
     fun submit() {
         val email = _state.value.email.trim()
         val password = _state.value.password
@@ -115,6 +133,15 @@ class AuthViewModel(
 
     companion object {
         const val MIN_PASSWORD_LENGTH = 6
+
+        /**
+         * Placeholder credentials for the demo prefill. These are UI fixtures only —
+         * they are never sent anywhere until the user taps Sign in, and they are not
+         * a shipped account. Point them at a real Supabase user you have created if
+         * you want the demo path to actually authenticate.
+         */
+        const val DEMO_EMAIL = "demo@auris.app"
+        const val DEMO_PASSWORD = "demo123"
 
         fun factory(authRepository: AuthRepository): ViewModelProvider.Factory =
             Factory(authRepository)
