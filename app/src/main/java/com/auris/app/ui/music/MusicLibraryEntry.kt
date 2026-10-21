@@ -46,7 +46,9 @@ fun MusicLibraryEntry(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        // Full-width header carrying the only call to action on an otherwise empty screen.
+        // Full-width header carrying the only call to action. It is rendered whether or not
+        // there are saved tracks: gating it on `entries.isEmpty()` made browse unreachable for
+        // every user who had ever saved a track, which is the opposite of the intent above.
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 56.dp)) {
                 SectionHeader(title = "Your music")
@@ -56,9 +58,9 @@ fun MusicLibraryEntry(
                         style = MaterialTheme.typography.bodyMedium,
                         color = AurisOnSurfaceVariant,
                     )
-                    Spacer(Modifier.height(12.dp))
-                    BrowseButton(onOpenBrowse)
                 }
+                Spacer(Modifier.height(12.dp))
+                BrowseButton(onOpenBrowse)
             }
         }
 
