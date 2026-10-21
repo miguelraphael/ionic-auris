@@ -83,11 +83,16 @@ class InvidiousInstanceStore(context: Context) {
         /**
          * The instances shipped with the app.
          *
-         * A single working host leads the list; a second is included as a placeholder the user
-         * can replace. Deliberately short: this is an ordered failover list, not a directory, and
-         * every dead entry is a round trip spent before playback starts.
+         * `jp2.invidious.f5.si` first: it is the working backend host of the same instance, and
+         * it currently answers the API for music videos where the bare host fails every request
+         * (`500 Error while communicating with Invidious companion`). The bare host stays second
+         * so a recovery there is picked up without a settings change.
+         *
+         * Deliberately short: this is an ordered failover list, not a directory, and every dead
+         * entry is a round trip spent before playback starts.
          */
         val DEFAULT_INSTANCES = listOf(
+            "https://jp2.invidious.f5.si",
             "https://invidious.f5.si",
         )
 

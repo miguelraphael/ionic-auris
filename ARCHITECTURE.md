@@ -290,12 +290,34 @@ probe that succeeds on one ancient, heavily-cached video id is not evidence that
 `dQw4w9WgXcQ` answered every single time while eight contemporary music videos answered `500`
 (`This content isn't available`) in the same minute.
 
-**Open — per-backend selection.** The instance's web UI offers `BACKEND: JP1 (Tokyo) |
-JP2 (Hokkaido)`. If that is expressible for API calls — a cookie or a query parameter — it belongs
-on the instance entry, because it is the difference between one degraded backend and a working one.
-It could not be discovered from outside: every non-API path is Anubis-gated, and guessed selectors
-(`?backend=`, `Cookie: backend=`, `X-Backend:`) changed nothing. This is a question for someone who
-can see the UI.
+**Backend selection is host selection, not a parameter.** The web UI's
+`BACKEND: JP1 (Tokyo) | JP2 (Hokkaido)` maps to **separate hosts** — verified 2026-10:
+`jp2.invidious.f5.si` resolves and answers `/api/v1/stats`, `jp1.invidious.f5.si` does not resolve at
+all. So no new model is needed: a backend is just another entry in the instance list. The shipped
+default now leads with `jp2`, because it answers the API for music videos where the bare host
+returns `500` for **every** request (`Error while communicating with Invidious companion`).
+
+**The remaining blocker is audio delivery, and it is not ours to fix.** On `jp2` both paths to the
+bytes are closed to a plain HTTP client:
+
+| Path | Result |
+| --- | --- |
+| Direct `googlevideo.com` URL from `?local=false` (default) | `ip=111.107.47.57` sits **inside `sparams`** — the instance's own egress — and a client elsewhere gets **403, 0 bytes, 0 of 3 attempts** |
+| Proxied URL from `?local=true` (`/videoplayback?...` on the instance) | **Anubis-gated**: 7 KB of `text/html`, not audio |
+| `/latest_version` (the web player's stream route) | Anubis-gated, both `local=true` and `local=false` |
+| `/vi/<id>/<name>.jpg` (artwork) | Anubis-gated |
+
+The first row is the one that matters: an IP-bound URL cannot be played by this app *or* by a
+browser on another network, which means either the instance binds to the wrong address (a
+Cloudflare/forwarding misconfiguration on its side) or playback there only works through the
+proxied path once a browser has cleared Anubis. **Do not script around Anubis** — it is a bot wall,
+and the project's rule about circumvention applies to it exactly as it does to YouTube's.
+
+What this means for the decision: the *metadata* route is alive and the seam is correct, but audio
+delivery currently has no verified path from a client. That is a reason to test on the handset
+(different egress, different Cloudflare edge) before concluding — and a reason to keep the
+instance list editable, since it is now clearly a moving target rather than a fixed dependency.
+
 
 **Honest failure text.** `StreamRefusal` now distinguishes three cases that all used to read as
 "nothing playable": the *track* is gone (pick another song), a *provider declined* (retrying the

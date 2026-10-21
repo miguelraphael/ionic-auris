@@ -190,12 +190,14 @@ class InvidiousProbe(
         /**
          * Instances to probe.
          *
-         * The first is the only public instance with its API open as of 2026-10; the other two
-         * are listed with the API **closed** (`403 Endpoint disabled`, `401`) on purpose — the
-         * contrast is the evidence that this route depends on a single volunteer's server, and a
-         * device that suddenly reaches one of them would be worth knowing about.
+         * `jp2` is the backend host of the same instance that still answers the API; the bare
+         * host's companion currently fails every request (`500 Error while communicating with
+         * Invidious companion`), and the remaining two are listed with the API **closed**
+         * (`403 Endpoint disabled`, `401`) on purpose — the contrast is the evidence that this
+         * route depends on a single volunteer's server.
          */
         val DEFAULT_INSTANCES = listOf(
+            "https://jp2.invidious.f5.si",
             "https://invidious.f5.si",
             "https://inv.nadeko.net",
             "https://invidious.nerdvpn.de",
