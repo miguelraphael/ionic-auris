@@ -419,14 +419,15 @@ private fun ExtensionSecurityRow(extension: ExtensionSecurity) {
 // ---- Music -------------------------------------------------------------------
 
 /**
- * The public Invidious instances music is streamed through.
+ * The public Invidious instances used when on-device extraction cannot reach a track.
  *
  * ### Why this list is editable here
- * Audio for the whole music pillar comes from these hosts, and as of 2026-10 **exactly one**
- * public instance has its API open — the others answer `403 Endpoint disabled`, `401` or
- * `forbidden`, and the trend is instances closing their APIs. So "the host I use closed its own"
- * is a question of when, not whether. Making the list a setting moves that event from waiting on
- * a release to pasting a new address.
+ * Audio is normally extracted on the device by NewPipeExtractor; these hosts are the fallback
+ * for the tracks it cannot reach. That fallback is fragile in its own right — as of 2026-10
+ * **exactly one** public instance had its API open, the others answering `403 Endpoint
+ * disabled`, `401` or `forbidden` — so "the host I use closed its own" is a question of when,
+ * not whether. Making the list a setting moves that event from waiting on a release to pasting
+ * a new address.
  *
  * The order is the failover order: the first entry that answers is the one used, and one that
  * fails is deprioritised for a couple of minutes before being retried.
@@ -441,13 +442,13 @@ private fun InvidiousInstancesSection(
 ) {
     Column {
         Text(
-            text = "Audio source",
+            text = "Fallback audio source",
             style = MaterialTheme.typography.bodyLarge,
             color = AurisOnSurface,
         )
         Text(
-            text = "Invidious instances, tried in order. One that fails is skipped for a few " +
-                "minutes before being retried.",
+            text = "Used when audio cannot be extracted on the device. Tried in order; one that " +
+                "fails is skipped for a few minutes before being retried.",
             style = MaterialTheme.typography.bodySmall,
             color = AurisOnSurfaceVariant,
         )
@@ -456,9 +457,10 @@ private fun InvidiousInstancesSection(
 
         if (state.invidiousInstances.isEmpty()) {
             // Stated as a warning rather than an empty list, because it is the difference
-            // between "music is slow" and "music cannot play at all".
+            // between "music is slow" and "some tracks cannot play at all".
             InfoBanner(
-                text = "No instance is configured, so nothing can play. Add one below.",
+                text = "No fallback instance is configured, so tracks the device cannot " +
+                    "extract will not play. Add one below.",
                 isWarning = true,
             )
         } else {
