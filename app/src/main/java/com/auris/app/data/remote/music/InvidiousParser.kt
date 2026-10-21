@@ -19,11 +19,19 @@ internal data class InvidiousVideoSummary(
     /** Count of **audio-only** formats. The resolver will also accept a muxed one; this is the pure count. */
     val audioFormats: Int = 0,
     val totalFormats: Int = 0,
-    val bestAudioUrl: String? = null,
-    val bestAudioMimeType: String? = null,
-    val bestAudioBitrate: Int? = null,
+    /**
+     * Every audio candidate the instance offered, best first.
+     *
+     * A list rather than a single pick because a format's URL can be refused while another
+     * format's is served — the resolver probes instead of trusting the first one.
+     */
+    val audioStreams: List<AudioStream> = emptyList(),
     val error: String? = null,
-)
+) {
+    val bestAudioUrl: String? get() = audioStreams.firstOrNull()?.url
+    val bestAudioMimeType: String? get() = audioStreams.firstOrNull()?.mimeType
+    val bestAudioBitrate: Int? get() = audioStreams.firstOrNull()?.bitrate
+}
 
 /**
  * Reduces an `/api/v1/videos` body to what a caller needs.
@@ -52,43 +60,48 @@ internal fun parseInvidiousVideo(body: String, json: Json): InvidiousVideoSummar
 
     val audioOnly = all.filter { it["type"].str()?.startsWith("audio/", ignoreCase = true) == true }
     val muxed = all.filter { it["type"].str()?.startsWith("video/", ignoreCase = true) == true }
+    val lengthMs = root["lengthSeconds"].str()?.toLongOrNull()?.times(1000)
 
-    // Prefer the highest-bitrate audio-only stream. Failing that, take the *lowest*-bitrate muxed
-    // one: the video track is never rendered (no surface is attached in an audio session), so the
-    // only thing its bitrate costs is bandwidth.
-    val chosen = audioOnly.maxByOrNull { it.bitrate() } ?: muxed.minByOrNull { it.bitrate() }
+    // Prefer audio-only streams, highest bitrate first, because they are the cheapest to decode
+    // and the smallest to fetch. Failing that, take muxed ones, *lowest*-bitrate first: the video
+    // track is never rendered (no surface is attached in an audio session), so the only thing its
+    // bitrate costs is bandwidth.
+    val candidates = (audioOnly.sortedByDescending { it.bitrate() } + muxed.sortedBy { it.bitrate() })
+        .mapNotNull { it.toAudioStream(lengthMs) }
+        .distinctBy { it.url }
 
     return InvidiousVideoSummary(
         title = root["title"].str(),
         author = root["author"].str(),
-        lengthMs = root["lengthSeconds"].str()?.toLongOrNull()?.times(1000),
+        lengthMs = lengthMs,
         audioFormats = audioOnly.size,
         totalFormats = all.size,
-        bestAudioUrl = chosen?.get("url").str(),
-        bestAudioMimeType = chosen?.get("type").str(),
-        bestAudioBitrate = chosen?.bitrate()?.takeIf { it > 0 },
+        audioStreams = candidates,
     )
 }
 
-/**
- * Builds a playable [AudioStream], or null when the instance named no URL.
- *
- * The expiry is read out of the URL itself. Invidious returns `googlevideo.com` URLs carrying an
- * `expire=<unix seconds>` parameter, so the stream's real lifetime is knowable rather than
- * guessed — which is what lets the resolver cache a resolved URL safely instead of handing the
- * player one that has already lapsed.
- */
-internal fun InvidiousVideoSummary.toAudioStream(): AudioStream? {
-    val url = bestAudioUrl ?: return null
+/** One format object as a playable stream, or null when it carries no URL. */
+private fun JsonObject.toAudioStream(lengthMs: Long?): AudioStream? {
+    val url = get("url").str() ?: return null
 
     return AudioStream(
         url = url,
-        mimeType = bestAudioMimeType.orEmpty(),
-        bitrate = bestAudioBitrate,
+        mimeType = get("type").str().orEmpty(),
+        bitrate = bitrate().takeIf { it > 0 },
         durationMs = lengthMs,
         expiresAtMs = expireEpochMs(url),
     )
 }
+
+/**
+ * The instance's first-choice stream, or null when it named no URL.
+ *
+ * The expiry was read out of the URL itself when the candidate was built: Invidious returns
+ * `googlevideo.com` URLs carrying an `expire=<unix seconds>` parameter, so the stream's real
+ * lifetime is knowable rather than guessed — which is what lets the resolver cache a resolved URL
+ * safely instead of handing the player one that has already lapsed.
+ */
+internal fun InvidiousVideoSummary.toAudioStream(): AudioStream? = audioStreams.firstOrNull()
 
 private fun JsonObject.bitrate(): Int = get("bitrate").str()?.toIntOrNull() ?: 0
 

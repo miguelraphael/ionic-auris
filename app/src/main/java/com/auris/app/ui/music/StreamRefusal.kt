@@ -77,8 +77,22 @@ object StreamRefusal {
 
         isAboutContent(refusal) -> "\"$title\" is unavailable: ${refusal.reason}"
 
+        // The source named audio and then refused to deliver it to this device. That is neither a
+        // content problem nor a failure to reach the source, so the reason is shown: it is the
+        // only thing that explains why a track that clearly exists will not play.
+        refusal.status == UNFETCHABLE ->
+            "Could not fetch audio for \"$title\": ${refusal.reason ?: "the source refused it"}"
+
         // A provider answered and declined, but the reason says nothing about the track — so the
         // status is quoted rather than interpreted, and the user is not told the song is gone.
         else -> "No audio was served for \"$title\" (${refusal.status})"
     }
+
+    /**
+     * Status the resolver mints when it got a stream URL and then could not fetch it.
+     *
+     * Not a provider status: providers do not say this. It exists so the one case where the audio
+     * demonstrably exists but not for this device gets its own wording.
+     */
+    private const val UNFETCHABLE = "UNFETCHABLE"
 }

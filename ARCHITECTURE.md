@@ -297,26 +297,57 @@ all. So no new model is needed: a backend is just another entry in the instance 
 default now leads with `jp2`, because it answers the API for music videos where the bare host
 returns `500` for **every** request (`Error while communicating with Invidious companion`).
 
-**The remaining blocker is audio delivery, and it is not ours to fix.** On `jp2` both paths to the
-bytes are closed to a plain HTTP client:
+**Audio delivery works — from the handset, which is the only place that decides it.** The same
+instance, minutes apart, to two clients:
 
-| Path | Result |
+| Client | Resolve | Audio bytes | Playback |
+| --- | --- | --- | --- |
+| Build machine (datacenter egress) | `200`, 4 audio formats | **`403`, 0 bytes, 0 of 3 attempts** | — |
+| Realme RMX3636 on its own network | `200`, 4 audio formats | **`200`** | `PLAYING`, position `11.9 → 14.9 → 21.0 s`, buffer ahead of position, no `ExoPlaybackException` |
+
+The reason is in the URL: `googlevideo.com` carries `ip=…` **inside `sparams`**, so it is bound to
+whatever address the instance saw. Behind Cloudflare that is not necessarily the caller's address,
+and when it is not, the binding rejects every request. From the handset it lines up and the stream
+plays. `AurisMusic` records the resolve — `resolved Zx31bB2vMns via jp2.invidious.f5.si
+(stream=true)` — so the successful path is the shipped default, with no `local=true` and no proxy.
+
+An earlier draft of this section concluded the opposite, from the desktop's `403`. That conclusion
+was wrong in a way worth keeping: **the failure was a property of where the request came from, not
+of the route.** A datacenter is not a phone; a route is decided on the handset.
+
+### What this route can and cannot do (measured 2026-10-21, on the handset)
+
+Eight tracks tapped in one session through `jp2`:
+
+| Outcome | Count |
 | --- | --- |
-| Direct `googlevideo.com` URL from `?local=false` (default) | `ip=111.107.47.57` sits **inside `sparams`** — the instance's own egress — and a client elsewhere gets **403, 0 bytes, 0 of 3 attempts** |
-| Proxied URL from `?local=true` (`/videoplayback?...` on the instance) | **Anubis-gated**: 7 KB of `text/html`, not audio |
-| `/latest_version` (the web player's stream route) | Anubis-gated, both `local=true` and `local=false` |
-| `/vi/<id>/<name>.jpg` (artwork) | Anubis-gated |
+| Stream resolved **and** a byte fetched | 3 |
+| Stream resolved, **every** URL refused with `403` | 4 |
+| No resolve at all | 1 |
 
-The first row is the one that matters: an IP-bound URL cannot be played by this app *or* by a
-browser on another network, which means either the instance binds to the wrong address (a
-Cloudflare/forwarding misconfiguration on its side) or playback there only works through the
-proxied path once a browser has cleared Anubis. **Do not script around Anubis** — it is a bot wall,
-and the project's rule about circumvention applies to it exactly as it does to YouTube's.
+The refusals are neither per-format nor per-request. One refused track returned **ten** candidate
+urls — five audio-only, five muxed — and all ten answered `403`; asking the instance again for the
+same track produced the same refusal. That is why the resolver probes formats but does **not**
+re-ask: each extra request spends a budget of roughly five per burst (ten requests in a row gave
+five `200`s and then five `500`s), and that budget belongs to every *other* track.
 
-What this means for the decision: the *metadata* route is alive and the seam is correct, but audio
-delivery currently has no verified path from a client. That is a reason to test on the handset
-(different egress, different Cloudflare edge) before concluding — and a reason to keep the
-instance list editable, since it is now clearly a moving target rather than a fixed dependency.
+The likeliest explanation is a stale `n`-parameter descrambler in the instance — its player JS
+lagging YouTube's, which is the Invidious failure mode where a structurally valid URL is refused by
+the CDN. Unverified, but it fits the two observed properties: the split is per video, and it is
+stable across attempts. Nothing a client can repair.
+
+So the honest statement of the route is: **it plays roughly half the catalogue**, and for the other
+half it says so instead of failing inside the player. Format fallback and URL verification are
+still right — they turn "the preferred URL is dead" from a player error the user cannot act on into
+either a working stream or a message that names the problem — but they cannot manufacture audio the
+instance did not give us.
+
+What does stay true is the Anubis half. `/vi/<id>/<name>.jpg`, `/latest_version` and even
+`/videoplayback` answer with 7 KB of HTML to any request that has not cleared the wall's
+proof-of-work, so **the proxied path is unavailable to the app** and must not be relied on; and
+image URLs handed back by the API are unusable, which is why artwork is derived. Do not script
+around Anubis — it is a bot wall, and the project's rule about circumvention applies to it exactly
+as it does to YouTube's.
 
 
 **Honest failure text.** `StreamRefusal` now distinguishes three cases that all used to read as
@@ -421,7 +452,7 @@ at a 12-byte stride the decoded values are header offsets like `20716` (`class_d
 
 | Suite | Result |
 | --- | --- |
-| JVM | 327 tests, 4 skipped, **0 failures** |
+| JVM | 330 tests, 4 skipped, **0 failures** |
 | Device (instrumentation) | **67 pass** |
 | `RealVideoResolutionTest` | **3 of 3 pass** — video resolution proven |
 | `RealCatalogExtractionTest` | **6 of 7 pass** — sole failure is animetake, on the Cloudflare block |
@@ -429,16 +460,21 @@ at a 12-byte stride the decoded values are header offsets like `20716` (`class_d
 
 ### Music playback
 
-The route is proven from the handset (§4, *verified 2026-10*), and the seam it plugs into is built:
-`MusicSource` → `DefaultMusicSource` (InnerTube catalogue) + `InvidiousSource` (resolver, instance
-list, failover, health cooldown, resolved-URL cache), editable in **Settings → Music**. 38 of the
-JVM tests above cover that seam — reduction, failover, cooldown, cache expiry, refusal handling,
-and instance-URL normalisation.
+**A track plays end-to-end in the app** — observed on the handset 2026-10-21: tapping a row gave
+`AurisMusic: resolved Zx31bB2vMns via jp2.invidious.f5.si (stream=true)`, and `media_session` then
+reported `PLAYING` with the position advancing `11.9 → 14.9 → 21.0 s`, buffer ahead, no
+`ExoPlaybackException`. That closes the ViewModel → `MusicPlaybackService` → ExoPlayer path the
+probe could not reach.
 
-**What is not yet observed: a track actually playing in the app.** The probe proves the *network*;
-it does not prove the ViewModel → `MusicPlaybackService` → ExoPlayer wiring, which is exercised only
-by tapping a track on a device. Consistent with the rule above, that is the gate before this is
-called done.
+Coverage, measured over eight tracks in that session: **three played, four were refused, one did not
+resolve** — see §4 for why the split is per video and not fixable here. A refused track now names
+the problem ("Could not fetch audio for …") instead of failing inside the player, because the
+resolver probes every candidate URL and withholds any it cannot fetch.
+
+`MusicSource` → `DefaultMusicSource` (InnerTube catalogue) + `InvidiousSource` (resolver, instance
+list, failover, health cooldown, verified-URL cache), editable in **Settings → Music**. Forty-one of
+the JVM tests above cover that seam — reduction, failover, cooldown, cache expiry, refusal handling,
+format fallback, verification, and instance-URL normalisation.
 
 
 ### What works, proven against real extensions

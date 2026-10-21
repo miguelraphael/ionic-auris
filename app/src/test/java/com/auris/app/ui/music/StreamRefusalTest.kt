@@ -59,6 +59,24 @@ class StreamRefusalTest {
     }
 
     @Test
+    fun anUnfetchableStreamIsNeitherAContentProblemNorASettingsProblem() {
+        // The instance named audio and the device was refused it — measured on the handset as a
+        // 403 from the CDN, on tracks the instance resolves happily. Telling the user the song is
+        // gone would be false, and telling them to retry would not help either.
+        val unfetchable = refusal(
+            "UNFETCHABLE",
+            "the instance offered only streams this device was not allowed to fetch",
+        )
+
+        assertFalse(StreamRefusal.isAboutContent(unfetchable))
+        assertEquals(
+            "Could not fetch audio for \"The Fate of Ophelia\": the instance offered only " +
+                "streams this device was not allowed to fetch",
+            StreamRefusal.describe("The Fate of Ophelia", unfetchable),
+        )
+    }
+
+    @Test
     fun anInstanceWithNoFormatsQuotesTheStatusWithoutBlamingTheTrack() {
         // What a public instance actually answers when it has no audio for a track. The reason
         // names no content, so the user must not be told the song is gone.

@@ -13,18 +13,36 @@ import java.io.IOException
  * Resolves audio through a list of public Invidious instances.
  *
  * ### Why a list, and why failover
- * As of 2026-10 **exactly one** public instance has its API open; the others answer `403 Endpoint
- * disabled`, `401` or `forbidden`, and the trend is instances closing their APIs. A resolver
- * hardcoded to one host therefore breaks silently and permanently the day that volunteer closes
- * theirs. Trying the list in order, and remembering which hosts have just failed, turns that into
- * a recoverable event.
+ * As of 2026-10 only a couple of public instances have their API open; the rest answer `403
+ * Endpoint disabled`, `401` or `forbidden`, and the trend is instances closing their APIs. A
+ * resolver hardcoded to one host therefore breaks silently and permanently the day that volunteer
+ * closes theirs. Trying the list in order, and remembering which hosts have just failed, turns
+ * that into a recoverable event.
+ *
+ * ### Why the stream URL is probed before it is returned
+ * An instance can answer with a `googlevideo.com` URL the client is not allowed to fetch. The URL
+ * carries `ip=…` inside `sparams`, which binds it to whichever address the instance saw behind its
+ * CDN; when that is not the caller's address, the CDN answers **403** — measured on the handset:
+ * one track played, the next failed with `InvalidResponseCodeException: Response code: 403`, and
+ * both had resolved successfully.
+ *
+ * Handing such a URL to ExoPlayer produces a user-visible failure that the user can only retry by
+ * hand, and a *cached* dead URL reproduces the failure deterministically. So each candidate is
+ * checked with a one-byte ranged `GET` before a stream is returned, and a refused preferred format
+ * falls through to the next one the instance offered. The probe costs one round trip to the CDN,
+ * not to the instance — and the instance, not the CDN, is the scarce resource here.
+ *
+ * When *every* format is refused the track is reported as a refusal rather than handed to the
+ * player, because measurement showed the refusal is a property of the video, not of the format:
+ * one refused track refused all ten of its URLs.
  *
  * ### Why the cache is safe here
  * The general rule in this codebase is that stream URLs are never cached, because InnerTube URLs
  * expire in about six hours and a stale one fails with a 403 that reads as a network error. That
- * rule is kept — but Invidious hands back `googlevideo.com` URLs whose expiry is *in the URL*, so
- * [InvidiousParser] reads it and [AudioStream.isPlayable] enforces it. What is cached is therefore
- * a URL with a known deadline, never an unexamined one.
+ * rule is kept — but Invidious hands back URLs whose expiry is *in the URL*, so [InvidiousParser]
+ * reads it and [AudioStream.isPlayable] enforces it; and a URL is only cached after [streamProbe]
+ * has fetched a byte of it. What is cached is therefore a URL that is both unexpired and known to
+ * be servable.
  *
  * Entries that have lapsed are dropped both when read (a hit is only a hit while playable) and
  * when the cache is trimmed, so a long browsing session cannot accumulate dead URLs.
@@ -38,6 +56,14 @@ class InvidiousSource(
      */
     private val instances: () -> List<String>,
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * Whether a resolved stream URL can actually be fetched.
+     *
+     * Injected because the alternative — a real `googlevideo.com` request — is not something a
+     * unit test should make, and because the failure being guarded against is a property of the
+     * network, not of the URL.
+     */
+    private val streamProbe: (String) -> Boolean = { url -> probeStreamUrl(httpClient, url) },
 ) : MusicStreamResolver {
 
     /** Insertion-ordered so trimming has a defined victim. Guarded by its own monitor. */
@@ -59,11 +85,12 @@ class InvidiousSource(
 
             for (instance in ordered(configured)) {
                 try {
-                    val resolved = fetch(instance, videoId)
+                    val resolved = fetchResolved(instance, videoId)
 
                     // Reaching the instance at all counts as healthy, even when it answers
                     // "this track is unavailable" — that is an answer, not a failure.
                     markHealthy(instance)
+                    // Only a confirmed-fetchable URL is stored; a refusal carries no stream.
                     if (resolved.stream != null) remember(videoId, resolved)
 
                     Log.i(TAG, "resolved $videoId via ${host(instance)} (stream=${resolved.stream != null})")
@@ -81,12 +108,49 @@ class InvidiousSource(
         }
 
     /**
+     * One instance's answer, reduced to something playable if anything in it is.
+     *
+     * Every offered format is probed before a stream is returned, because the CDN's refusal is a
+     * property of the URL the instance minted for that format — and the instance offers up to
+     * four of them. In practice that means a refused *best* format costs nothing but a one-byte
+     * request, instead of becoming a player error the user cannot act on.
+     *
+     * There is deliberately **no second ask of the instance**: measured on the handset, a track
+     * whose formats were refused was refused again on the next request, while each extra request
+     * spends the instance's rate-limit budget (a burst of ~5, then `500`). Spending that budget on
+     * a repeat costs every *other* track its chance to play.
+     */
+    private fun fetchResolved(instance: String, videoId: String): ResolvedAudio {
+        val summary = fetchSummary(instance, videoId)
+
+        // A refusal about the track: no URL to probe, and asking again would only repeat it.
+        if (summary.error != null) return summary.into(null, summary.error)
+
+        val candidates = summary.audioStreams
+        if (candidates.isEmpty()) return summary.into(null, noStreamReason = null)
+
+        val chosen = candidates.take(MAX_FORMAT_PROBES).firstOrNull { streamProbe(it.url) }
+        if (chosen == null) {
+            Log.w(
+                TAG,
+                "no fetchable format for $videoId from ${host(instance)} " +
+                    "(${candidates.size} offered)",
+            )
+            return summary.into(null, UNFETCHABLE_REASON, UNFETCHABLE_STATUS)
+        }
+
+        return summary.into(chosen, noStreamReason = null)
+    }
+
+    /**
      * One instance's answer for one track.
      *
-     * Throws only when the *instance* failed — unreachable, non-2xx, unparseable. A refusal about
-     * the track is returned as a [ResolvedAudio] so it does not retire a working instance.
+     * Throws only when the *instance* failed — unreachable, non-2xx, unparseable. A 200 carrying an
+     * `error` is returned as-is: that is the instance's answer *about this track*, not a failure of
+     * the instance, and treating it as one would bench a healthy host every time someone tapped a
+     * track that no longer exists.
      */
-    private fun fetch(instance: String, videoId: String): ResolvedAudio {
+    private fun fetchSummary(instance: String, videoId: String): InvidiousVideoSummary {
         val request = Request.Builder()
             .url("$instance/api/v1/videos/$videoId")
             // Instances behind a browser-oriented front end serve HTML unless JSON is asked for
@@ -102,29 +166,26 @@ class InvidiousSource(
                 throw IOException("HTTP ${response.code} ${body.oneLine().take(80)}")
             }
 
-            val summary = parseInvidiousVideo(body, json)
-
-            // A 200 carrying an `error` is the instance's answer *about this track*, not a
-            // failure of the instance. Treating it as one would bench a healthy host every time
-            // someone tapped a track that no longer exists.
-            return summary.into(noStreamReason = summary.error)
+            return parseInvidiousVideo(body, json)
         }
     }
 
     /**
-     * Builds the result, preferring the stream and falling back to an honest refusal.
+     * Builds the result from a chosen stream, falling back to an honest refusal.
      *
-     * The reason is passed in rather than derived, because "the instance says the video is gone"
-     * and "the instance offered no audio format" are different answers that both arrive here with
-     * no stream.
+     * Both arguments are passed in rather than derived, because "the instance says the video is
+     * gone", "the instance offered no audio format" and "the instance offered formats but none can
+     * be fetched" are different answers that all arrive here with no stream.
      */
-    private fun InvidiousVideoSummary.into(noStreamReason: String?): ResolvedAudio {
-        val stream = if (noStreamReason == null) toAudioStream() else null
-
+    private fun InvidiousVideoSummary.into(
+        stream: AudioStream?,
+        noStreamReason: String?,
+        status: String = REFUSAL_STATUS,
+    ): ResolvedAudio {
         if (stream == null) {
             return ResolvedAudio(
                 refusal = StreamRefusalInfo(
-                    status = REFUSAL_STATUS,
+                    status = status,
                     reason = noStreamReason ?: NO_FORMATS_REASON,
                 ),
                 title = title,
@@ -217,11 +278,57 @@ class InvidiousSource(
 
         private const val REFUSAL_STATUS = "UNPLAYABLE"
         private const val NO_FORMATS_REASON = "The instance returned no playable audio format"
+
+        /**
+         * How many of the offered formats to probe.
+         *
+         * Four: enough to cross from audio-only to muxed, few enough that a track nobody can
+         * fetch is reported in about a second. Measurement on the handset showed a refused track
+         * refusing **all ten** of its URLs, so a longer probe would only add latency.
+         */
+        private const val MAX_FORMAT_PROBES = 4
+
+        /*
+         * Not phrased as a content problem: the track exists and the instance named it. What
+         * failed is delivery to *this* device, which is why the wording says so and why
+         * [com.auris.app.ui.music.StreamRefusal] must not call it unavailable.
+         */
+        private const val UNFETCHABLE_REASON =
+            "the instance offered only streams this device was not allowed to fetch"
+        private const val UNFETCHABLE_STATUS = "UNFETCHABLE"
         private const val NO_INSTANCES = "No Invidious instance is configured"
         private const val NO_INSTANCES_WORK = "No Invidious instance could serve this track"
-
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
-        private const val TAG = "AurisMusic"
     }
+}
+
+private const val USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+
+private const val TAG = "AurisMusic"
+
+/**
+ * Whether [url] will actually serve audio.
+ *
+ * A ranged `GET` rather than a `HEAD`: the thing being tested is the request the player will make,
+ * and CDNs do not always treat the two the same. One byte is enough to tell a `200`/`206` from a
+ * `403`, and it is not a download.
+ *
+ * Unreachable counts as unusable. A URL that cannot be connected to is no better than one that is
+ * refused, and both are cheaper to replace than to hand to the player.
+ */
+private fun probeStreamUrl(client: OkHttpClient, url: String): Boolean = try {
+    val request = Request.Builder()
+        .url(url)
+        .header("Range", "bytes=0-0")
+        .header("User-Agent", USER_AGENT)
+        .build()
+
+    client.newCall(request).execute().use { response ->
+        val usable = response.code == 206 || response.code == 200
+        if (!usable) Log.i(TAG, "stream url rejected: HTTP ${response.code}")
+        usable
+    }
+} catch (error: IOException) {
+    Log.i(TAG, "stream url unreachable: ${error.message}")
+    false
 }

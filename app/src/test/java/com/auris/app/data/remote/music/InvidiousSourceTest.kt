@@ -46,13 +46,18 @@ class InvidiousSourceTest {
          ]}
     """.trimIndent()
 
-    private fun sourceOver(vararg instances: String, clock: () -> Long = System::currentTimeMillis) =
-        InvidiousSource(
-            httpClient = OkHttpClient(),
-            json = json,
-            instances = { instances.toList() },
-            clock = clock,
-        )
+    private fun sourceOver(
+        vararg instances: String,
+        clock: () -> Long = System::currentTimeMillis,
+        /** Defaults to "every URL is usable" so no test reaches the real network. */
+        streamProbe: (String) -> Boolean = { true },
+    ) = InvidiousSource(
+        httpClient = OkHttpClient(),
+        json = json,
+        instances = { instances.toList() },
+        clock = clock,
+        streamProbe = streamProbe,
+    )
 
     // ---- Failover ------------------------------------------------------------
 
@@ -188,6 +193,68 @@ class InvidiousSourceTest {
         // Now available: a cached refusal would have stranded the user on a permanently dead track.
         assertEquals("https://cdn.test/ok.webm", source.resolveAudioStream("v1").getOrNull()?.stream?.url)
         assertEquals(2, instance.requestCount)
+    }
+
+    // ---- Usable URLs ---------------------------------------------------------
+
+    @Test
+    fun `an unfetchable stream is reported as a refusal, not handed to the player`() = runBlocking {
+        val server = newServer()
+        // Two formats, both refused by the CDN. One instance request: asking again buys nothing
+        // and spends rate-limit budget that every other track needs.
+        repeat(2) {
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {"title":"Track","author":"Artist","lengthSeconds":200,
+                     "adaptiveFormats":[
+                       {"itag":251,"type":"audio/webm; codecs=\"opus\"","bitrate":"160000","url":"https://cdn.test/a.webm"},
+                       {"itag":140,"type":"audio/mp4; codecs=\"mp4a.40.2\"","bitrate":"128000","url":"https://cdn.test/b.m4a"}
+                     ]}
+                    """.trimIndent(),
+                ),
+            )
+        }
+
+        val source = sourceOver(base(server)) { false }
+
+        val result = source.resolveAudioStream("v1")
+
+        // A refusal, not a stream: handing this URL on would produce a player error the user
+        // cannot act on, and caching it would make that failure permanent.
+        assertNull(result.getOrNull()?.stream)
+        assertEquals("UNFETCHABLE", result.getOrNull()?.refusal?.status)
+        assertEquals(1, server.requestCount)
+
+        // Not cached, so the next attempt asks again.
+        source.resolveAudioStream("v1")
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `falls back to another format when the best one is refused`() = runBlocking {
+        val server = newServer()
+        // Two audio-only formats, the 160k one first — which is the one the parser prefers.
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {"title":"Track","author":"Artist","lengthSeconds":200,
+                 "adaptiveFormats":[
+                   {"itag":251,"type":"audio/webm; codecs=\"opus\"","bitrate":"160000","url":"https://cdn.test/best.webm"},
+                   {"itag":140,"type":"audio/mp4; codecs=\"mp4a.40.2\"","bitrate":"128000","url":"https://cdn.test/m4a.m4a"}
+                 ]}
+                """.trimIndent(),
+            ),
+        )
+
+        val source = sourceOver(base(server)) { url -> !url.contains("best") }
+
+        val result = source.resolveAudioStream("v1")
+
+        // The refused format costs nothing but the probe: the answer it arrived in already named
+        // another one, so no second instance request is spent.
+        assertEquals("https://cdn.test/m4a.m4a", result.getOrNull()?.stream?.url)
+        assertEquals(1, server.requestCount)
     }
 
     // ---- Health --------------------------------------------------------------
