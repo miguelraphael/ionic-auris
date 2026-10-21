@@ -144,10 +144,18 @@ fun buildMediaItem(
     album: String?,
     artworkUrl: String?,
     streamUrl: String,
+    /**
+     * The stream's container type, when the resolver knows it.
+     *
+     * Passed through so an Opus/WebM stream is not announced to the extractor factory as
+     * `audio/mp4`; a wrong hint is worse than none, because the factory trusts it. Null or an
+     * unrecognised type falls back to [AUDIO_MIME_TYPE].
+     */
+    mimeType: String? = null,
 ): MediaItem = MediaItem.Builder()
     .setMediaId(videoId)
     .setUri(streamUrl)
-    .setMimeType(AUDIO_MIME_TYPE)
+    .setMimeType(declaredAudioMime(mimeType) ?: AUDIO_MIME_TYPE)
     .setMediaMetadata(
         MediaMetadata.Builder()
             .setTitle(title)
@@ -162,9 +170,28 @@ fun buildMediaItem(
     .build()
 
 /**
- * Audio MIME type.
+ * The default hint, used when the resolver does not name a container.
  *
- * `audio/mp4` because InnerTube's adaptive audio is AAC in an MP4 fragment. Stating the type
- * avoids a probe request and the mid-track stall it causes.
+ * AAC in MP4 is what most providers hand back and what this device has played. Stating a type
+ * avoids a probe request; when the resolver *does* know the container, it is passed through
+ * instead, because a wrong hint is worse than none.
  */
 private const val AUDIO_MIME_TYPE = "audio/mp4"
+
+/**
+ * Reduces a resolver's MIME type to one media3 can act on.
+ *
+ * Providers name the container *with parameters* (`audio/webm; codecs="opus"`), which is not a
+ * MIME type the extractor factory will match. Anything outside the set is dropped rather than
+ * guessed: with no hint the factory sniffs the stream, which is correct even if slightly slower.
+ */
+private fun declaredAudioMime(mimeType: String?): String? =
+    mimeType?.substringBefore(';')?.trim()?.takeIf { it in SUPPORTED_AUDIO_MIME_TYPES }
+
+private val SUPPORTED_AUDIO_MIME_TYPES = setOf(
+    "audio/mp4",
+    "audio/webm",
+    "audio/ogg",
+    "audio/mpeg",
+    "audio/aac",
+)

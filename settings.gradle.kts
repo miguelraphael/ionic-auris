@@ -17,6 +17,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // NewPipeExtractor is only published through JitPack. It is GPL-3.0-or-later, which is
+        // why the app carries a GPL-3.0 licence of its own — see LICENSE.
+        maven("https://jitpack.io") {
+            content { includeGroup("com.github.TeamNewPipe") }
+        }
     }
 }
 

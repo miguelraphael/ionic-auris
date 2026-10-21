@@ -9,10 +9,12 @@ import com.auris.app.data.remote.SupabaseLibraryDataSource
 import com.auris.app.data.remote.SupabaseLibraryDataSourceImpl
 import com.auris.app.data.remote.kitsu.KitsuClient
 import com.auris.app.data.remote.music.DefaultMusicSource
+import com.auris.app.data.remote.music.FallbackStreamResolver
 import com.auris.app.data.remote.music.InnerTubeClient
 import com.auris.app.data.remote.music.InnerTubeParser
 import com.auris.app.data.remote.music.InvidiousSource
 import com.auris.app.data.remote.music.MusicSource
+import com.auris.app.data.remote.music.NewPipeStreamResolver
 import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.data.repository.AuthRepository
@@ -70,9 +72,9 @@ interface AppContainer {
     /**
      * The music surface the UI depends on.
      *
-     * Catalogue from YouTube Music's own API; audio from public Invidious instances. Screens talk
-     * to this, never to either provider, so the audio half can change without touching a
-     * ViewModel.
+     * Catalogue from YouTube Music's own API; audio extracted on the device, with public
+     * Invidious instances as a fallback. Screens talk to this, never to either provider, so the
+     * audio half can change without touching a ViewModel.
      */
     val musicSource: MusicSource
     /** The Invidious instances audio is streamed through, persisted and user-editable. */
@@ -217,6 +219,22 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     /**
+     * HTTP client for NewPipeExtractor.
+     *
+     * Longer than the shared client's defaults because one extraction is several requests plus a
+     * parse of YouTube's player script, and the script itself is measured in megabytes. This is
+     * still per call, not per track — the extractor makes several calls per resolve, each of which
+     * gets this budget.
+     */
+    private val newPipeHttpClient: okhttp3.OkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
      * The composed music source.
      *
      * The instance list is read through a lambda rather than captured, so an instance added in
@@ -225,10 +243,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val musicSource: MusicSource by lazy {
         DefaultMusicSource(
             catalogue = innerTubeClient,
-            resolver = InvidiousSource(
-                httpClient = invidiousHttpClient,
-                json = json,
-                instances = { invidiousInstanceStore.current() },
+            resolver = FallbackStreamResolver(
+                // On-device extraction first: it descrambles the stream URL itself, so it does
+                // not inherit the instance's `403` problem. The instance remains as a fallback for
+                // the tracks the extractor cannot reach.
+                primary = NewPipeStreamResolver(newPipeHttpClient),
+                secondary = InvidiousSource(
+                    httpClient = invidiousHttpClient,
+                    json = json,
+                    instances = { invidiousInstanceStore.current() },
+                ),
             ),
         )
     }

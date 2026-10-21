@@ -188,6 +188,10 @@ needs deobfuscating after `/player` has decided to serve one, and it never does.
 
 ### Decision: stream through a public Invidious instance, behind a seam
 
+> **Superseded 2026-10-21** — the instance is now the *fallback*; on-device extraction is primary.
+> See *Reversal: on-device extraction becomes primary* below. The reasoning here is kept because
+> it is the record of why the first-party route was closed and what the proxy actually cost.
+
 **Status: chosen 2026-10.** The *first-party* route — Auris talking to YouTube's own InnerTube
 endpoints — is **closed**, and stays closed; the evidence is in *Verified 2026-10* above. What
 remains is a **proxied** route: a public [Invidious](https://invidious.io) instance, which solves
@@ -195,10 +199,10 @@ the attestation we could not (server-side) and hands back a plain audio URL.
 
 **Licensing — and why this is not the GPL problem again.** Invidious is **AGPL-3.0**, but Auris
 consumes its **HTTP API** and nothing else. Consuming a network service is not creating a
-derivative work, and AGPL §13 binds whoever *operates* the server, not the client — so Auris
-stays closed-source, exactly as it is today. NewPipeExtractor was rejected for the opposite
-reason: it is a **library linked into the APK**, which does force the whole app to GPL. The one
-rule this imposes: **do not copy Invidious source into this tree.**
+derivative work, and AGPL §13 binds whoever *operates* the server, not the client — so consuming
+the API imposes nothing on the client's licence. The one rule this imposes: **do not copy
+Invidious source into this tree.** NewPipeExtractor is the opposite case — a library linked into
+the APK — and that is a decision in its own right; see the reversal below.
 
 **Technical — verified 2026-10, end to end:**
 
@@ -230,6 +234,54 @@ operator's, not ours — and materially different from the JioSaavn-proxy route 
 which redistributed a *paid* catalogue. Invidious is a free-software front end for publicly
 viewable videos.
 
+### Reversal (2026-10-21): on-device extraction becomes primary
+
+Two things changed the decision above.
+
+**The instance does not descramble reliably.** Measured on the handset: **3 of 8** tracks played,
+4 resolved to URLs that every attempt refused with `403`, and 1 did not resolve at all. The split
+is per video and stable — the signature of an `n`-parameter descrambler lagging YouTube's player
+script. No client change repairs that.
+
+**NewPipeExtractor does descramble, on the device.** It runs YouTube's current player script
+through Rhino and signs the URLs itself, so the result is addressed to this device's egress.
+
+| Check (2026-10-21) | Result |
+| --- | --- |
+| `StreamInfo.getInfo` for `Zx31bB2vMns` | 5 audio streams (AAC + Opus), full metadata |
+| Ranged GET on the 128 kbps AAC URL, build machine | `206`, 1 KiB |
+| Same extraction on the handset | `AurisMusic: resolved Zx31bB2vMns via NewPipe (audio/mp4)` |
+| Playback | `PLAYING`, position advancing, buffer ahead, no `ExoPlaybackException` |
+| `VZZA_38RUBI` and `Li89QVWmqTk` (refused/unresolved on the instance) | resolved and played |
+
+**Version matters, and this is the maintenance cost.** 0.26.1 returned **zero** audio streams for
+the same video: it is not merely old, it is broken against current YouTube. 0.26.5 is the first
+release verified to extract and is pinned in `app/build.gradle.kts`. A future YouTube change may
+need a newer pin; the extractor is a moving target in a way an HTTP API is not.
+
+**The licence, accepted deliberately.** NewPipeExtractor is **GPL-3.0-or-later**, and linking it
+makes the whole app GPL-3.0-or-later — `LICENSE` now says so. This was accepted because the app is
+an academic project that will not be developed after its presentation: the obligations attach to
+*conveying* the app, so private use is unrestricted, and the corresponding source that must
+accompany any distributed APK is this repository. The consequence is not hidden: **once
+distributed, the app cannot be relicensed closed-source** without every copyright holder's
+agreement. The extractor does not make YouTube's *service* licensed either; the ToS and
+anti-circumvention questions are unchanged by this decision.
+
+**Composition.** `FallbackStreamResolver(primary = NewPipeStreamResolver, secondary =
+InvidiousSource)` keeps the seam. The policy is narrower than "retry on failure":
+
+| Primary answer | Action |
+| --- | --- |
+| A playable stream | return it |
+| A **content** refusal (private, region-blocked, removed) | return it — another provider would either repeat it or find a copy the user was not meant to have |
+| [`StreamRefusalInfo.UNFETCHABLE`] (URL named, CDN refused) | try the secondary — this is a property of how the URL was minted, not of the track |
+| A failure (unreachable, rate-limited, API changed) | try the secondary |
+
+When both fail, a refusal from the primary is preferred over "no provider answered": it is an
+answer about the track, while the latter sends the user to Settings for a network problem that is
+not there. `FallbackStreamResolverTest` pins each row.
+
 ### The seam, as built (2026-10)
 
 Two providers sit behind `MusicSource`, and **deliberately only one of them moved**:
@@ -237,11 +289,11 @@ Two providers sit behind `MusicSource`, and **deliberately only one of them move
 | Half | Provider | Why not the other |
 | --- | --- | --- |
 | **Catalogue** — search, albums, playlists | YouTube Music's own InnerTube API | Invidious search answers `type=video` and `type=channel` only (verified 2026-10): **no album rows**. Routing the catalogue through it would silently delete albums from every screen. |
-| **Audio** — the stream | public Invidious instances | InnerTube is refused outright for unauthenticated clients. This is the half that needs a proxy, so it is the only half that depends on one. |
+| **Audio** — the stream | NewPipeExtractor on the device, with public Invidious instances as fallback | InnerTube is refused outright for unauthenticated clients; the instance cannot descramble every track. Two routes, tried in that order, cover what neither does alone. |
 
-That split is the point. The fragile dependency — one volunteer's server — carries only the half
-that cannot work without it. When every instance is down the user can still browse, and can still
-fix playback from Settings; the alternative design couples the two and blacks out the whole pillar.
+That split is the point. The fragile dependency — one volunteer's server — now carries only the
+tracks the on-device extractor could not reach. When every instance is down the user can still
+browse and still play; the alternative design couples the two and blacks out the whole pillar.
 
 - `MusicSource` (`data/remote/music/MusicSource.kt`) is the interface the UI depends on.
   `MusicStreamResolver` is the narrower half that varies. `DefaultMusicSource` composes them.
@@ -315,7 +367,7 @@ An earlier draft of this section concluded the opposite, from the desktop's `403
 was wrong in a way worth keeping: **the failure was a property of where the request came from, not
 of the route.** A datacenter is not a phone; a route is decided on the handset.
 
-### What this route can and cannot do (measured 2026-10-21, on the handset)
+### What the instance route can and cannot do (measured 2026-10-21, on the handset)
 
 Eight tracks tapped in one session through `jp2`:
 
@@ -337,7 +389,9 @@ the CDN. Unverified, but it fits the two observed properties: the split is per v
 stable across attempts. Nothing a client can repair.
 
 So the honest statement of the route is: **it plays roughly half the catalogue**, and for the other
-half it says so instead of failing inside the player. Format fallback and URL verification are
+half it says so instead of failing inside the player. That measurement is what moved it to second
+place; as a fallback it is still worth having, because a `403` on one route says nothing about the
+other. Format fallback and URL verification are
 still right — they turn "the preferred URL is dead" from a player error the user cannot act on into
 either a working stream or a message that names the problem — but they cannot manufacture audio the
 instance did not give us.
@@ -359,18 +413,19 @@ sends users in circles.
 
 | Option | Outcome |
 | --- | --- |
-| NewPipeExtractor | **Rejected.** GPL-3.0. No YouTube Music support, so it discards the album/track model and the `totalUnits` progress mapping. |
-| ArchiveTune (6.9k stars) | **Rejected.** Verified from its own `libs.versions.toml`: it depends on `com.github.TeamNewPipe:NewPipeExtractor`. So it inherits the same GPL-3.0 problem — plus it is an *app*, not a library, so nothing is importable. |
+| NewPipeExtractor | **Chosen 2026-10-21, reversing the earlier rejection.** The GPL-3.0-or-later obligation is accepted deliberately (see the reversal above). It has no YouTube Music catalogue API, which is why it supplies only the audio half — albums, tracks and playlists still come from InnerTube. |
+| ArchiveTune (6.9k stars) | **Not importable, and unnecessary now.** Verified from its own `libs.versions.toml`: it depends on `com.github.TeamNewPipe:NewPipeExtractor` — the same library, used directly here. It is also an *app*, not a library, so nothing else in it was reusable. |
 | Obsidian-Music | **Irrelevant.** Apache-2.0 and Media3-based, but the repository contains **no source** — only `README.md`, `LICENSE`, `update.json` and screenshots. It is also a *local-file* player with no streaming at all. |
 | BotGuard attestation | **Attempted and found insufficient.** A valid, video-id-bound PO token was minted end-to-end offline (2026-10) and `/player` still refused every client identity. See *Verified 2026-10*. |
 | Invidious (public instance) | **Chosen.** AGPL-3.0, but consumed as an HTTP API — no copyleft in the APK, and no account. Verified 2026-10 to deliver a full audio track. Its one weakness is instance availability, which the `MusicSource` seam is built to absorb. |
 | Authenticated cookies (own account) | **Not chosen.** Technically the only unblocked *first-party* path, but it puts bearer credentials for the user's entire Google account into the app. Held in reserve, below. |
 
-ArchiveTune is the most useful data point in that table, and not for the reason it might appear: its
-own legal disclaimer states it **"does not bypass YouTube's technical protections"** — it
-*authenticates*. So a 6.9k-star client reaching the same wall and solving it with an account is
-strong evidence that **authentication is the only route**, and that there is no bypass to be found.
-That makes this a product decision about accounts, not an outstanding engineering task.
+ArchiveTune remains a useful data point, but for a narrower reason than was read into it at the
+time: its own disclaimer says it **"does not bypass YouTube's technical protections"** — it
+*authenticates*. That is one way past the wall, not evidence that it is the only one.
+NewPipeExtractor's approach — running the player script on the client, which is what a browser
+does anyway — works without an account, as measured above. The account route therefore stays in
+reserve rather than being the plan.
 
 ### If this is revisited
 
@@ -452,7 +507,7 @@ at a 12-byte stride the decoded values are header offsets like `20716` (`class_d
 
 | Suite | Result |
 | --- | --- |
-| JVM | 330 tests, 4 skipped, **0 failures** |
+| JVM | 337 tests, 4 skipped, **0 failures** |
 | Device (instrumentation) | **67 pass** |
 | `RealVideoResolutionTest` | **3 of 3 pass** — video resolution proven |
 | `RealCatalogExtractionTest` | **6 of 7 pass** — sole failure is animetake, on the Cloudflare block |
@@ -460,21 +515,23 @@ at a 12-byte stride the decoded values are header offsets like `20716` (`class_d
 
 ### Music playback
 
-**A track plays end-to-end in the app** — observed on the handset 2026-10-21: tapping a row gave
-`AurisMusic: resolved Zx31bB2vMns via jp2.invidious.f5.si (stream=true)`, and `media_session` then
-reported `PLAYING` with the position advancing `11.9 → 14.9 → 21.0 s`, buffer ahead, no
-`ExoPlaybackException`. That closes the ViewModel → `MusicPlaybackService` → ExoPlayer path the
-probe could not reach.
+**A track plays end-to-end in the app, on the primary route, observed on the handset
+2026-10-21:** tapping a row gave `AurisMusic: resolved Zx31bB2vMns via NewPipe (audio/mp4)`, and
+`media_session` then reported `PLAYING` with the position advancing and buffer ahead, no
+`ExoPlaybackException`. Two tracks that the instance had refused or failed to resolve
+(`VZZA_38RUBI`, `Li89QVWmqTk`) also resolved and played through the same path, so the reversal in
+§4 is confirmed by the device rather than by a probe.
 
-Coverage, measured over eight tracks in that session: **three played, four were refused, one did not
-resolve** — see §4 for why the split is per video and not fixable here. A refused track now names
-the problem ("Could not fetch audio for …") instead of failing inside the player, because the
-resolver probes every candidate URL and withholds any it cannot fetch.
+The fallback is unchanged and still measured at **3 of 8** tracks in its own session — see §4 for
+why that split is per video. A refused track now names the problem instead of failing inside the
+player, because each resolver probes the URL it is about to return and withholds any it cannot
+fetch.
 
-`MusicSource` → `DefaultMusicSource` (InnerTube catalogue) + `InvidiousSource` (resolver, instance
-list, failover, health cooldown, verified-URL cache), editable in **Settings → Music**. Forty-one of
-the JVM tests above cover that seam — reduction, failover, cooldown, cache expiry, refusal handling,
-format fallback, verification, and instance-URL normalisation.
+`MusicSource` → `DefaultMusicSource` (InnerTube catalogue) + `FallbackStreamResolver`
+(`NewPipeStreamResolver` first, `InvidiousSource` second: instance list, failover, health cooldown,
+verified-URL cache), editable in **Settings → Music**. Forty-eight of the JVM tests above cover
+that seam — reduction, failover, cooldown, cache expiry, refusal handling, format fallback,
+verification, instance-URL normalisation, and the fallback policy itself.
 
 
 ### What works, proven against real extensions

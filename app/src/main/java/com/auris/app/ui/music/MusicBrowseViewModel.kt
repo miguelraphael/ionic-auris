@@ -324,6 +324,7 @@ class MusicBrowseViewModel(
                 album = track.album,
                 artworkUrl = track.largeArtworkUrl ?: track.artworkUrl,
                 streamUrl = stream.url,
+                mimeType = stream.mimeType,
             )
         }
 

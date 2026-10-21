@@ -136,7 +136,7 @@ class InvidiousSource(
                 "no fetchable format for $videoId from ${host(instance)} " +
                     "(${candidates.size} offered)",
             )
-            return summary.into(null, UNFETCHABLE_REASON, UNFETCHABLE_STATUS)
+            return summary.into(null, UNFETCHABLE_REASON, StreamRefusalInfo.UNFETCHABLE)
         }
 
         return summary.into(chosen, noStreamReason = null)
@@ -305,7 +305,6 @@ class InvidiousSource(
          */
         private const val UNFETCHABLE_REASON =
             "the instance offered only streams this device was not allowed to fetch"
-        private const val UNFETCHABLE_STATUS = "UNFETCHABLE"
         private const val NO_INSTANCES = "No Invidious instance is configured"
         private const val NO_INSTANCES_WORK = "No Invidious instance could serve this track"
     }
@@ -326,7 +325,7 @@ private const val TAG = "AurisMusic"
  * Unreachable counts as unusable. A URL that cannot be connected to is no better than one that is
  * refused, and both are cheaper to replace than to hand to the player.
  */
-private fun probeStreamUrl(client: OkHttpClient, url: String): Boolean = try {
+internal fun probeStreamUrl(client: OkHttpClient, url: String): Boolean = try {
     val request = Request.Builder()
         .url(url)
         .header("Range", "bytes=0-0")

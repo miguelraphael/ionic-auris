@@ -112,7 +112,7 @@ private fun JsonObject.bitrate(): Int = get("bitrate").str()?.toIntOrNull() ?: 0
  * refusing a URL whose lifetime is merely unknown would break playback the moment a provider
  * changes its query parameters.
  */
-private fun expireEpochMs(url: String): Long? =
+internal fun expireEpochMs(url: String): Long? =
     url.toHttpUrlOrNull()?.queryParameter("expire")?.toLongOrNull()?.times(1000)
 
 /**

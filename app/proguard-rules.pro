@@ -24,3 +24,11 @@
 
 # Supabase
 -dontwarn org.jetbrains.annotations.**
+
+# NewPipeExtractor runs YouTube's player JavaScript through Rhino and reflects over it, so the
+# engine's classes cannot be renamed or stripped. The extractor's own classes are reached through
+# its public API only and shrink normally.
+-keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.javascript.engine.** { *; }
+-dontwarn org.mozilla.javascript.**
+-dontwarn org.schabi.newpipe.extractor.**

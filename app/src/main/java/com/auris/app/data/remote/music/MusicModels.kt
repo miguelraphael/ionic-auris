@@ -99,7 +99,19 @@ data class AudioStream(
 data class StreamRefusalInfo(
     val status: String,
     val reason: String? = null,
-)
+) {
+    companion object {
+        /**
+         * Minted by a resolver, never sent by a provider: a URL was named and then could not be
+         * fetched from this device.
+         *
+         * Not a content problem — the track exists — which is why it gets its own wording rather
+         * than being folded into "unavailable", and why fallback resolvers may try another source
+         * after seeing it.
+         */
+        const val UNFETCHABLE = "UNFETCHABLE"
+    }
+}
 
 /**
  * The outcome of asking a provider for a track's audio.

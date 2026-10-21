@@ -74,6 +74,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // NewPipeExtractor uses java.nio.file and friends, which only exist in the platform from
+        // API 33; the app supports 26, so they are back-ported by the desugaring library.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -231,6 +234,14 @@ implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+
+    // Audio extraction. GPL-3.0-or-later — the whole app is therefore GPL-3.0-or-later when
+    // distributed; see LICENSE and ARCHITECTURE.md §4. Pinned to a release rather than a commit
+    // snapshot so a rebuild months from now compiles what it compiled today. 0.26.1 returned zero
+    // audio streams in 2026-10; 0.26.5 is the first release that still extracts (verified on the
+    // handset and on the desktop against the same video).
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.4")
 
     // Room DAO tests run on the JVM under Robolectric, so `./gradlew test` verifies the
     // data layer without an emulator.

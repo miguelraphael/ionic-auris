@@ -32,6 +32,23 @@ Taken from `UI/music-player-UI.jpg` (1080×2400 px, ~2.625× density → 411×91
 
 Logo palette (`Logos/`): `#0A84FF` → `#7B2FD4` → `#E8305A` → `#F07818`.
 
+## Licensing
+
+Auris is **GPL-3.0-or-later** (`LICENSE`), because audio is extracted on the device by
+[NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor), which is GPL-3.0-or-later and
+cannot be linked into a differently-licensed application. That is a real obligation and not a
+formality:
+
+- **Running it privately carries no obligations.** The GPL attaches to *conveying* the app, so
+  building and using it on your own devices is unrestricted.
+- **Distributing an APK, or publishing builds, makes the whole app GPL-3.0-or-later.** Whoever
+  receives it must be able to get the complete corresponding source — this repository satisfies
+  that as long as it stays available alongside the builds.
+- **It cannot be relicensed closed-source later** without the agreement of every copyright holder.
+
+The licence does not make the *service* licensed: YouTube's terms and anti-circumvention law are a
+separate question that no open-source licence can settle. See `ARCHITECTURE.md` §4.
+
 ## Module layout
 
 Five Gradle modules:
@@ -592,9 +609,11 @@ That distinction is carried deliberately. `UNPLAYABLE` with zero formats and a r
 anything else is about the *request*, and no retry will fix it. Collapsing the two into one
 "Nothing playable" message points the user at the track when the track is fine.
 
-Consequence for the music pillar: **browse, search, metadata and library all work; playback is
-unavailable until stream resolution is solved.** That needs a decision, not more engineering —
-see the options in the handover.
+Consequence for the music pillar: **browse, search, metadata and library all work, and audio is
+extracted on the device instead of through that closed `/player` route.** The player script is run
+locally by NewPipeExtractor, which handles signature and `n` descrambling without an account;
+public Invidious instances remain as a fallback for the tracks the extractor cannot reach.
+Playback is verified end-to-end on the handset — see `ARCHITECTURE.md` §6.
 
 InnerTube remains **undocumented with no version guarantee**, and access this way is not covered
 by any API agreement — whether streaming is restricted by the YouTube Terms of Service depends
@@ -1058,11 +1077,11 @@ Deliberately out of scope for this first slice; the seams are in place:
   but there is no field for the signing key fingerprint, so a repository can only be "verified" if
   it is coded in rather than entered. `ExtensionRepo.signingKeyFingerprint` is the seam.
 
-- **Music playback does not work, and cannot until `/player` is solved.** Browse, search,
-  metadata and the library all function; stream resolution returns `UNPLAYABLE` with zero
-  formats for every unauthenticated client tested. Serving audio now requires BotGuard
-  attestation or authenticated cookies — see the section above. This is a decision to make,
-  not a bug to fix.
+- **Music playback depends on a moving target.** Catalogue and playback both work, and `WebM`/
+  `Opus` streams are handled explicitly rather than assumed to be AAC. The fragile half is
+  NewPipeExtractor: it works by running YouTube's current player script, so a YouTube change can
+  break extraction until the pinned version is bumped. Instances remain as a fallback, and every
+  failure is reported as a refusal rather than as a missing track.
 - **The music player screen is not wired.** `MusicBrowseScreen` resolves a track, hands the
   queue to the playback service and reports a refusal honestly, but `MusicPlayerScreen` still
   receives a hard-coded `PlayerUiState` — its controls and progress bar are not connected to
