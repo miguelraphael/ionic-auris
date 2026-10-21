@@ -164,8 +164,10 @@ class InnerTubeParser {
                     artist = labelledArtist ?: metadata.getOrNull(0),
                     album = labelledAlbum ?: metadata.getOrNull(1),
                     durationMs = duration,
-                    artworkUrl = renderer.thumbnailUrl(THUMB_MEDIUM),
-                    largeArtworkUrl = renderer.thumbnailUrl(THUMB_LARGE),
+                    artworkUrl = renderer.thumbnailUrl(THUMB_MEDIUM)
+                        ?: youtubeThumbnailUrl(videoId),
+                    largeArtworkUrl = renderer.thumbnailUrl(THUMB_LARGE)
+                        ?: youtubeThumbnailUrl(videoId, large = true),
                     playlistId = renderer.firstPlaylistId(),
                     trackIndex = null,
                 ),
@@ -562,3 +564,32 @@ internal fun String.parseDurationMs(): Long? {
 /** The first 4-digit run in a subtitle like "Album • 2019 • 12 songs". */
 internal fun String.extractYear(): Int? =
     Regex("""\b(19|20)\d{2}\b""").find(this)?.value?.toIntOrNull()
+
+/**
+ * A thumbnail for a YouTube video id, derived rather than fetched.
+ *
+ * ### Why this exists
+ * Song rows from `musicResponsiveListItemRenderer` carry **no `thumbnail` object at all** —
+ * verified against a live `WEB_REMIX` search, and the reason blank squares were ever visible. The
+ * artwork is not in the search response, but it *is* derivable, because YouTube serves a
+ * predictable static image per video id. Deriving it costs **zero API calls**.
+ *
+ * That matters more than it used to. The previous approach resolved each visible row through the
+ * audio provider purely to read its artwork — and the audio provider is now a *rate-limited
+ * Invidious instance*. Measured 2026-10: ten successive `/api/v1/videos` requests returned five
+ * successes and then a run of `500 This content isn't available, try again later.` Warming twelve
+ * rows on every catalogue load spent that budget before the user tapped anything, so the tap
+ * itself was the request that got throttled. Artwork must not compete with playback.
+ *
+ * ### Why not the provider's own thumbnail
+ * A resolve does return thumbnail URLs, but they are instance-relative — Invidious hands back
+ * `https://<instance>/vi/<id>/maxres.jpg`, and on `invidious.f5.si` that path answers with an
+ * **HTML error page, not a JPEG** (7,070 bytes of `text/html`, measured 2026-10). Rendering it
+ * would paint broken images on every played track.
+ *
+ * [large] selects `hqdefault` (480×360) over the smaller `mqdefault` (320×180).
+ * `maxresdefault` is deliberately avoided: it 404s for videos that never had a 720p source, and a
+ * missing image is worse than a smaller one.
+ */
+internal fun youtubeThumbnailUrl(videoId: String, large: Boolean = false): String =
+    "https://i.ytimg.com/vi/$videoId/${if (large) "hqdefault" else "mqdefault"}.jpg"

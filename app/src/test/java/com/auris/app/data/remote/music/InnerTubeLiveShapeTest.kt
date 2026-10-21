@@ -125,10 +125,11 @@ class InnerTubeLiveShapeTest {
     fun handlesAbsentThumbnailWithoutCrashing() {
         val track = parse(liveSong).single().tracks.single()
 
-        // Songs commonly ship an empty thumbnail array; the row still has to be usable, because
-        // artwork arrives later from the player response.
-        assertNull(track.artworkUrl)
-        assertNull(track.largeArtworkUrl)
+        // Songs commonly ship an empty thumbnail array. The artwork is still available, because
+        // it is derivable from the video id — no resolve, and so no request against the
+        // rate-limited audio instance, is needed to paint the row.
+        assertEquals("https://i.ytimg.com/vi/${track.videoId}/mqdefault.jpg", track.artworkUrl)
+        assertEquals("https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg", track.largeArtworkUrl)
     }
 
     @Test

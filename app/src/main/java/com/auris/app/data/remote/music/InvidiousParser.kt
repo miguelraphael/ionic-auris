@@ -16,7 +16,6 @@ internal data class InvidiousVideoSummary(
     val title: String? = null,
     val author: String? = null,
     val lengthMs: Long? = null,
-    val artworkUrl: String? = null,
     /** Count of **audio-only** formats. The resolver will also accept a muxed one; this is the pure count. */
     val audioFormats: Int = 0,
     val totalFormats: Int = 0,
@@ -63,7 +62,6 @@ internal fun parseInvidiousVideo(body: String, json: Json): InvidiousVideoSummar
         title = root["title"].str(),
         author = root["author"].str(),
         lengthMs = root["lengthSeconds"].str()?.toLongOrNull()?.times(1000),
-        artworkUrl = bestThumbnail(root["videoThumbnails"]),
         audioFormats = audioOnly.size,
         totalFormats = all.size,
         bestAudioUrl = chosen?.get("url").str(),
@@ -91,15 +89,6 @@ internal fun InvidiousVideoSummary.toAudioStream(): AudioStream? {
         expiresAtMs = expireEpochMs(url),
     )
 }
-
-/** The largest thumbnail offered, or null. Invidious lists them smallest-first but does not guarantee it. */
-private fun bestThumbnail(element: kotlinx.serialization.json.JsonElement?): String? =
-    (element as? JsonArray)
-        .orEmpty()
-        .mapNotNull { it as? JsonObject }
-        .maxByOrNull { it["width"].str()?.toIntOrNull() ?: 0 }
-        ?.get("url")
-        .str()
 
 private fun JsonObject.bitrate(): Int = get("bitrate").str()?.toIntOrNull() ?: 0
 

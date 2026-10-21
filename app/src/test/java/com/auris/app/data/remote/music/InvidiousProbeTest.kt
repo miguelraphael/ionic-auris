@@ -47,8 +47,6 @@ class InvidiousProbeTest {
         assertEquals("Never Gonna Give You Up", summary.title)
         assertEquals("Rick Astley", summary.author)
         assertEquals(213_000L, summary.lengthMs)
-        // Largest thumbnail, not the first one offered.
-        assertEquals("https://i/big.jpg", summary.artworkUrl)
         assertEquals(2, summary.audioFormats)
         assertEquals(3, summary.totalFormats)
         // Opus at 160 kbps beats AAC at 128, and the 4 Mbps *video* format is not a candidate

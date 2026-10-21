@@ -79,11 +79,11 @@ class InvidiousSourceTest {
 
         val resolved = sourceOver(base(live)).resolveAudioStream("v1").getOrNull()!!
 
-        // The catalogue returns an empty thumbnail array for song rows, so this is the only place
-        // the artwork exists.
+        // The catalogue returns an empty thumbnail array for song rows, and the provider's own
+        // thumbnail URLs are not reliable on the instance in use — so artwork is derived from the
+        // video id instead, and is deliberately not part of a resolve.
         assertEquals("Espresso", resolved.title)
         assertEquals("Artist", resolved.author)
-        assertEquals("https://i/art.jpg", resolved.artworkUrl)
         assertEquals(200_000L, resolved.stream?.durationMs)
     }
 

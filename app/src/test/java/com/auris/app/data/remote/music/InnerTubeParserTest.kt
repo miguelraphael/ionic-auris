@@ -156,7 +156,8 @@ class InnerTubeParserTest {
         assertEquals("v", track.title)
         assertNull(track.artist)
         assertNull(track.durationMs)
-        assertNull(track.artworkUrl)
+        // No thumbnail in the payload, but artwork is derived from the id rather than fetched.
+        assertEquals("https://i.ytimg.com/vi/v/mqdefault.jpg", track.artworkUrl)
     }
 
     @Test

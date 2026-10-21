@@ -130,7 +130,6 @@ class InvidiousSource(
                 title = title,
                 author = author,
                 lengthMs = lengthMs,
-                artworkUrl = artworkUrl,
             )
         }
 
@@ -139,7 +138,6 @@ class InvidiousSource(
             title = title,
             author = author,
             lengthMs = lengthMs,
-            artworkUrl = artworkUrl,
         )
     }
 

@@ -106,11 +106,17 @@ data class StreamRefusalInfo(
  *
  * Carries the metadata that arrived alongside the stream, because a resolve is also the only
  * place some of it is available: YouTube Music's search rows come back with an **empty thumbnail
- * array**, and the title/author/artwork are only ever present here.
+ * array**, and title and author are only ever confirmed here.
  *
  * A refusal is not a failure. [stream] being null while [refusal] is set means the provider
  * answered and declined; a `Result` failure means it never answered at all. The distinction is
  * what [com.auris.app.ui.music.StreamRefusal] turns into honest wording.
+ *
+ * ### Why there is no artwork here
+ * Artwork is derived from the video id instead ([youtubeThumbnailUrl]), because it costs no
+ * request and because the provider's own thumbnail URLs are not trustworthy: Invidious returns
+ * instance-relative `/vi/...` paths, and on the instance actually in use those answer with an
+ * HTML error page rather than a JPEG (measured 2026-10).
  */
 data class ResolvedAudio(
     val stream: AudioStream? = null,
@@ -118,7 +124,6 @@ data class ResolvedAudio(
     val title: String? = null,
     val author: String? = null,
     val lengthMs: Long? = null,
-    val artworkUrl: String? = null,
 ) {
     val isPlayable: Boolean get() = stream?.isPlayable() == true
 }

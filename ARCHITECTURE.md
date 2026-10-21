@@ -265,6 +265,38 @@ fix playback from Settings; the alternative design couples the two and blacks ou
 perfectly healthy host every time a user tapped a delisted track, so the two are separated:
 non-2xx retires the instance, a 200-with-error is returned as a `ResolvedAudio` refusal.
 
+### The failure modes this actually has (measured 2026-10)
+
+Two were found by running it, and neither was visible from the probe:
+
+1. **The instance rate-limits, unevenly.** Ten successive `/api/v1/videos` calls for the *same*
+   music video returned **five successes, then a run of `500`**, whose body is YouTube's
+   `This content isn't available, try again later.` The route works; its budget is roughly a
+   handful of calls before it needs to cool down.
+2. **The web UI sits behind Anubis** — a proof-of-work bot wall (`Making sure you're not a bot!`,
+   v1.28.1) that answers **every non-API path** with 7,070 bytes of HTML, including
+   `/vi/<id>/mqdefault.jpg`. `/api/v1/*` is exempt, which is why the API works at all. The
+   consequence is sharp: **every image URL the API hands back is unusable**, because those URLs
+   point at the Anubis-gated `/vi/` route.
+
+The second is fixed in code by not asking for images at all: artwork is **derived** from the video
+id (`youtubeThumbnailUrl` → `i.ytimg.com`, verified to return real JPEGs). That deleted
+`prefetchArtwork`, which had been warming twelve rows per catalogue load *through the resolver* —
+by measurement, exactly the burst that trips the limiter, so the user's own tap became the request
+that got throttled. Artwork was competing with playback for the only budget that matters.
+
+The methodological lesson is worth keeping, because this is the second time it has bitten: **a
+probe that succeeds on one ancient, heavily-cached video id is not evidence that the route works.**
+`dQw4w9WgXcQ` answered every single time while eight contemporary music videos answered `500`
+(`This content isn't available`) in the same minute.
+
+**Open — per-backend selection.** The instance's web UI offers `BACKEND: JP1 (Tokyo) |
+JP2 (Hokkaido)`. If that is expressible for API calls — a cookie or a query parameter — it belongs
+on the instance entry, because it is the difference between one degraded backend and a working one.
+It could not be discovered from outside: every non-API path is Anubis-gated, and guessed selectors
+(`?backend=`, `Cookie: backend=`, `X-Backend:`) changed nothing. This is a question for someone who
+can see the UI.
+
 **Honest failure text.** `StreamRefusal` now distinguishes three cases that all used to read as
 "nothing playable": the *track* is gone (pick another song), a *provider declined* (retrying the
 same provider is pointless), and *no provider answered* (the fix is in Settings). Conflating them
