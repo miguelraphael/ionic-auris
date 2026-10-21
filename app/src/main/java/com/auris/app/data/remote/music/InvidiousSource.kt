@@ -152,7 +152,7 @@ class InvidiousSource(
      */
     private fun fetchSummary(instance: String, videoId: String): InvidiousVideoSummary {
         val request = Request.Builder()
-            .url("$instance/api/v1/videos/$videoId")
+            .url("$instance/api/v1/videos/$videoId?region=$CONTENT_REGION")
             // Instances behind a browser-oriented front end serve HTML unless JSON is asked for
             // explicitly, and that failure then reads as a parse error rather than a status.
             .header("Accept", "application/json")
@@ -278,6 +278,16 @@ class InvidiousSource(
 
         private const val REFUSAL_STATUS = "UNPLAYABLE"
         private const val NO_FORMATS_REASON = "The instance returned no playable audio format"
+
+        /**
+         * Content region, passed to Invidious as `region`.
+         *
+         * The instance applies it as YouTube's `gl`, so the resolver's idea of "available" matches
+         * the catalogue's. Kept equal to [InnerTubeClient.CONTENT_COUNTRY] deliberately: browsing
+         * one country's catalogue and resolving against another produces tracks that appear and
+         * then refuse.
+         */
+        private val CONTENT_REGION = InnerTubeClient.CONTENT_COUNTRY
 
         /**
          * How many of the offered formats to probe.

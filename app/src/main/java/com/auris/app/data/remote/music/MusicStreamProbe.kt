@@ -112,7 +112,7 @@ class MusicStreamProbe(
                             put("clientName", "WEB")
                             put("clientVersion", WEB_CLIENT_VERSION)
                             put("hl", "en")
-                            put("gl", "US")
+                            put("gl", InnerTubeClient.CONTENT_COUNTRY)
                         },
                     )
                 },
@@ -145,7 +145,7 @@ class MusicStreamProbe(
                                 put("clientName", client.name)
                                 put("clientVersion", client.version)
                                 put("hl", "en")
-                                put("gl", "US")
+                                put("gl", InnerTubeClient.CONTENT_COUNTRY)
                                 if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
                                 client.extraClient.forEach { (key, value) -> put(key, value) }
                             },

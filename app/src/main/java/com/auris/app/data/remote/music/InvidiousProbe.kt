@@ -100,7 +100,10 @@ class InvidiousProbe(
         val host = baseUrl.substringAfter("://").trimEnd('/')
 
         return runCatching {
-            val (status, text) = get("$baseUrl/api/v1/videos/$videoId", acceptJson = true)
+            val (status, text) = get(
+                "$baseUrl/api/v1/videos/$videoId?region=${InnerTubeClient.CONTENT_COUNTRY}",
+                acceptJson = true,
+            )
             if (status != 200) {
                 return@runCatching InvidiousProbeResult(
                     instance = host,

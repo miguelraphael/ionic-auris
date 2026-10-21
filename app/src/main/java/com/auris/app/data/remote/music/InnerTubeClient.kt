@@ -49,7 +49,14 @@ class InnerTubeClient(
     private val clientName: String = DEFAULT_CLIENT_NAME,
     private val clientVersion: String = DEFAULT_CLIENT_VERSION,
     private val language: String = "en",
-    private val country: String = "US",
+    /**
+     * Content region, sent as `gl`.
+     *
+     * This is the *content* country, not the device's: it decides which catalogue is served and
+     * which tracks are considered available. Set to the Philippines deliberately — the user is
+     * there, and the regional catalogue is what they want to see.
+     */
+    private val country: String = CONTENT_COUNTRY,
 ) {
 
     private val context = InnerTubeContext(
@@ -258,6 +265,14 @@ class InnerTubeClient(
 
     companion object {
         const val DEFAULT_BASE_URL = "https://music.youtube.com"
+
+        /**
+         * The content region sent as `gl`.
+         *
+         * Shared rather than inlined so the catalogue and the audio resolver cannot disagree about
+         * which country's catalogue is being browsed.
+         */
+        const val CONTENT_COUNTRY = "PH"
 
         /**
          * `ANDROID_MUSIC` returns the richest `streamingData` and needs no web API key.
