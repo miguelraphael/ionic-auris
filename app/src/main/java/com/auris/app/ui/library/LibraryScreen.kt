@@ -25,6 +25,7 @@ import com.auris.app.ui.components.SectionHeader
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.ArtworkPalette
 import com.auris.app.ui.theme.AurisBackground
+import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.rememberArtworkPaletteValue
 
@@ -42,7 +43,14 @@ fun LibraryScreen(
     entries: List<LibraryEntryEntity>,
     onEntryClick: (LibraryEntryEntity) -> Unit,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(bottom = 120.dp),
+    contentPadding: PaddingValues = PaddingValues(
+        start = 20.dp,
+        end = 20.dp,
+        // Clears the status bar; the grid used to start at y = 0, under the clock.
+        top = 56.dp,
+        // Clears the floating nav pill.
+        bottom = 120.dp,
+    ),
     header: (@Composable () -> Unit)? = null,
 ) {
     // The gradient tracks whichever entry the user last touched, the same rule the player and
@@ -69,33 +77,52 @@ fun LibraryScreen(
         fadeEndFraction = 0.38f,
         modifier = modifier,
     ) {
-    LazyVerticalGrid(
-        // Adaptive so the same composable serves a phone, a foldable and a tablet.
-        columns = GridCells.Adaptive(minSize = 116.dp),
-        modifier = modifier.fillMaxSize(),
-        contentPadding = contentPadding,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        if (header != null) {
-            item(span = { GridItemSpan(maxLineSpan) }) { header() }
-        }
+        LazyVerticalGrid(
+            // Adaptive so the same composable serves a phone, a foldable and a tablet.
+            columns = GridCells.Adaptive(minSize = 116.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
+                Column {
+                    Text(
+                        text = "Library",
+                        style = MaterialTheme.typography.displayLarge,
+                        color = AurisOnSurface,
+                    )
+                    Text(
+                        text = when (entries.size) {
+                            0 -> "Nothing saved yet"
+                            1 -> "1 title"
+                            else -> "${entries.size} titles"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AurisOnSurfaceVariant,
+                    )
+                }
+            }
 
-        items(
-            items = entries,
-            key = { it.id },
-        ) { entry ->
-            MediaGridCard(
-                imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
-                title = entry.title,
-                subtitle = entry.subtitle ?: entry.author,
-                progress = entry.progress.takeIf { it > 0f },
-                onClick = {
-                    gradientArtwork = entry.artworkUrl ?: entry.localArtworkPath
-                    onEntryClick(entry)
-                },
-            )
+            if (header != null) {
+                item(span = { GridItemSpan(maxLineSpan) }) { header() }
+            }
+
+            items(
+                items = entries,
+                key = { it.id },
+            ) { entry ->
+                MediaGridCard(
+                    imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
+                    title = entry.title,
+                    subtitle = entry.subtitle ?: entry.author,
+                    progress = entry.progress.takeIf { it > 0f },
+                    onClick = {
+                        gradientArtwork = entry.artworkUrl ?: entry.localArtworkPath
+                        onEntryClick(entry)
+                    },
+                )
+            }
         }
-    }
     }
 }

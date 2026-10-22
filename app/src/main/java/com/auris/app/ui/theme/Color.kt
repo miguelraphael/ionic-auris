@@ -73,6 +73,16 @@ val AurisBackground = Color(0xFF0B0B0E)
 /** Floating nav pill, cards, sheets — a frosted pane rather than a solid grey. */
 val AurisSurface = GlassFill
 
+/**
+ * Opaque floating chrome: the navigation pill.
+ *
+ * Glass works over the app's own backdrop, but the pill floats over album art and shelf cards.
+ * The translucent fill let bright covers through until the glyphs vanished, which made the bar
+ * unreadable exactly where it mattered. This is dark enough to sit above artwork and still a
+ * step off [AurisBackground], so the pill reads as a surface rather than a hole.
+ */
+val AurisSurfaceOpaque = Color(0xFF16161C)
+
 /** Progress bar rail and unselected chip fill. */
 val AurisTrack = GlassTrack
 

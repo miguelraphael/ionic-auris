@@ -129,6 +129,27 @@ fun AurisNavHost(
         null
     }
 
+    // A saved music row is a playback instruction, not a destination. Anime and manga rows
+    // open their screens; routing a music row to the player without starting it is how every
+    // music card on Home ended up showing whatever was already playing — or "Nothing is
+    // playing" on a cold start.
+    val openLibraryEntry: (LibraryEntryEntity) -> Unit = { entry ->
+        val music = musicViewModel
+        if (entry.mediaType == MediaType.MUSIC && music != null) {
+            music.play(entry.toMusicRow(), openPlayer = true)
+        } else {
+            onEntryClick(entry)
+        }
+    }
+
+    // The player opens only once the queue is playing, so it never flashes its empty state
+    // while a stream is still resolving.
+    LaunchedEffect(musicViewModel) {
+        musicViewModel?.playerOpenRequests?.collectLatest {
+            navController.navigate(Routes.PLAYER)
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = TopLevelDestination.HOME.route,
@@ -142,7 +163,7 @@ fun AurisNavHost(
         composable(TopLevelDestination.HOME.route) {
             HomeScreen(
                 library = library,
-                onEntryClick = onEntryClick,
+                onEntryClick = openLibraryEntry,
                 // The one entry point into Settings, and therefore into the extension
                 // manager. Without it, Settings and Extensions only opened each other and
                 // neither could be reached from any top-level destination.
@@ -154,7 +175,7 @@ fun AurisNavHost(
             BrowseScreen(
                 mediaType = MediaType.ANIME,
                 entries = library.filter { it.mediaType == MediaType.ANIME },
-                onEntryClick = onEntryClick,
+                onEntryClick = openLibraryEntry,
             )
         }
 
@@ -162,7 +183,7 @@ fun AurisNavHost(
             BrowseScreen(
                 mediaType = MediaType.MANGA,
                 entries = library.filter { it.mediaType == MediaType.MANGA },
-                onEntryClick = onEntryClick,
+                onEntryClick = openLibraryEntry,
             )
         }
 
@@ -184,19 +205,7 @@ fun AurisNavHost(
                 state = musicState,
                 savedMusic = library.filter { it.mediaType == MediaType.MUSIC },
                 onPlay = music::play,
-                onPlayEntry = { entry ->
-                    // A saved row stores the YouTube video id in `sourceId`; `sourceKey` is the
-                    // provider name ("innertube") and would resolve to nothing.
-                    music.play(
-                        MusicRow(
-                            kind = MusicRow.Kind.TRACK,
-                            title = entry.title,
-                            subtitle = entry.author ?: entry.subtitle,
-                            artworkUrl = entry.artworkUrl ?: entry.localArtworkPath,
-                            id = entry.sourceId,
-                        ),
-                    )
-                },
+                onPlayEntry = { entry -> music.play(entry.toMusicRow()) },
                 onOpenSearch = { navController.navigate(Routes.MUSIC_BROWSE) },
                 onOpenPlayer = { navController.navigate(Routes.PLAYER) },
                 onTogglePlayPause = music::togglePlayPause,
@@ -206,7 +215,7 @@ fun AurisNavHost(
         composable(TopLevelDestination.LIBRARY.route) {
             LibraryScreen(
                 entries = library,
-                onEntryClick = onEntryClick,
+                onEntryClick = openLibraryEntry,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -492,3 +501,17 @@ fun AurisNavHost(
     }
 }
 
+
+/**
+ * Rebuilds the playback identity of a saved music row.
+ *
+ * A saved row stores the YouTube video id in `sourceId`; `sourceKey` is the provider name
+ * ("innertube") and would resolve to nothing.
+ */
+private fun LibraryEntryEntity.toMusicRow() = MusicRow(
+    kind = MusicRow.Kind.TRACK,
+    title = title,
+    subtitle = author ?: subtitle,
+    artworkUrl = artworkUrl ?: localArtworkPath,
+    id = sourceId,
+)

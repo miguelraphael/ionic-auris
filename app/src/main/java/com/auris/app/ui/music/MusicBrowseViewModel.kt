@@ -17,9 +17,13 @@ import com.auris.app.music.buildMediaItem
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -101,6 +105,19 @@ class MusicBrowseViewModel(
     private var controller: MediaController? = null
     private var searchJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * Completes when the service binding finishes, with the controller or null.
+     *
+     * A tap can arrive before the binding does — on a cold start the very first tap usually
+     * does. Without this, that tap resolved a stream and then dropped the queue on the floor
+     * with "Playback service is still starting", so the player opened on "Nothing is playing".
+     */
+    private val controllerReady = CompletableDeferred<MediaController?>()
+
+    /** One-shot requests to surface the full player after audio actually started. */
+    private val _playerOpenRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val playerOpenRequests: SharedFlow<Unit> = _playerOpenRequests.asSharedFlow()
+
     /** Why the last playback attempt got no stream, so the failure can be reported honestly. */
     private var lastRefusal: StreamRefusalInfo? = null
 
@@ -139,6 +156,7 @@ class MusicBrowseViewModel(
                         }
                     },
                 )
+                controllerReady.complete(controller)
             },
             MoreExecutors.directExecutor(),
         )
@@ -243,19 +261,23 @@ class MusicBrowseViewModel(
      *
      * Tracks resolve a stream and enqueue it; albums and playlists browse their track list and
      * enqueue the whole thing, which is what makes the notification's Next button meaningful.
+     *
+     * @param openPlayer asks the caller to open the full player once audio has actually
+     *   started. Home and Library used to navigate immediately and unconditionally, which is
+     *   why a tap showed whatever was already playing — or "Nothing is playing" on a cold start.
      */
-    fun play(row: MusicRow) {
+    fun play(row: MusicRow, openPlayer: Boolean = false) {
         viewModelScope.launch {
             _state.value = _state.value.copy(isResolving = true, error = null, message = null)
             lastRefusal = null
             lastError = null
 
             val tracks = when (row.kind) {
-                MusicRow.Kind.TRACK -> resolveTrack(row.id)
-                else -> collectionTracks(row.id)
+                MusicRow.Kind.TRACK -> listOfNotNull(resolveTrack(row.id, row.title))
+                else -> collectionTracks(row.id).mapNotNull { resolveTrack(it) }
             }
 
-            if (tracks.isNullOrEmpty()) {
+            if (tracks.isEmpty()) {
                 _state.value = _state.value.copy(
                     isResolving = false,
                     message = StreamRefusal.describe(row.title, lastRefusal, lastError),
@@ -263,9 +285,12 @@ class MusicBrowseViewModel(
                 return@launch
             }
 
-            enqueue(tracks)
+            if (!enqueue(tracks)) {
+                _state.value = _state.value.copy(isResolving = false)
+                return@launch
+            }
 
-            val first = tracks.first()
+            val first = tracks.first().track
             _state.value = _state.value.copy(
                 isResolving = false,
                 nowPlayingId = first.videoId,
@@ -274,6 +299,8 @@ class MusicBrowseViewModel(
                 nowPlayingArtworkUrl = first.artworkUrl,
                 message = "Playing ${first.title}",
             )
+
+            if (openPlayer) _playerOpenRequests.tryEmit(Unit)
         }
     }
 
@@ -290,7 +317,13 @@ class MusicBrowseViewModel(
         }
     }
 
-    private suspend fun resolveTrack(videoId: String): List<MusicTrack>? {
+    /**
+     * Resolves a catalogue track once, keeping the stream it returned.
+     *
+     * The stream used to be resolved twice per tap — once for metadata and again for the queue —
+     * which doubled the latency and gave the second resolve a chance to fail on its own.
+     */
+    private suspend fun resolveTrack(videoId: String, fallbackTitle: String): PlayableTrack? {
         val resolved = source.resolveAudioStream(videoId).getOrElse { error ->
             // No provider answered at all — every instance was unreachable, or none is
             // configured. Recorded so [play] can point at Settings rather than implying the
@@ -309,10 +342,10 @@ class MusicBrowseViewModel(
         // return thumbnail URLs, but they are instance-relative and the instance answers them
         // with an HTML error page rather than a JPEG (see [youtubeThumbnailUrl]) — so using them
         // painted broken images on every played track.
-        return listOf(
-            MusicTrack(
+        return PlayableTrack(
+            track = MusicTrack(
                 videoId = videoId,
-                title = resolved.title ?: videoId,
+                title = resolved.title ?: fallbackTitle,
                 artist = resolved.author,
                 album = null,
                 durationMs = stream.durationMs ?: resolved.lengthMs,
@@ -321,7 +354,22 @@ class MusicBrowseViewModel(
                 playlistId = null,
                 trackIndex = null,
             ),
+            streamUrl = stream.url,
+            mimeType = stream.mimeType,
         )
+    }
+
+    /** Resolves a track that already carries its metadata (album and playlist entries). */
+    private suspend fun resolveTrack(track: MusicTrack): PlayableTrack? {
+        val resolved = source.resolveAudioStream(track.videoId).getOrElse { error ->
+            lastError = lastError ?: error.message ?: error::class.java.simpleName
+            return null
+        }
+
+        resolved.refusal?.let { lastRefusal = lastRefusal ?: it }
+
+        val stream = resolved.stream?.takeIf { it.isPlayable() } ?: return null
+        return PlayableTrack(track, stream.url, stream.mimeType)
     }
 
     private suspend fun collectionTracks(browseId: String): List<MusicTrack> =
@@ -331,47 +379,36 @@ class MusicBrowseViewModel(
             .flatMap { it.tracks }
 
     /**
-     * Resolves each track and hands the queue to the playback service.
+     * Hands the resolved queue to the playback service.
      *
      * Each track is resolved individually rather than trusting one URL for the queue: InnerTube
      * URLs are per-video, so a single resolved URL cannot cover an album.
      *
      * Tracks are resolved sequentially with a small gap. InnerTube has no documented rate limit
      * and firing twenty player requests at once is a good way to get throttled.
+     *
+     * @return true when the service accepted the queue.
      */
-    private suspend fun enqueue(tracks: List<MusicTrack>) {
-        val sessionController = controller ?: run {
-            _state.value = _state.value.copy(message = "Playback service is still starting")
-            return
+    private suspend fun enqueue(tracks: List<PlayableTrack>): Boolean {
+        // Wait for the binding rather than failing the tap: on a cold start the service is still
+        // connecting when the first card is tapped.
+        val sessionController = controller ?: controllerReady.await()
+
+        if (sessionController == null) {
+            _state.value = _state.value.copy(message = "Could not reach the playback service")
+            return false
         }
 
-        val items = tracks.mapNotNull { track ->
-            val resolved = source.resolveAudioStream(track.videoId).getOrNull()
-            // Remembered so the "nothing playable" path below can say *why*, exactly as a
-            // single-track tap does. First reason wins: one explanation is enough.
-            resolved?.refusal?.let { lastRefusal = lastRefusal ?: it }
-            val stream = resolved?.stream?.takeIf { it.isPlayable() } ?: return@mapNotNull null
-
+        val items = tracks.map { playable ->
             buildMediaItem(
-                videoId = track.videoId,
-                title = track.title,
-                artist = track.artist,
-                album = track.album,
-                artworkUrl = track.largeArtworkUrl ?: track.artworkUrl,
-                streamUrl = stream.url,
-                mimeType = stream.mimeType,
+                videoId = playable.track.videoId,
+                title = playable.track.title,
+                artist = playable.track.artist,
+                album = playable.track.album,
+                artworkUrl = playable.track.largeArtworkUrl ?: playable.track.artworkUrl,
+                streamUrl = playable.streamUrl,
+                mimeType = playable.mimeType,
             )
-        }
-
-        if (items.isEmpty()) {
-            _state.value = _state.value.copy(
-                message = StreamRefusal.describe(
-                    tracks.firstOrNull()?.title ?: "this selection",
-                    lastRefusal,
-                    lastError,
-                ),
-            )
-            return
         }
 
         sessionController.setMediaItems(items, /* startIndex = */ 0, /* startPositionMs = */ 0L)
@@ -379,11 +416,12 @@ class MusicBrowseViewModel(
         sessionController.play()
 
         // Persist the first track so the library grid shows it and progress is restorable.
-        tracks.firstOrNull()?.let { track ->
-            runCatching {
-                libraryRepository.upsert(MusicLibraryMapper.toEntry(track, isCurrent = true))
-            }
+        runCatching {
+            libraryRepository.upsert(
+                MusicLibraryMapper.toEntry(tracks.first().track, isCurrent = true),
+            )
         }
+        return true
     }
 
     /** Saves a track to the library without playing it. */
@@ -457,6 +495,18 @@ class MusicBrowseViewModel(
         ): ViewModelProvider.Factory = Factory(source, libraryRepository, context)
     }
 }
+
+/**
+ * A track plus the stream that will be enqueued for it.
+ *
+ * Keeping them together is what removes the second resolve: the stream returned by the tap's
+ * resolve is the one the queue uses.
+ */
+private data class PlayableTrack(
+    val track: MusicTrack,
+    val streamUrl: String,
+    val mimeType: String,
+)
 
 /**
  * Flattens a catalogue answer into rows the UI can render.
