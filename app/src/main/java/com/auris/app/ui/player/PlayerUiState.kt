@@ -25,7 +25,16 @@ data class PlayerUiState(
     val shuffleEnabled: Boolean = false,
     val queueSize: Int = 0,
     val queuePosition: Int = 0,
+
+    /** A transient message from a control that could not act, e.g. an unavailable feature. */
+    val message: String? = null,
+
+    /** Set only when the playback service could not be reached at all. */
+    val error: String? = null,
 ) {
+    /** True when nothing has ever been queued, which is a different screen from a paused one. */
+    val isEmpty: Boolean
+        get() = queueSize == 0 && title.isBlank() && error == null
     val progress: Float
         get() = if (durationMs > 0L) {
             (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)

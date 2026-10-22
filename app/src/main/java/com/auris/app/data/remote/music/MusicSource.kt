@@ -1,6 +1,18 @@
 package com.auris.app.data.remote.music
 
 /**
+ * One named row on the music home screen.
+ *
+ * The title is what the row is called ("Top Picks for You"); the seed is the search that fills
+ * it. Keeping both means the home screen is a list of rows, not a list of queries the UI has to
+ * dress up — and a provider can rename a row without the UI changing.
+ */
+data class MusicShelfSeed(
+    val title: String,
+    val seed: String,
+)
+
+/**
  * The music surface the UI depends on.
  *
  * ### Why this seam exists
@@ -21,7 +33,6 @@ package com.auris.app.data.remote.music
  * makes the resolver swappable and testable with a fake, rather than rewiring a ViewModel.
  */
 interface MusicSource {
-
     /**
      * Seeds for the discovery landing page.
      *
@@ -29,6 +40,17 @@ interface MusicSource {
      * sense is a property of the catalogue provider.
      */
     val discoverySeeds: List<String>
+
+    /**
+     * Named discovery shelves for the music home screen, in display order.
+     *
+     * A default rather than a required member so a provider only has to supply [discoverySeeds]:
+     * untitled seeds still produce a shelf, just with a capitalised query as the heading.
+     */
+    val discoveryShelves: List<MusicShelfSeed>
+        get() = discoverySeeds.map { seed ->
+            MusicShelfSeed(seed.replaceFirstChar(Char::uppercase), seed)
+        }
 
     /** Searches the catalogue. */
     suspend fun search(query: String, limit: Int): Result<List<MusicCollectionItem>>
@@ -67,6 +89,8 @@ class DefaultMusicSource(
 ) : MusicSource {
 
     override val discoverySeeds: List<String> get() = InnerTubeClient.DISCOVERY_SEEDS
+
+    override val discoveryShelves: List<MusicShelfSeed> get() = InnerTubeClient.DISCOVERY_SHELVES
 
     override suspend fun search(query: String, limit: Int): Result<List<MusicCollectionItem>> =
         catalogue.search(query, InnerTubeSearchParams.ALL, limit)

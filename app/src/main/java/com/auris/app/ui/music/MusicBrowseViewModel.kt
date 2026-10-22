@@ -35,6 +35,17 @@ data class MusicRow(
     enum class Kind { TRACK, ALBUM, PLAYLIST }
 }
 
+/**
+ * One titled row on the music home screen.
+ *
+ * Built by the ViewModel rather than the screen so the shelf's identity — which query filled it —
+ * stays out of the UI, and a shelf that fails to load simply never appears.
+ */
+data class MusicHomeShelf(
+    val title: String,
+    val rows: List<MusicRow>,
+)
+
 /** Everything the browse screen renders. */
 data class MusicBrowseUiState(
     val query: String = "",
@@ -48,8 +59,21 @@ data class MusicBrowseUiState(
     val isResolving: Boolean = false,
     val message: String? = null,
     val nowPlayingId: String? = null,
+    /** Metadata for the now-playing strip, so it does not depend on the row still being listed. */
+    val nowPlayingTitle: String? = null,
+    val nowPlayingArtist: String? = null,
+    val nowPlayingArtworkUrl: String? = null,
+    /** Mirrors the service's play/pause state for the home strip. */
+    val isPlaying: Boolean = false,
+    /** Home shelves, filled progressively as each seed answers. */
+    val shelves: List<MusicHomeShelf> = emptyList(),
+    val isHomeLoading: Boolean = false,
+    val homeError: String? = null,
 ) {
     val isEmpty: Boolean get() = results.isEmpty() && !isLoading && error == null
+
+    /** True while the screen is showing the category tiles rather than a result list. */
+    val isBrowsingCategories: Boolean get() = query.isBlank()
 }
 
 /**
@@ -83,9 +107,11 @@ class MusicBrowseViewModel(
     /** Why no provider answered at all, when that is the reason there is no stream. */
     private var lastError: String? = null
 
+    /** Set once the home shelves have been requested, so recomposition cannot refetch them. */
+    private var homeRequested = false
+
     init {
         connectController()
-        search("")
     }
 
     /**
@@ -103,6 +129,16 @@ class MusicBrowseViewModel(
         future.addListener(
             {
                 controller = runCatching { future.get() }.getOrNull()
+                controller?.addListener(
+                    object : androidx.media3.common.Player.Listener {
+                        override fun onEvents(
+                            player: androidx.media3.common.Player,
+                            events: androidx.media3.common.Player.Events,
+                        ) {
+                            _state.value = _state.value.copy(isPlaying = player.isPlaying)
+                        }
+                    },
+                )
             },
             MoreExecutors.directExecutor(),
         )
@@ -113,16 +149,25 @@ class MusicBrowseViewModel(
     /** Runs a search, replacing any in-flight one. */
     fun search(query: String) {
         searchJob?.cancel()
+
+        // A blank query is the category-tile landing, not a request. Nothing is fetched and the
+        // old results are dropped so the tiles cannot sit under a stale list.
+        if (query.isBlank()) {
+            _state.value = _state.value.copy(
+                query = query,
+                results = emptyList(),
+                isLoading = false,
+                error = null,
+                parsedTrackCount = 0,
+                parsedAlbumCount = 0,
+                parsedPlaylistCount = 0,
+            )
+            return
+        }
+
         _state.value = _state.value.copy(query = query, isLoading = true, error = null)
 
         searchJob = viewModelScope.launch {
-            if (query.isBlank()) {
-                // Seeded search, not a blank search and not a chart browse: a blank query is
-                // rejected with HTTP 400, and the `FE*` chart browse ids are rejected too.
-                discovery()
-                return@launch
-            }
-
             delay(SEARCH_DEBOUNCE_MS)
             source.search(query, BROWSE_LIMIT)
                 .onSuccess { items -> _state.value = _state.value.withResults(items, isLoading = false) }
@@ -130,33 +175,43 @@ class MusicBrowseViewModel(
         }
     }
 
+    // ---- Home ---------------------------------------------------------------
+
     /**
-     * Loads the discovery landing page.
+     * Loads the home shelves, once.
      *
-     * The seeds run sequentially rather than concurrently. Firing several InnerTube requests at
+     * The seeds run sequentially rather than concurrently. Firing five InnerTube requests at
      * once is the fastest way to be throttled, and there is no documented limit to reason
-     * about — the screen shows its first results sooner and the rest fill in behind them.
+     * about — each shelf appears as it arrives instead.
      *
      * A seed that fails is skipped rather than failing the page: one bad response should not
-     * leave the user with an empty screen.
+     * leave the user with an empty home.
      */
-    private suspend fun discovery() {
-        val collected = mutableListOf<MusicCollectionItem>()
+    fun loadHome() {
+        if (homeRequested) return
+        homeRequested = true
 
-        for (seed in source.discoverySeeds) {
-            source.search(seed, SEED_LIMIT)
-                .onSuccess { collected += it }
-        }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isHomeLoading = true, homeError = null)
 
-        if (collected.isEmpty()) {
+            val loaded = mutableListOf<MusicHomeShelf>()
+
+            for (seed in source.discoveryShelves) {
+                val items = source.search(seed.seed, SHELF_LIMIT).getOrNull().orEmpty()
+                val rows = items.flatMap { item -> item.toRows() }.take(SHELF_ROW_LIMIT)
+                if (rows.isEmpty()) continue
+
+                loaded += MusicHomeShelf(seed.title, rows)
+                // Published after each shelf so the screen fills in progressively rather than
+                // waiting for the slowest query.
+                _state.value = _state.value.copy(shelves = loaded.toList())
+            }
+
             _state.value = _state.value.copy(
-                isLoading = false,
-                error = "Could not reach YouTube Music",
+                isHomeLoading = false,
+                homeError = if (loaded.isEmpty()) "Could not reach YouTube Music" else null,
             )
-            return
         }
-
-        _state.value = _state.value.withResults(collected, isLoading = false)
     }
 
     private fun MusicBrowseUiState.withResults(
@@ -171,43 +226,6 @@ class MusicBrowseViewModel(
             parsedAlbumCount = items.count { it.album != null },
             parsedPlaylistCount = items.count { it.playlist != null },
         )
-    }
-
-    private fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
-        tracks.forEach { track ->
-            add(
-                MusicRow(
-                    kind = MusicRow.Kind.TRACK,
-                    title = track.title,
-                    subtitle = listOfNotNull(track.artist, track.album).joinToString(" • ")
-                        .takeIf { it.isNotBlank() },
-                    artworkUrl = track.artworkUrl,
-                    id = track.videoId,
-                ),
-            )
-        }
-        album?.let {
-            add(
-                MusicRow(
-                    kind = MusicRow.Kind.ALBUM,
-                    title = it.title,
-                    subtitle = it.artist,
-                    artworkUrl = it.artworkUrl,
-                    id = it.browseId,
-                ),
-            )
-        }
-        playlist?.let {
-            add(
-                MusicRow(
-                    kind = MusicRow.Kind.PLAYLIST,
-                    title = it.title,
-                    subtitle = it.subtitle,
-                    artworkUrl = it.artworkUrl,
-                    id = it.browseId,
-                ),
-            )
-        }
     }
 
     private fun MusicBrowseUiState.failed(error: Throwable): MusicBrowseUiState = copy(
@@ -247,11 +265,28 @@ class MusicBrowseViewModel(
 
             enqueue(tracks)
 
+            val first = tracks.first()
             _state.value = _state.value.copy(
                 isResolving = false,
-                nowPlayingId = tracks.first().videoId,
-                message = "Playing ${tracks.first().title}",
+                nowPlayingId = first.videoId,
+                nowPlayingTitle = first.title,
+                nowPlayingArtist = first.artist,
+                nowPlayingArtworkUrl = first.artworkUrl,
+                message = "Playing ${first.title}",
             )
+        }
+    }
+
+    /** Pauses or resumes the current queue, for the home screen's now-playing strip. */
+    fun togglePlayPause() {
+        val player = controller ?: return
+        when {
+            player.isPlaying -> player.pause()
+            player.playbackState == androidx.media3.common.Player.STATE_IDLE -> {
+                player.prepare()
+                player.play()
+            }
+            else -> player.play()
         }
     }
 
@@ -406,8 +441,11 @@ class MusicBrowseViewModel(
 
         private const val BROWSE_LIMIT = 40
 
-        /** Per seed, so three seeds do not each load a full 40-row page. */
-        private const val SEED_LIMIT = 15
+        /** Per shelf, so five shelves do not each load a full 40-row page. */
+        private const val SHELF_LIMIT = 20
+
+        /** Cards shown per shelf. Enough to scroll, few enough that five rows stay cheap. */
+        private const val SHELF_ROW_LIMIT = 15
 
         /** Guard on a large playlist so one album cannot page forever. */
         private const val COLLECTION_TRACK_LIMIT = 200
@@ -417,5 +455,48 @@ class MusicBrowseViewModel(
             libraryRepository: LibraryRepository,
             context: Context,
         ): ViewModelProvider.Factory = Factory(source, libraryRepository, context)
+    }
+}
+
+/**
+ * Flattens a catalogue answer into rows the UI can render.
+ *
+ * Top-level rather than a member so the home shelves and the search results share one mapping:
+ * an album that renders one way in search cannot render another way on a shelf.
+ */
+internal fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
+    tracks.forEach { track ->
+        add(
+            MusicRow(
+                kind = MusicRow.Kind.TRACK,
+                title = track.title,
+                subtitle = listOfNotNull(track.artist, track.album).joinToString(" • ")
+                    .takeIf { it.isNotBlank() },
+                artworkUrl = track.artworkUrl,
+                id = track.videoId,
+            ),
+        )
+    }
+    album?.let {
+        add(
+            MusicRow(
+                kind = MusicRow.Kind.ALBUM,
+                title = it.title,
+                subtitle = it.artist,
+                artworkUrl = it.artworkUrl,
+                id = it.browseId,
+            ),
+        )
+    }
+    playlist?.let {
+        add(
+            MusicRow(
+                kind = MusicRow.Kind.PLAYLIST,
+                title = it.title,
+                subtitle = it.subtitle,
+                artworkUrl = it.artworkUrl,
+                id = it.browseId,
+            ),
+        )
     }
 }

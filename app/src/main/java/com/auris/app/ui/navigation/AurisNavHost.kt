@@ -29,8 +29,7 @@ import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.browse.BrowseScreen
 import com.auris.app.ui.home.HomeScreen
 import com.auris.app.ui.library.LibraryScreen
-import com.auris.app.ui.player.MusicPlayerScreen
-import com.auris.app.ui.player.PlayerUiState
+import com.auris.app.ui.player.MusicPlayerRoute
 import android.app.Activity
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowInsetsCompat
@@ -45,8 +44,9 @@ import com.auris.app.ui.source.CatalogueViewModel
 import com.auris.app.ui.settings.SettingsViewModel
 import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.ui.music.MusicBrowseScreen
-import com.auris.app.ui.music.MusicLibraryEntry
 import com.auris.app.ui.music.MusicBrowseViewModel
+import com.auris.app.ui.music.MusicHomeScreen
+import com.auris.app.ui.music.MusicRow
 import com.auris.app.ui.player.EpisodePlayerRoute
 import com.auris.app.ui.reader.MangaReaderScreen
 import com.auris.app.ui.reader.MangaReaderViewModel
@@ -113,6 +113,22 @@ fun AurisNavHost(
     invidiousInstanceStore: com.auris.app.data.repository.InvidiousInstanceStore,
     modifier: Modifier = Modifier,
 ) {
+    // One ViewModel for both the Music home and the browse/search screen, hosted by the
+    // Activity rather than either destination. Two instances would mean two controllers, two
+    // copies of the queue, and a home screen that could not see what browse was playing.
+    val musicViewModel: MusicBrowseViewModel? = if (musicSource != null) {
+        viewModel(
+            key = "music",
+            factory = MusicBrowseViewModel.factory(
+                source = musicSource,
+                libraryRepository = libraryRepository,
+                context = navController.context,
+            ),
+        )
+    } else {
+        null
+    }
+
     NavHost(
         navController = navController,
         startDestination = TopLevelDestination.HOME.route,
@@ -150,14 +166,40 @@ fun AurisNavHost(
             )
         }
 
-        // The Music pillar leads to the live YouTube Music browser rather than a static grid:
-        // with no library yet, the saved-tracks grid would be empty on first run and the app
-        // would look broken. The library is still reachable from the browse screen.
+        // The Music pillar is a shelf-based home rather than a saved-tracks grid: on first run
+        // an empty library made the pillar look broken, and there was nothing to play from it.
         composable(TopLevelDestination.MUSIC.route) {
-            MusicLibraryEntry(
-                entries = library.filter { it.mediaType == MediaType.MUSIC },
-                onEntryClick = onEntryClick,
-                onOpenBrowse = { navController.navigate(Routes.MUSIC_BROWSE) },
+            val music = musicViewModel
+            if (music == null) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                return@composable
+            }
+            val musicState by music.state.collectAsStateWithLifecycle()
+
+            // Loaded when the pillar is opened, not at app start: five catalogue requests on
+            // launch would compete with the library sync for nothing.
+            LaunchedEffect(Unit) { music.loadHome() }
+
+            MusicHomeScreen(
+                state = musicState,
+                savedMusic = library.filter { it.mediaType == MediaType.MUSIC },
+                onPlay = music::play,
+                onPlayEntry = { entry ->
+                    // A saved row stores the YouTube video id in `sourceId`; `sourceKey` is the
+                    // provider name ("innertube") and would resolve to nothing.
+                    music.play(
+                        MusicRow(
+                            kind = MusicRow.Kind.TRACK,
+                            title = entry.title,
+                            subtitle = entry.author ?: entry.subtitle,
+                            artworkUrl = entry.artworkUrl ?: entry.localArtworkPath,
+                            id = entry.sourceId,
+                        ),
+                    )
+                },
+                onOpenSearch = { navController.navigate(Routes.MUSIC_BROWSE) },
+                onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                onTogglePlayPause = music::togglePlayPause,
             )
         }
 
@@ -170,10 +212,9 @@ fun AurisNavHost(
         }
 
         // Full-screen player. Not a top-level destination, so the nav pill is hidden
-        // while it is open.
+        // while it is open. It takes no argument: the live playback session is the state.
         composable(
             route = Routes.PLAYER,
-            arguments = listOf(navArgument("entryId") { type = NavType.StringType }),
             enterTransition = {
                 slideInHorizontally(tween(280)) { it } + fadeIn(tween(280))
             },
@@ -183,19 +224,8 @@ fun AurisNavHost(
             popExitTransition = {
                 slideOutHorizontally(tween(240)) { it } + fadeOut(tween(240))
             },
-        ) { entry ->
-            val entryId = entry.arguments?.getString("entryId").orEmpty()
-            val track = library.firstOrNull { it.id == entryId }
-            MusicPlayerScreen(
-                state = track?.toPlayerState() ?: PlayerUiState(),
-                onPlayPause = { /* bound by PlayerViewModel in the next slice */ },
-                onSeekFraction = {},
-                onVolumeChange = {},
-                onSkipBack = {},
-                onSkipForward = {},
-                onCycleRepeat = {},
-                onToggleShuffle = {},
-            )
+        ) {
+            MusicPlayerRoute(onBack = { navController.popBackStack() })
         }
 
         // Extension management. Reached from Settings, not a top-level tab, so the nav pill
@@ -308,32 +338,21 @@ fun AurisNavHost(
             )
         }
 
-        // Music browse/search. Reached from the Music pillar on the nav pill.
+        // Music browse/search. Reached from the Music home's search field.
         composable(Routes.MUSIC_BROWSE) {
-            if (musicSource == null) {
+            val music = musicViewModel
+            if (music == null) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
                 return@composable
             }
-            val viewModel: MusicBrowseViewModel = viewModel(
-                key = "music-browse",
-                factory = MusicBrowseViewModel.factory(
-                    source = musicSource,
-                    libraryRepository = libraryRepository,
-                    context = navController.context,
-                ),
-            )
-            val musicState by viewModel.state.collectAsStateWithLifecycle()
+            val musicState by music.state.collectAsStateWithLifecycle()
 
             MusicBrowseScreen(
                 state = musicState,
-                onQueryChange = viewModel::search,
-                onPlay = viewModel::play,
-                onSave = viewModel::saveToLibrary,
-                onOpenPlayer = {
-                    // Only meaningful with something playing; the route is cheap and shows the
-                    // existing player state if not.
-                    navController.navigate(Routes.PLAYER)
-                },
+                onQueryChange = music::search,
+                onPlay = music::play,
+                onSave = music::saveToLibrary,
+                onOpenPlayer = { navController.navigate(Routes.PLAYER) },
             )
         }
 
@@ -473,14 +492,3 @@ fun AurisNavHost(
     }
 }
 
-/** Maps a library row onto the player's view state. */
-internal fun LibraryEntryEntity.toPlayerState(): PlayerUiState = PlayerUiState(
-    entryId = id,
-    title = title,
-    artist = author.orEmpty(),
-    album = subtitle.orEmpty(),
-    artworkUrl = artworkUrl ?: localArtworkPath,
-    isPlaying = false,
-    durationMs = totalUnits.toLong() * 180_000L,
-    positionMs = lastPositionMs,
-)

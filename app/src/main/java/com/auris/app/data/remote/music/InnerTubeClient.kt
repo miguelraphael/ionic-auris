@@ -311,7 +311,24 @@ class InnerTubeClient(
          * Deliberately broad and non-genre-specific: they stand in for "something to play",
          * and a playlist or chart id would go stale without any signal that it had.
          */
-        val DISCOVERY_SEEDS = listOf("popular music", "chill beats", "new releases")
+        /**
+         * Home-screen shelves, in display order.
+         *
+         * The seeds are search queries rather than browse ids: YouTube Music's own chart ids
+         * (`FE*`) answer `400` on every client (see ARCHITECTURE §4), while a query works. The mix
+         * is deliberate — generic rows for a first run with no history, and regional ones so the
+         * home screen reflects the configured content country rather than a US default.
+         */
+        val DISCOVERY_SHELVES = listOf(
+            MusicShelfSeed("Top Picks for You", "popular music"),
+            MusicShelfSeed("New Releases", "new releases"),
+            MusicShelfSeed("OPM", "OPM"),
+            MusicShelfSeed("K-Pop", "K-Pop"),
+            MusicShelfSeed("Chill", "chill beats"),
+        )
+
+        /** Untitled view of [DISCOVERY_SHELVES], for callers that only need the queries. */
+        val DISCOVERY_SEEDS = DISCOVERY_SHELVES.map { it.seed }
 
         private const val MAX_CONTINUATION_PAGES = 3
 

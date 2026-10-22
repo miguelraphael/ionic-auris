@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,7 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,37 +33,43 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
-import com.auris.app.ui.theme.AurisOutline
 import com.auris.app.ui.theme.AurisRadii
 import com.auris.app.ui.theme.AurisSurface
 import com.auris.app.ui.theme.AurisTrack
 import com.auris.app.ui.theme.rememberArtworkPaletteValue
 
 /**
- * Music browse and search.
+ * Music Search, laid out like a music service rather than a text box with a list under it.
  *
- * ### The parse counters are shown on purpose
- * [MusicBrowseUiState.parsedTrackCount] and friends appear under the header while debugging the
- * InnerTube parser. An empty result list looks identical whether the parser is working or
- * silently matching nothing, and those are exactly the two cases that need telling apart. It
- * costs one line and it is the difference between "the screen is broken" and "YouTube returned
- * a shape the parser does not recognise".
+ * With no query the screen is a landing page: a two-column grid of genre tiles, each of which
+ * runs the search it names. Typing (or tapping a tile) swaps the grid for results. That split
+ * matters — a blank query used to fire three discovery requests and drop a flat list on screen,
+ * which looked like a search result the user had not asked for.
+ *
+ * ### The parse counters are shown only on an empty result
+ * [MusicBrowseUiState.parsedTrackCount] and friends exist to tell "the parser matched nothing"
+ * apart from "the request failed". Both look identical on an empty list, so the counts belong in
+ * the empty state where that distinction is the only useful thing on screen — not as a
+ * permanent diagnostic strip under the header.
  */
 @Composable
 fun MusicBrowseScreen(
@@ -83,11 +92,24 @@ fun MusicBrowseScreen(
         modifier = modifier,
     ) {
         Column(Modifier.fillMaxSize()) {
-            SearchField(
-                query = state.query,
-                isLoading = state.isLoading,
-                onQueryChange = onQueryChange,
-            )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 56.dp, bottom = 10.dp),
+            ) {
+                Text(
+                    text = "Search",
+                    style = MaterialTheme.typography.displayLarge,
+                    color = AurisOnSurface,
+                )
+                Spacer(Modifier.height(14.dp))
+                SearchField(
+                    query = state.query,
+                    isLoading = state.isLoading,
+                    onQueryChange = onQueryChange,
+                )
+            }
 
             state.error?.let { error ->
                 MessageBanner(error, isError = true)
@@ -97,21 +119,15 @@ fun MusicBrowseScreen(
                 MessageBanner(message, isError = false)
             }
 
-            // Parse diagnostics, visible only while something is actually happening.
-            if (state.parsedTrackCount + state.parsedAlbumCount + state.parsedPlaylistCount > 0) {
-                ParseSummary(
-                    tracks = state.parsedTrackCount,
-                    albums = state.parsedAlbumCount,
-                    playlists = state.parsedPlaylistCount,
-                )
-            }
-
             when {
+                // Blank query: the category landing. Checked before `isEmpty`, because an empty
+                // result set is exactly what a blank query produces and it is not an error.
+                state.isBrowsingCategories -> CategoryGrid(onCategory = { onQueryChange(it.query) })
                 state.isResolving -> ResolvingRow()
-                state.isEmpty -> EmptyMusic(state.query)
+                state.isEmpty -> EmptyMusic(query = state.query, state = state)
                 else -> LazyColumn(
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp, end = 16.dp, bottom = 140.dp,
+                    contentPadding = PaddingValues(
+                        start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -130,6 +146,58 @@ fun MusicBrowseScreen(
     }
 }
 
+// ---- Category landing --------------------------------------------------------
+
+@Composable
+private fun CategoryGrid(onCategory: (MusicCategory) -> Unit) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        gridItems(MUSIC_CATEGORIES, key = { it.title }) { category ->
+            CategoryTile(category = category, onClick = { onCategory(category) })
+        }
+    }
+}
+
+/**
+ * One genre tile: a colour field with the title over its dark end.
+ *
+ * The gradient runs bright at the top to deep at the bottom so the white title always sits on
+ * the dark half, whichever palette the category uses — the Charts tile is yellow at the top and
+ * still legible at the bottom.
+ */
+@Composable
+private fun CategoryTile(category: MusicCategory, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(108.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Brush.verticalGradient(category.colors))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(14.dp),
+        contentAlignment = Alignment.BottomStart,
+    ) {
+        Text(
+            text = category.title,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            ),
+            color = Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 // ---- Search field ------------------------------------------------------------
 
 @Composable
@@ -141,9 +209,7 @@ private fun SearchField(
     Surface(
         shape = RoundedCornerShape(AurisRadii.button),
         color = AurisSurface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 52.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -221,7 +287,7 @@ private fun MusicRowItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(AurisRadii.artworkSmall))
-            .background(if (isNowPlaying) AurisAccent.copy(alpha = 0.10f) else Color_Transparent)
+            .background(if (isNowPlaying) AurisAccent.copy(alpha = 0.10f) else Color.Transparent)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -299,20 +365,6 @@ private fun MusicRowItem(
 // ---- States ------------------------------------------------------------------
 
 @Composable
-private fun ParseSummary(tracks: Int, albums: Int, playlists: Int) {
-    Text(
-        // Diagnostic line: an empty list looks the same whether the parser works or matched
-        // nothing, and those are exactly the cases that need distinguishing.
-        text = "Parsed $tracks track${if (tracks == 1) "" else "s"}, " +
-            "$albums album${if (albums == 1) "" else "s"}, " +
-            "$playlists playlist${if (playlists == 1) "" else "s"}",
-        style = MaterialTheme.typography.labelSmall,
-        color = AurisOnSurfaceVariant.copy(alpha = 0.7f),
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-    )
-}
-
-@Composable
 private fun ResolvingRow() {
     Box(
         modifier = Modifier
@@ -329,7 +381,7 @@ private fun ResolvingRow() {
 }
 
 @Composable
-private fun EmptyMusic(query: String) {
+private fun EmptyMusic(query: String, state: MusicBrowseUiState) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -338,7 +390,7 @@ private fun EmptyMusic(query: String) {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = if (query.isBlank()) "Nothing to show" else "No results for \"$query\"",
+            text = "No results for \"$query\"",
             style = MaterialTheme.typography.titleMedium,
             color = AurisOnSurface,
         )
@@ -347,6 +399,15 @@ private fun EmptyMusic(query: String) {
             text = "YouTube Music returned nothing the parser recognised.",
             style = MaterialTheme.typography.bodySmall,
             color = AurisOnSurfaceVariant,
+        )
+        Spacer(Modifier.height(10.dp))
+        // Diagnostic only where it is actionable: an empty list cannot otherwise be told apart
+        // from a parser that silently matched nothing.
+        Text(
+            text = "Parsed ${state.parsedTrackCount} tracks, " +
+                "${state.parsedAlbumCount} albums, ${state.parsedPlaylistCount} playlists",
+            style = MaterialTheme.typography.labelSmall,
+            color = AurisOnSurfaceVariant.copy(alpha = 0.7f),
         )
     }
 }
@@ -369,6 +430,3 @@ private fun MessageBanner(message: String, isError: Boolean) {
         )
     }
 }
-
-/** Transparent placeholder so the now-playing tint can be applied conditionally. */
-private val Color_Transparent = androidx.compose.ui.graphics.Color.Transparent

@@ -22,12 +22,15 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Forward30
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
@@ -88,6 +91,9 @@ fun MusicPlayerScreen(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     modifier: Modifier = Modifier,
+    onBack: () -> Unit = {},
+    onNext: () -> Unit = {},
+    onPrevious: () -> Unit = {},
     onOpenQueue: () -> Unit = {},
     onOpenDevices: () -> Unit = {},
     onOpenSleepTimer: () -> Unit = {},
@@ -103,6 +109,27 @@ fun MusicPlayerScreen(
         fadeEndFraction = 0.62f,
         modifier = modifier,
     ) {
+        // Nothing queued is a real state — reached by opening the player from the pill before
+        // anything has played. A full transport UI over blank metadata looked broken, so it
+        // gets its own screen with the one action that helps: go back and pick something.
+        if (state.error != null) {
+            EmptyPlayer(
+                title = "Playback unavailable",
+                detail = state.error,
+                onBack = onBack,
+            )
+            return@ArtworkGradientBackground
+        }
+
+        if (state.isEmpty) {
+            EmptyPlayer(
+                title = "Nothing is playing",
+                detail = "Pick a track from Music or Search and it will appear here.",
+                onBack = onBack,
+            )
+            return@ArtworkGradientBackground
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -110,7 +137,17 @@ fun MusicPlayerScreen(
                 .padding(horizontal = 20.5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(40.dp))
+            // The nav pill is hidden on this route, so the screen carries its own way out.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(32.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlayerCloseButton(onBack)
+            }
+
+            Spacer(Modifier.height(8.dp))
 
             // ---- Album art ------------------------------------------------------
             MediaArtwork(
@@ -132,7 +169,7 @@ fun MusicPlayerScreen(
                 },
             )
 
-            Spacer(Modifier.height(29.dp))
+            Spacer(Modifier.height(14.dp))
 
             // ---- Seek bar -------------------------------------------------------
             // 10.5dp extra inset on top of the 20.5dp column padding lands on the
@@ -144,7 +181,7 @@ fun MusicPlayerScreen(
                 modifier = Modifier.padding(horizontal = 10.5.dp),
             )
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
 
             // ---- Timestamps -----------------------------------------------------
             Row(
@@ -165,21 +202,21 @@ fun MusicPlayerScreen(
                 )
             }
 
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(16.dp))
 
             // ---- Track metadata, centred ---------------------------------------
             Text(
                 text = state.title,
                 style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 30.sp,
-                    lineHeight = 36.sp,
+                    fontSize = 28.sp,
+                    lineHeight = 34.sp,
                 ),
                 color = AurisOnSurface,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = listOf(state.artist, state.album)
                     .filter { it.isNotBlank() }
@@ -191,7 +228,7 @@ fun MusicPlayerScreen(
                 overflow = TextOverflow.Ellipsis,
             )
 
-            Spacer(Modifier.height(38.dp))
+            Spacer(Modifier.height(18.dp))
 
             // ---- Tier 1: secondary / utility controls --------------------------
             Row(
@@ -229,6 +266,8 @@ fun MusicPlayerScreen(
                 onPlayPause = onPlayPause,
                 onSkipBack = onSkipBack,
                 onSkipForward = onSkipForward,
+                onPrevious = onPrevious,
+                onNext = onNext,
             )
 
             Spacer(Modifier.weight(1f))
@@ -271,7 +310,7 @@ fun MusicPlayerScreen(
                 )
             }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(12.dp))
 
             // ---- Volume ---------------------------------------------------------
             Row(
@@ -301,14 +340,17 @@ fun MusicPlayerScreen(
                 )
             }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
 
 /**
- * Play/pause flanked by the two dot markers from the reference, with ±10/30s skips.
- * Play/pause is the only heavy-weight control: a 76dp white disc.
+ * Play/pause flanked by the ±10/30s skips, with previous/next on the outside.
+ *
+ * The reference had two decorative dot markers in those slots; they are now the track-change
+ * controls, which is the one thing a queue-based player needs and the screen could not do.
+ * Play/pause remains the only heavy-weight control: a 76dp white disc.
  */
 @Composable
 private fun TransportTier(
@@ -316,13 +358,20 @@ private fun TransportTier(
     onPlayPause: () -> Unit,
     onSkipBack: () -> Unit,
     onSkipForward: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DotMarker()
+        PlayerGhostIcon(
+            onClick = onPrevious,
+            icon = Icons.Filled.SkipPrevious,
+            contentDescription = "Previous track",
+            enabled = state.queueSize > 0,
+        )
 
         Icon(
             imageVector = Icons.Filled.Replay10,
@@ -344,7 +393,12 @@ private fun TransportTier(
             modifier = Modifier.size(38.dp),
         )
 
-        DotMarker()
+        PlayerGhostIcon(
+            onClick = onNext,
+            icon = Icons.Filled.SkipNext,
+            contentDescription = "Next track",
+            enabled = state.queueSize > 1,
+        )
     }
 }
 
@@ -390,15 +444,77 @@ private fun PlayPauseButton(
     }
 }
 
-/** The small circular markers bracketing the transport row in the reference UI. */
+/** The screen's own way back, since the navigation pill is not shown over the player. */
 @Composable
-private fun DotMarker(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(11.dp)
+private fun PlayerCloseButton(onClick: () -> Unit) {
+    Icon(
+        Icons.Filled.KeyboardArrowDown,
+        contentDescription = "Close player",
+        tint = AurisOnSurface,
+        modifier = Modifier
+            .size(28.dp)
             .clip(CircleShape)
-            .background(AurisOnSurfaceVariant.copy(alpha = 0.65f)),
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
     )
+}
+
+/**
+ * Shown when the queue is empty or the service is unreachable.
+ *
+ * Deliberately not the transport UI with blank text: a play button that cannot play is worse
+ * than no play button.
+ */
+@Composable
+private fun EmptyPlayer(
+    title: String,
+    detail: String,
+    onBack: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .systemBarsPadding()
+            .padding(horizontal = 20.5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PlayerCloseButton(onBack)
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Icon(
+            Icons.Filled.Album,
+            contentDescription = null,
+            tint = AurisOnSurfaceVariant.copy(alpha = 0.4f),
+            modifier = Modifier.size(64.dp),
+        )
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineMedium,
+            color = AurisOnSurface,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = detail,
+            style = MaterialTheme.typography.bodyMedium,
+            color = AurisOnSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.weight(1f))
+    }
 }
 
 @Preview(widthDp = 411, heightDp = 914)

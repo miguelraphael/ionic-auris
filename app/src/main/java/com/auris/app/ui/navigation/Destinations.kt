@@ -30,7 +30,14 @@ enum class TopLevelDestination(
 
 /** Detail and full-screen routes, addressed by helper builders to avoid string typos. */
 object Routes {
-    const val PLAYER = "player/{entryId}"
+    /**
+     * The full-screen player.
+     *
+     * Deliberately takes no argument: it renders whatever the playback service is doing, which
+     * is the only source of truth once audio is playing. The old `player/{entryId}` screen
+     * rendered a library row and could not start or control playback at all.
+     */
+    const val PLAYER = "player"
     const val ANIME_DETAIL = "anime/{entryId}"
     const val MANGA_READER = "manga/reader/{entryId}/{unitIndex}"
     const val EXTENSIONS = "settings/extensions"
@@ -48,7 +55,6 @@ object Routes {
      */
     const val CATALOGUE = "catalogue/{sourceKey}"
 
-    fun player(entryId: String) = "player/$entryId"
     fun animeDetail(entryId: String) = "anime/$entryId"
     fun mangaReader(entryId: String, unitIndex: Int) = "manga/reader/$entryId/$unitIndex"
     fun episodePlayer(entryId: String, unitIndex: Int) = "play/episode/$entryId/$unitIndex"

@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -80,6 +81,20 @@ fun MediaArtwork(
                 contentScale = contentScale,
                 modifier = Modifier
                     .fillMaxSize()
+                    // `hqdefault` is 480×360: a 16:9 frame letterboxed into a 4:3 canvas. Crop
+                    // alone keeps those black bands (they are image content, not padding), so
+                    // the player's square art showed thick bars top and bottom. Zooming by
+                    // 4/3 removes exactly the bands; every other variant is untouched.
+                    .then(
+                        if (imageUrl.contains("hqdefault")) {
+                            Modifier.graphicsLayer {
+                                scaleX = HQ_DEFAULT_CONTENT_RATIO
+                                scaleY = HQ_DEFAULT_CONTENT_RATIO
+                            }
+                        } else {
+                            Modifier
+                        },
+                    )
                     .semantics { contentDescription?.let { this.contentDescription = it } },
             )
         } else {
@@ -87,6 +102,9 @@ fun MediaArtwork(
         }
     }
 }
+
+/** 480×360 canvas around a 480×270 frame: 360 / 270. */
+private const val HQ_DEFAULT_CONTENT_RATIO = 4f / 3f
 
 /**
  * Standard library / discover grid cell: square rounded art with a title, subtitle and an
