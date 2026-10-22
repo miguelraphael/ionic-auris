@@ -88,8 +88,6 @@ fun MusicPlayerRoute(
             onPlayPause = viewModel::togglePlayPause,
             onSeekFraction = viewModel::seekToFraction,
             onVolumeChange = viewModel::setVolume,
-            onSkipBack = viewModel::skipBackward,
-            onSkipForward = viewModel::skipForward,
             onCycleRepeat = viewModel::cycleRepeat,
             onToggleShuffle = viewModel::toggleShuffle,
             onBack = onBack,

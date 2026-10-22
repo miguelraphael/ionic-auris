@@ -2,6 +2,7 @@ package com.auris.app.ui.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.AudioManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** One row in the now-playing queue. */
 data class PlayerQueueItem(
@@ -43,6 +45,8 @@ data class PlayerQueueItem(
 class PlayerViewModel(context: Context) : ViewModel() {
 
     private val appContext = context.applicationContext
+    private val audioManager =
+        appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -79,6 +83,10 @@ class PlayerViewModel(context: Context) : ViewModel() {
                     return@addListener
                 }
                 controller = connected
+                // Unity here, because the system media stream is the single volume control
+                // now. Leaving the player's own attenuation in the chain would apply it twice
+                // once the slider drives `STREAM_MUSIC`.
+                connected.volume = 1f
                 connected.addListener(listener)
                 publish()
                 startTicker()
@@ -108,7 +116,7 @@ class PlayerViewModel(context: Context) : ViewModel() {
             durationMs = player.duration.takeIf { it > 0L } ?: 0L,
             positionMs = player.currentPosition.coerceAtLeast(0L),
             bufferedMs = player.bufferedPosition.coerceAtLeast(0L),
-            volume = player.volume,
+            volume = mediaVolumeFraction(),
             repeatMode = RepeatMode.fromExoPlayer(player.repeatMode),
             shuffleEnabled = player.shuffleModeEnabled,
             queueSize = player.mediaItemCount,
@@ -164,18 +172,6 @@ class PlayerViewModel(context: Context) : ViewModel() {
         player.seekTo((duration * fraction.coerceIn(0f, 1f)).toLong())
     }
 
-    fun skipBackward() {
-        val player = controller ?: return
-        player.seekTo((player.currentPosition - SKIP_BACK_MS).coerceAtLeast(0L))
-    }
-
-    fun skipForward() {
-        val player = controller ?: return
-        val target = player.currentPosition + SKIP_FORWARD_MS
-        val duration = player.duration
-        player.seekTo(if (duration > 0L) target.coerceAtMost(duration) else target)
-    }
-
     fun previous() {
         val player = controller ?: return
         if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0L)
@@ -186,8 +182,30 @@ class PlayerViewModel(context: Context) : ViewModel() {
         if (player.hasNextMediaItem()) player.seekToNextMediaItem()
     }
 
+    /**
+     * Sets the system media volume, not the player's gain.
+     *
+     * The hardware keys change `STREAM_MUSIC`, so a slider bound to `Player.volume` showed a
+     * level that never moved when the keys were used — and could sit at 100% while the phone
+     * was silent. Driving the same stream makes the two controls one control.
+     */
     fun setVolume(volume: Float) {
-        controller?.volume = volume.coerceIn(0f, 1f)
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) return
+
+        val index = (volume.coerceIn(0f, 1f) * max).roundToInt()
+        runCatching {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0)
+        }
+        // Read back instead of echoing the request: fixed-volume policies and DND can refuse it.
+        _state.value = _state.value.copy(volume = mediaVolumeFraction())
+    }
+
+    /** Current `STREAM_MUSIC` level as 0..1, which is what the hardware keys change. */
+    private fun mediaVolumeFraction(): Float {
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) return 1f
+        return audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / max
     }
 
     fun cycleRepeat() {
@@ -234,8 +252,6 @@ class PlayerViewModel(context: Context) : ViewModel() {
 
     companion object {
         private const val PROGRESS_TICK_MS = 500L
-        private const val SKIP_BACK_MS = 10_000L
-        private const val SKIP_FORWARD_MS = 30_000L
 
         fun factory(context: Context): ViewModelProvider.Factory = Factory(context)
     }

@@ -21,13 +21,11 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -86,8 +84,6 @@ fun MusicPlayerScreen(
     onPlayPause: () -> Unit,
     onSeekFraction: (Float) -> Unit,
     onVolumeChange: (Float) -> Unit,
-    onSkipBack: () -> Unit,
-    onSkipForward: () -> Unit,
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -264,8 +260,6 @@ fun MusicPlayerScreen(
             TransportTier(
                 state = state,
                 onPlayPause = onPlayPause,
-                onSkipBack = onSkipBack,
-                onSkipForward = onSkipForward,
                 onPrevious = onPrevious,
                 onNext = onNext,
             )
@@ -346,18 +340,16 @@ fun MusicPlayerScreen(
 }
 
 /**
- * Play/pause flanked by the ±10/30s skips, with previous/next on the outside.
+ * Previous / play-pause / next.
  *
- * The reference had two decorative dot markers in those slots; they are now the track-change
- * controls, which is the one thing a queue-based player needs and the screen could not do.
- * Play/pause remains the only heavy-weight control: a 76dp white disc.
+ * The ±10/30s seek buttons that used to sit here were the only transport controls that
+ * disappeared: skipping a track is the action this player is built around, and the queue makes
+ * it meaningful. Play/pause remains the only heavy-weight control: a 76dp white disc.
  */
 @Composable
 private fun TransportTier(
     state: PlayerUiState,
     onPlayPause: () -> Unit,
-    onSkipBack: () -> Unit,
-    onSkipForward: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
@@ -366,18 +358,11 @@ private fun TransportTier(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PlayerGhostIcon(
-            onClick = onPrevious,
+        TransportButton(
             icon = Icons.Filled.SkipPrevious,
             contentDescription = "Previous track",
             enabled = state.queueSize > 0,
-        )
-
-        Icon(
-            imageVector = Icons.Filled.Replay10,
-            contentDescription = "Rewind 10 seconds",
-            tint = AurisOnSurface,
-            modifier = Modifier.size(38.dp),
+            onClick = onPrevious,
         )
 
         PlayPauseButton(
@@ -386,18 +371,40 @@ private fun TransportTier(
             onClick = onPlayPause,
         )
 
-        Icon(
-            imageVector = Icons.Filled.Forward30,
-            contentDescription = "Forward 30 seconds",
-            tint = AurisOnSurface,
-            modifier = Modifier.size(38.dp),
-        )
-
-        PlayerGhostIcon(
-            onClick = onNext,
+        TransportButton(
             icon = Icons.Filled.SkipNext,
             contentDescription = "Next track",
             enabled = state.queueSize > 1,
+            onClick = onNext,
+        )
+    }
+}
+
+/** A 56dp hit target around a large transport glyph. */
+@Composable
+private fun TransportButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .clip(CircleShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) AurisOnSurface else AurisOnSurfaceVariant.copy(alpha = 0.4f),
+            modifier = Modifier.size(42.dp),
         )
     }
 }
@@ -534,8 +541,6 @@ private fun MusicPlayerScreenPreview() {
             onPlayPause = {},
             onSeekFraction = {},
             onVolumeChange = {},
-            onSkipBack = {},
-            onSkipForward = {},
             onCycleRepeat = {},
             onToggleShuffle = {},
         )

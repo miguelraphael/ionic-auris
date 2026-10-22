@@ -20,6 +20,7 @@ data class PlayerUiState(
     val positionMs: Long = 0L,
     val bufferedMs: Long = 0L,
 
+    /** System media volume as 0..1 — the same stream the hardware keys change. */
     val volume: Float = 1f,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val shuffleEnabled: Boolean = false,
