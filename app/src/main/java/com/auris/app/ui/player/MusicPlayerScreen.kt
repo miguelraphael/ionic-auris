@@ -19,8 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Cast
-import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -91,9 +89,7 @@ fun MusicPlayerScreen(
     onNext: () -> Unit = {},
     onPrevious: () -> Unit = {},
     onOpenQueue: () -> Unit = {},
-    onOpenDevices: () -> Unit = {},
     onOpenSleepTimer: () -> Unit = {},
-    onOpenEqualizer: () -> Unit = {},
 ) {
     // The screen's gradient tracks the current album art.
     val palette = rememberArtworkPaletteValue(artworkKey = state.artworkUrl)
@@ -227,25 +223,37 @@ fun MusicPlayerScreen(
             Spacer(Modifier.height(18.dp))
 
             // ---- Tier 1: secondary / utility controls --------------------------
+            // Sleep, repeat, shuffle, queue. The equalizer and cast buttons are gone: Auris
+            // has no equalizer and no remote playback target, so they were dead ends.
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PlayerGhostIcon(
-                    onClick = onOpenEqualizer,
-                    icon = Icons.Filled.Equalizer,
-                    contentDescription = "Equalizer",
-                )
-                PlayerGhostIcon(
                     onClick = onOpenSleepTimer,
                     icon = Icons.Filled.Bedtime,
                     contentDescription = "Sleep timer",
                 )
                 PlayerGhostIcon(
-                    onClick = onOpenDevices,
-                    icon = Icons.Filled.Cast,
-                    contentDescription = "Devices",
+                    onClick = onCycleRepeat,
+                    icon = Icons.Filled.Repeat,
+                    contentDescription = when (state.repeatMode) {
+                        RepeatMode.OFF -> "Repeat off"
+                        RepeatMode.ALL -> "Repeat all"
+                        RepeatMode.ONE -> "Repeat one"
+                    },
+                    tint = if (state.repeatMode != RepeatMode.OFF) {
+                        AurisAccent
+                    } else {
+                        AurisOnSurfaceVariant
+                    },
+                )
+                PlayerGhostIcon(
+                    onClick = onToggleShuffle,
+                    icon = Icons.Filled.Shuffle,
+                    contentDescription = "Shuffle",
+                    tint = if (state.shuffleEnabled) AurisAccent else AurisOnSurfaceVariant,
                 )
                 PlayerGhostIcon(
                     onClick = onOpenQueue,
@@ -265,44 +273,6 @@ fun MusicPlayerScreen(
             )
 
             Spacer(Modifier.weight(1f))
-
-            // Shuffle / repeat are stateful toggles, so they sit with the transport
-            // tier rather than in the neutral ghost row.
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PlayerGhostIcon(
-                    onClick = onToggleShuffle,
-                    icon = Icons.Filled.Shuffle,
-                    contentDescription = "Shuffle",
-                    tint = if (state.shuffleEnabled) AurisAccent else AurisOnSurfaceVariant,
-                )
-                Text(
-                    text = when (state.repeatMode) {
-                        RepeatMode.OFF -> ""
-                        RepeatMode.ALL -> "Repeat all"
-                        RepeatMode.ONE -> "Repeat one"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (state.repeatMode != RepeatMode.OFF) {
-                        AurisAccent
-                    } else {
-                        Color.Transparent
-                    },
-                )
-                PlayerGhostIcon(
-                    onClick = onCycleRepeat,
-                    icon = Icons.Filled.Repeat,
-                    contentDescription = "Repeat",
-                    tint = if (state.repeatMode != RepeatMode.OFF) {
-                        AurisAccent
-                    } else {
-                        AurisOnSurfaceVariant
-                    },
-                )
-            }
 
             Spacer(Modifier.height(12.dp))
 
@@ -340,11 +310,12 @@ fun MusicPlayerScreen(
 }
 
 /**
- * Previous / play-pause / next.
+ * Previous / play-pause / next, clustered in the middle.
  *
- * The ±10/30s seek buttons that used to sit here were the only transport controls that
- * disappeared: skipping a track is the action this player is built around, and the queue makes
- * it meaningful. Play/pause remains the only heavy-weight control: a 76dp white disc.
+ * The reference put the three controls on one tight axis and kept the outer slots for
+ * decorative dot markers; `SpaceBetween` across the full width spread the glyphs to the screen
+ * edges, which read as three unrelated buttons. The cluster is centred between two fixed-width
+ * dots, so it stays centred regardless of screen width.
  */
 @Composable
 private fun TransportTier(
@@ -358,29 +329,49 @@ private fun TransportTier(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TransportButton(
-            icon = Icons.Filled.SkipPrevious,
-            contentDescription = "Previous track",
-            enabled = state.queueSize > 0,
-            onClick = onPrevious,
-        )
+        DotMarker()
 
-        PlayPauseButton(
-            isPlaying = state.isPlaying,
-            isBuffering = state.isBuffering,
-            onClick = onPlayPause,
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TransportButton(
+                icon = Icons.Filled.SkipPrevious,
+                contentDescription = "Previous track",
+                enabled = state.queueSize > 0,
+                onClick = onPrevious,
+            )
 
-        TransportButton(
-            icon = Icons.Filled.SkipNext,
-            contentDescription = "Next track",
-            enabled = state.queueSize > 1,
-            onClick = onNext,
-        )
+            PlayPauseButton(
+                isPlaying = state.isPlaying,
+                isBuffering = state.isBuffering,
+                onClick = onPlayPause,
+            )
+
+            TransportButton(
+                icon = Icons.Filled.SkipNext,
+                contentDescription = "Next track",
+                enabled = state.queueSize > 1,
+                onClick = onNext,
+            )
+        }
+
+        DotMarker()
     }
 }
 
-/** A 56dp hit target around a large transport glyph. */
+/** Decorative dot in the transport's outer slots, per the reference mock. */
+@Composable
+private fun DotMarker() {
+    Box(
+        modifier = Modifier
+            .size(6.dp)
+            .clip(CircleShape)
+            .background(AurisOnSurfaceVariant.copy(alpha = 0.5f)),
+    )
+}
+
+/** A 52dp hit target around a large transport glyph. */
 @Composable
 private fun TransportButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -390,7 +381,7 @@ private fun TransportButton(
 ) {
     Box(
         modifier = Modifier
-            .size(56.dp)
+            .size(52.dp)
             .clip(CircleShape)
             .clickable(
                 enabled = enabled,

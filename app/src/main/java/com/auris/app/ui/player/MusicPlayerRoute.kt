@@ -94,9 +94,7 @@ fun MusicPlayerRoute(
             onNext = viewModel::next,
             onPrevious = viewModel::previous,
             onOpenQueue = { showQueue = true },
-            onOpenDevices = { viewModel.unavailable("Casting") },
             onOpenSleepTimer = { viewModel.unavailable("Sleep timer") },
-            onOpenEqualizer = { viewModel.unavailable("The equalizer") },
         )
 
         SnackbarHost(
