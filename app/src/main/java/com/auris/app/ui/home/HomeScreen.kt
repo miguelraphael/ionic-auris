@@ -3,7 +3,9 @@ package com.auris.app.ui.home
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +40,10 @@ import com.auris.app.ui.components.MediaGridCard
 import com.auris.app.ui.components.SectionHeader
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
+import com.auris.app.ui.theme.AurisAccent
+
+/** How many titles a shelf shows before it becomes an archive. */
+private const val SHELF_LIMIT = 6
 
 /**
  * Home.
@@ -44,6 +51,10 @@ import com.auris.app.ui.theme.AurisOnSurfaceVariant
  * Reads the unified library straight off Room and re-frames it into per-pillar shelves.
  * Because all three media types share one table, the shelves below are three filters over
  * the same snapshot — no per-feature queries.
+ *
+ * ### Dashboard, not archive
+ * Each shelf is capped at [SHELF_LIMIT] and links to its pillar for the rest. The Library tab is
+ * the place to search, filter and prune; Home is where the last few things you touched live.
  */
 @Composable
 fun HomeScreen(
@@ -51,17 +62,26 @@ fun HomeScreen(
     onEntryClick: (LibraryEntryEntity) -> Unit,
     /** Opens Settings, which is where extensions are installed. */
     onOpenSettings: () -> Unit,
+    /** Opens a pillar's full archive; the "See all" action on a capped shelf. */
+    onSeeAll: (MediaType) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The library arrives ordered `last_activity_at DESC`, so taking the head of each filter
+    // keeps the shelf order meaningful without sorting it again here.
     val inProgress = library.filter { it.progress > 0f && !isComplete(it) }
-    val recentAnime = library.filter { it.mediaType == MediaType.ANIME }
-    val recentManga = library.filter { it.mediaType == MediaType.MANGA }
-    val recentMusic = library.filter { it.mediaType == MediaType.MUSIC }
+    val allAnime = library.filter { it.mediaType == MediaType.ANIME }
+    val allManga = library.filter { it.mediaType == MediaType.MANGA }
+    val allMusic = library.filter { it.mediaType == MediaType.MUSIC }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp),
+            // One vertical scroll for the whole dashboard: the shelves are horizontal
+            // carousels, so nested scrolling stays on axis.
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            // Bottom padding clears the floating nav pill.
+            .padding(bottom = 110.dp),
     ) {
         Row(
             modifier = Modifier
@@ -105,7 +125,7 @@ fun HomeScreen(
         // ---- Continue shelf: the cross-pillar "resume" row --------------------
         if (inProgress.isNotEmpty()) {
             Shelf(title = "Continue") {
-                items(inProgress, key = { it.id }) { entry ->
+                items(inProgress.take(SHELF_LIMIT), key = { it.id }) { entry ->
                     ContinueCard(
                         entry = entry,
                         onClick = { onEntryClick(entry) },
@@ -115,9 +135,16 @@ fun HomeScreen(
         }
 
         // ---- Per-pillar shelves ----------------------------------------------
-        if (recentMusic.isNotEmpty()) {
-            Shelf(title = "Music") {
-                items(recentMusic, key = { it.id }) { entry ->
+        if (allMusic.isNotEmpty()) {
+            Shelf(
+                title = "Music",
+                onSeeAll = if (allMusic.size > SHELF_LIMIT) {
+                    { onSeeAll(MediaType.MUSIC) }
+                } else {
+                    null
+                },
+            ) {
+                items(allMusic.take(SHELF_LIMIT), key = { it.id }) { entry ->
                     MediaGridCard(
                         imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
                         title = entry.title,
@@ -132,9 +159,16 @@ fun HomeScreen(
             }
         }
 
-        if (recentAnime.isNotEmpty()) {
-            Shelf(title = "Anime") {
-                items(recentAnime, key = { it.id }) { entry ->
+        if (allAnime.isNotEmpty()) {
+            Shelf(
+                title = "Anime",
+                onSeeAll = if (allAnime.size > SHELF_LIMIT) {
+                    { onSeeAll(MediaType.ANIME) }
+                } else {
+                    null
+                },
+            ) {
+                items(allAnime.take(SHELF_LIMIT), key = { it.id }) { entry ->
                     MediaGridCard(
                         imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
                         title = entry.title,
@@ -147,9 +181,16 @@ fun HomeScreen(
             }
         }
 
-        if (recentManga.isNotEmpty()) {
-            Shelf(title = "Manga") {
-                items(recentManga, key = { it.id }) { entry ->
+        if (allManga.isNotEmpty()) {
+            Shelf(
+                title = "Manga",
+                onSeeAll = if (allManga.size > SHELF_LIMIT) {
+                    { onSeeAll(MediaType.MANGA) }
+                } else {
+                    null
+                },
+            ) {
+                items(allManga.take(SHELF_LIMIT), key = { it.id }) { entry ->
                     MediaGridCard(
                         imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
                         title = entry.title,
@@ -161,25 +202,50 @@ fun HomeScreen(
                 }
             }
         }
-
-        // Bottom padding clears the floating nav pill.
-        Column(Modifier.padding(bottom = 110.dp)) {}
     }
 }
 
 @Composable
 private fun Shelf(
     title: String,
-    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+    onSeeAll: (() -> Unit)? = null,
+    content: LazyListScope.() -> Unit,
 ) {
     Column {
-        SectionHeader(title = title, modifier = Modifier.padding(horizontal = 0.dp))
+        SectionHeader(
+            title = title,
+            modifier = Modifier.padding(horizontal = 0.dp),
+            action = onSeeAll?.let { callback -> { SeeAllAction(onClick = callback) } },
+        )
         LazyRow(
             content = content,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 8.dp),
         )
     }
+}
+
+/**
+ * The link from a capped shelf to its pillar.
+ *
+ * Deliberately a text action rather than a card: "See all" is navigation, not a title, and a
+ * card at the end of a carousel reads as another item to play.
+ */
+@Composable
+private fun SeeAllAction(onClick: () -> Unit) {
+    Text(
+        text = "See all",
+        style = MaterialTheme.typography.labelLarge,
+        color = AurisAccent,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    )
 }
 
 /** Wide resume card with the progress bar pinned under the art. */

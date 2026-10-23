@@ -29,6 +29,7 @@ import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.browse.BrowseScreen
 import com.auris.app.ui.home.HomeScreen
 import com.auris.app.ui.library.LibraryScreen
+import com.auris.app.ui.library.LibraryViewModel
 import com.auris.app.ui.player.MusicPlayerRoute
 import android.app.Activity
 import androidx.compose.ui.platform.LocalView
@@ -168,6 +169,14 @@ fun AurisNavHost(
                 // manager. Without it, Settings and Extensions only opened each other and
                 // neither could be reached from any top-level destination.
                 onOpenSettings = { navController.navigate(Routes.settings) },
+                onSeeAll = { type ->
+                    val destination = when (type) {
+                        MediaType.ANIME -> TopLevelDestination.ANIME
+                        MediaType.MANGA -> TopLevelDestination.MANGA
+                        MediaType.MUSIC -> TopLevelDestination.MUSIC
+                    }
+                    navController.navigate(destination.route)
+                },
             )
         }
 
@@ -213,9 +222,16 @@ fun AurisNavHost(
         }
 
         composable(TopLevelDestination.LIBRARY.route) {
+            // Scoped to the destination, not the Activity: the Library is the only screen that
+            // deletes, so there is nothing to share.
+            val libraryViewModel: LibraryViewModel = viewModel(
+                key = "library",
+                factory = LibraryViewModel.factory(libraryRepository),
+            )
             LibraryScreen(
                 entries = library,
                 onEntryClick = openLibraryEntry,
+                onDelete = libraryViewModel::delete,
                 modifier = Modifier.fillMaxSize(),
             )
         }

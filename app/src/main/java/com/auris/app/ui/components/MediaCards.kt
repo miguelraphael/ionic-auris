@@ -4,6 +4,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.auris.app.ui.theme.ArtworkShape
+import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.ArtworkShapeSmall
@@ -114,6 +120,7 @@ private const val HQ_DEFAULT_CONTENT_RATIO = 4f / 3f
  * unclipped on purpose: clipping the whole column rounded the title and subtitle off at their
  * corners, which is what made long titles look cut off at the edges.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MediaGridCard(
     imageUrl: String?,
@@ -121,13 +128,18 @@ fun MediaGridCard(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     progress: Float? = null,
+    /** Draws the selection scrim and check badge. */
+    selected: Boolean = false,
+    /** Long-press starts multi-select in the Library; null keeps the card a plain button. */
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Column(
         modifier = modifier
-            .clickable(
+            .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                onLongClick = onLongClick,
                 onClick = onClick,
             ),
     ) {
@@ -139,6 +151,22 @@ fun MediaGridCard(
                     .fillMaxWidth()
                     .aspectRatio(2f / 3f),
             )
+            if (selected) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .background(AurisAccent.copy(alpha = 0.30f), ArtworkShape),
+                )
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = "Selected",
+                    tint = AurisOnSurface,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .size(22.dp),
+                )
+            }
             if (progress != null && progress > 0f) {
                 Box(
                     Modifier
