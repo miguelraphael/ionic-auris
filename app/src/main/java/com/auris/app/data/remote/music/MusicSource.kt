@@ -65,6 +65,14 @@ interface MusicSource {
      * set [ResolvedAudio.refusal] means one answered and declined.
      */
     suspend fun resolveAudioStream(videoId: String): Result<ResolvedAudio>
+
+    /**
+     * Best-effort official cover art for a track.
+     *
+     * A default of null keeps providers that cannot supply artwork working: the UI falls back to
+     * the video thumbnail. Callers must never let a slow or failed lookup block playback.
+     */
+    suspend fun findArtwork(title: String, artist: String?): String? = null
 }
 
 /**
@@ -86,6 +94,8 @@ interface MusicStreamResolver {
 class DefaultMusicSource(
     private val catalogue: InnerTubeClient,
     private val resolver: MusicStreamResolver,
+    /** Null in previews and tests that do not need cover lookups. */
+    private val artwork: AlbumArtSource? = null,
 ) : MusicSource {
 
     override val discoverySeeds: List<String> get() = InnerTubeClient.DISCOVERY_SEEDS
@@ -100,4 +110,7 @@ class DefaultMusicSource(
 
     override suspend fun resolveAudioStream(videoId: String): Result<ResolvedAudio> =
         resolver.resolveAudioStream(videoId)
+
+    override suspend fun findArtwork(title: String, artist: String?): String? =
+        artwork?.artworkFor(title, artist)
 }

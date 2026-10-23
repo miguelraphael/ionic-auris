@@ -2,22 +2,25 @@ package com.auris.app.ui.player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -25,18 +28,23 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,8 +55,7 @@ import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
-import com.auris.app.ui.theme.AurisSurface
-import com.auris.app.ui.theme.AurisTrack
+import kotlin.math.roundToInt
 
 /**
  * The now-playing route: binds a [PlayerViewModel] to the playback service and renders
@@ -113,29 +120,88 @@ fun MusicPlayerRoute(
         ) {
             QueueSheet(
                 items = queue,
+                state = state,
                 onSelect = { item ->
                     viewModel.playQueueItem(item.index)
                     showQueue = false
                 },
+                onMoveBy = viewModel::moveQueueItemBy,
+                onClear = viewModel::clearUpcoming,
             )
         }
     }
 }
 
+/**
+ * The queue, styled after the reference: the playing track on top, then the upcoming list with
+ * cover art and drag handles.
+ *
+ * The header exists because a plain list of titles gave no answer to "what is this a queue
+ * *of*?". It carries the current track and the playback mode (shuffle / repeat), so the sheet is
+ * readable without closing it to look at the player.
+ */
 @Composable
 private fun QueueSheet(
     items: List<PlayerQueueItem>,
+    state: PlayerUiState,
     onSelect: (PlayerQueueItem) -> Unit,
+    onMoveBy: (String, Int) -> Unit,
+    onClear: () -> Unit,
 ) {
+    val current = items.firstOrNull { it.isCurrent }
+    val hasUpcoming = current != null && items.any { it.index > current.index }
+
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(start = 20.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            MediaArtwork(
+                imageUrl = current?.artworkUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(56.dp)
+                    // The playing track is the one piece of art worth lifting off the sheet.
+                    .shadow(10.dp, ArtworkShapeSmall, clip = false),
+                shape = ArtworkShapeSmall,
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = current?.title.orEmpty(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AurisOnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = current?.artist.orEmpty(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AurisOnSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            TextButton(onClick = onClear, enabled = hasUpcoming) {
+                Text(
+                    text = "Clear",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (hasUpcoming) AurisAccent else AurisOnSurfaceVariant.copy(alpha = 0.5f),
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
             Text(
-                text = "Queue",
+                text = "Up next",
                 style = MaterialTheme.typography.titleLarge,
                 color = AurisOnSurface,
             )
@@ -147,6 +213,25 @@ private fun QueueSheet(
             )
         }
 
+        Text(
+            text = buildString {
+                append(if (state.shuffleEnabled) "Shuffle on" else "Shuffle off")
+                append(" · ")
+                append(
+                    when (state.repeatMode) {
+                        RepeatMode.OFF -> "Repeat off"
+                        RepeatMode.ALL -> "Repeat all"
+                        RepeatMode.ONE -> "Repeat one"
+                    },
+                )
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = AurisOnSurfaceVariant,
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .padding(top = 2.dp, bottom = 8.dp),
+        )
+
         if (items.isEmpty()) {
             Text(
                 text = "Nothing queued yet.",
@@ -154,73 +239,136 @@ private fun QueueSheet(
                 color = AurisOnSurfaceVariant,
                 modifier = Modifier.padding(20.dp),
             )
+            return@Column
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                bottom = 32.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp),
+            contentPadding = PaddingValues(bottom = 28.dp),
         ) {
             items(items, key = { it.index }) { item ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .clip(ArtworkShapeSmall)
-                        .background(
-                            if (item.isCurrent) {
-                                AurisAccent.copy(alpha = 0.10f)
-                            } else {
-                                Color.Transparent
-                            },
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { onSelect(item) },
-                        )
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    MediaArtwork(
-                        imageUrl = item.artworkUrl,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .background(AurisTrack, ArtworkShapeSmall),
-                        shape = ArtworkShapeSmall,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = if (item.isCurrent) AurisAccent else AurisOnSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (!item.artist.isNullOrBlank()) {
-                            Text(
-                                text = item.artist,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = AurisOnSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    if (item.isCurrent) {
-                        Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = "Now playing",
-                            tint = AurisAccent,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
+                QueueRow(
+                    item = item,
+                    onSelect = { onSelect(item) },
+                    onMoveBy = onMoveBy,
+                )
             }
         }
     }
 }
+
+/** One queue row: art, title/artist, and a drag handle that reorders the queue. */
+@Composable
+private fun QueueRow(
+    item: PlayerQueueItem,
+    onSelect: () -> Unit,
+    onMoveBy: (String, Int) -> Unit,
+) {
+    val rowHeightPx = with(LocalDensity.current) { QUEUE_ROW_HEIGHT.toPx() }
+
+    // The row's content changes as items are reordered, so the gesture keeps the id of the item
+    // it started on and always calls the latest callback.
+    val latestItem by rememberUpdatedState(item)
+    val latestMove by rememberUpdatedState(onMoveBy)
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragAccum by remember { mutableFloatStateOf(0f) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(QUEUE_ROW_HEIGHT)
+            .background(
+                if (item.isCurrent) AurisAccent.copy(alpha = 0.10f) else Color.Transparent,
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onSelect,
+            )
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MediaArtwork(
+            imageUrl = item.artworkUrl,
+            contentDescription = null,
+            modifier = Modifier
+                .size(46.dp)
+                .then(
+                    if (item.isCurrent) {
+                        Modifier.shadow(8.dp, ArtworkShapeSmall, clip = false)
+                    } else {
+                        Modifier
+                    },
+                ),
+            shape = ArtworkShapeSmall,
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (item.isCurrent) AurisAccent else AurisOnSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (item.isCurrent) {
+                    Icon(
+                        Icons.Filled.GraphicEq,
+                        contentDescription = "Now playing",
+                        tint = AurisAccent,
+                        modifier = Modifier.size(12.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = item.artist.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AurisOnSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Icon(
+            imageVector = Icons.Filled.DragHandle,
+            contentDescription = "Reorder ${item.title}",
+            tint = AurisOnSurfaceVariant.copy(alpha = 0.7f),
+            modifier = Modifier
+                .size(40.dp)
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = {
+                            draggingId = latestItem.mediaId
+                            dragAccum = 0f
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            val id = draggingId ?: return@detectDragGestures
+                            dragAccum += amount.y
+                            // One queue row is a fixed height, so distance maps to positions.
+                            val steps = (dragAccum / rowHeightPx).roundToInt()
+                            if (steps != 0) {
+                                latestMove(id, steps)
+                                dragAccum -= steps * rowHeightPx
+                            }
+                        },
+                        onDragEnd = {
+                            draggingId = null
+                            dragAccum = 0f
+                        },
+                        onDragCancel = {
+                            draggingId = null
+                            dragAccum = 0f
+                        },
+                    )
+                }
+                .padding(8.dp),
+        )
+    }
+}
+
+/** Fixed, because the drag handle converts pixels to rows with this number. */
+private val QUEUE_ROW_HEIGHT = 64.dp

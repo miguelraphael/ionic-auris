@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -148,7 +149,14 @@ fun MusicPlayerScreen(
                 shape = ArtworkShapeLarge,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f),
+                    .aspectRatio(1f)
+                    // Lifts the square off the artwork-tinted background, the way the reference
+                    // art sits above the sheet. Shadow only: the art itself stays unclipped.
+                    .shadow(
+                        elevation = 24.dp,
+                        shape = ArtworkShapeLarge,
+                        clip = false,
+                    ),
                 placeholderIcon = {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Icon(

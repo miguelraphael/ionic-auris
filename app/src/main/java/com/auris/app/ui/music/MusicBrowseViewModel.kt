@@ -18,6 +18,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** A row in the browse list: a track, an album or a playlist. */
 data class MusicRow(
@@ -273,7 +275,16 @@ class MusicBrowseViewModel(
             lastError = null
 
             val tracks = when (row.kind) {
-                MusicRow.Kind.TRACK -> listOfNotNull(resolveTrack(row.id, row.title))
+                MusicRow.Kind.TRACK -> {
+                    // Start the cover lookup now, alongside the stream resolve, rather than after
+                    // it. On a slow network a stream takes several seconds; the artwork request
+                    // is then already finished and costs nothing. The artwork is attached after
+                    // the resolve so the stream starts immediately — awaiting it as an argument
+                    // would put the two requests back in sequence.
+                    val artwork = async { officialArtwork(row.title, row.artistHint()) }
+                    val playable = resolveTrack(row.id, row.title)
+                    listOfNotNull(playable?.withArtwork(artwork.await()))
+                }
                 else -> collectionTracks(row.id).mapNotNull { resolveTrack(it) }
             }
 
@@ -323,7 +334,10 @@ class MusicBrowseViewModel(
      * The stream used to be resolved twice per tap — once for metadata and again for the queue —
      * which doubled the latency and gave the second resolve a chance to fail on its own.
      */
-    private suspend fun resolveTrack(videoId: String, fallbackTitle: String): PlayableTrack? {
+    private suspend fun resolveTrack(
+        videoId: String,
+        fallbackTitle: String,
+    ): PlayableTrack? {
         val resolved = source.resolveAudioStream(videoId).getOrElse { error ->
             // No provider answered at all — every instance was unreachable, or none is
             // configured. Recorded so [play] can point at Settings rather than implying the
@@ -338,6 +352,8 @@ class MusicBrowseViewModel(
 
         val stream = resolved.stream?.takeIf { it.isPlayable() } ?: return null
 
+        val title = resolved.title ?: fallbackTitle
+
         // Artwork is derived from the video id, not taken from the resolve. The resolver does
         // return thumbnail URLs, but they are instance-relative and the instance answers them
         // with an HTML error page rather than a JPEG (see [youtubeThumbnailUrl]) — so using them
@@ -345,7 +361,7 @@ class MusicBrowseViewModel(
         return PlayableTrack(
             track = MusicTrack(
                 videoId = videoId,
-                title = resolved.title ?: fallbackTitle,
+                title = title,
                 artist = resolved.author,
                 album = null,
                 durationMs = stream.durationMs ?: resolved.lengthMs,
@@ -359,6 +375,33 @@ class MusicBrowseViewModel(
         )
     }
 
+    /**
+     * The artist part of a row's subtitle, for the cover lookup.
+     *
+     * Rows are `"Artist • Album • Year"`; the resolver's own metadata is not available yet when
+     * the lookup is launched, which is the point — it runs in parallel with the stream resolve.
+     * A wrong hint only costs a miss, and a miss falls back to the thumbnail.
+     */
+    private fun MusicRow.artistHint(): String? =
+        subtitle?.substringBefore("•")?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** Best-effort official cover, bounded so a slow metadata server cannot stall playback. */
+    private suspend fun officialArtwork(title: String, artist: String?): String? =
+        withTimeoutOrNull(ARTWORK_TIMEOUT_MS) { source.findArtwork(title, artist) }
+
+    /** Replaces the thumbnail with official art when the lookup found any. */
+    private fun PlayableTrack.withArtwork(artworkUrl: String?): PlayableTrack =
+        if (artworkUrl == null) {
+            this
+        } else {
+            copy(
+                track = track.copy(
+                    artworkUrl = artworkUrl,
+                    largeArtworkUrl = artworkUrl,
+                ),
+            )
+        }
+
     /** Resolves a track that already carries its metadata (album and playlist entries). */
     private suspend fun resolveTrack(track: MusicTrack): PlayableTrack? {
         val resolved = source.resolveAudioStream(track.videoId).getOrElse { error ->
@@ -369,7 +412,17 @@ class MusicBrowseViewModel(
         resolved.refusal?.let { lastRefusal = lastRefusal ?: it }
 
         val stream = resolved.stream?.takeIf { it.isPlayable() } ?: return null
-        return PlayableTrack(track, stream.url, stream.mimeType)
+        return PlayableTrack(
+            // Collection tracks normally carry the album cover already. The thumbnail is only a
+            // fallback for rows that came back without artwork.
+            track = track.copy(
+                artworkUrl = track.artworkUrl ?: youtubeThumbnailUrl(track.videoId),
+                largeArtworkUrl = track.largeArtworkUrl ?: track.artworkUrl
+                    ?: youtubeThumbnailUrl(track.videoId, large = true),
+            ),
+            streamUrl = stream.url,
+            mimeType = stream.mimeType,
+        )
     }
 
     private suspend fun collectionTracks(browseId: String): List<MusicTrack> =
@@ -487,6 +540,15 @@ class MusicBrowseViewModel(
 
         /** Guard on a large playlist so one album cannot page forever. */
         private const val COLLECTION_TRACK_LIMIT = 200
+
+        /**
+         * Caps the cover-art lookup.
+         *
+         * Runs in parallel with the stream resolve, so this is not normally added to playback
+         * latency. Four seconds is deliberately generous for a throttled mobile connection; the
+         * request itself is already bounded by the artwork client's own call timeout.
+         */
+        private const val ARTWORK_TIMEOUT_MS = 4_000L
 
         fun factory(
             source: MusicSource,

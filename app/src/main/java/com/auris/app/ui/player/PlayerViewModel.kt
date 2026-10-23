@@ -23,6 +23,8 @@ import kotlin.math.roundToInt
 /** One row in the now-playing queue. */
 data class PlayerQueueItem(
     val index: Int,
+    /** The media item's id (the video id). Used to keep the row identity stable while dragging. */
+    val mediaId: String,
     val title: String,
     val artist: String?,
     val artworkUrl: String?,
@@ -131,6 +133,7 @@ class PlayerViewModel(context: Context) : ViewModel() {
                 val itemMetadata = item.mediaMetadata
                 PlayerQueueItem(
                     index = index,
+                    mediaId = item.mediaId,
                     title = itemMetadata.title?.toString().orEmpty(),
                     artist = itemMetadata.artist?.toString(),
                     artworkUrl = itemMetadata.artworkUri?.toString(),
@@ -225,6 +228,37 @@ class PlayerViewModel(context: Context) : ViewModel() {
     fun playQueueItem(index: Int) {
         val player = controller ?: return
         if (index in 0 until player.mediaItemCount) player.seekToDefaultPosition(index)
+    }
+
+    /**
+     * Drops everything after the current item.
+     *
+     * The track that is playing is kept — "clear" is about the upcoming list, not about
+     * stopping the music — and history before it is left alone so Previous keeps working.
+     */
+    fun clearUpcoming() {
+        val player = controller ?: return
+        val current = player.currentMediaItemIndex
+        if (current >= 0 && player.mediaItemCount > current + 1) {
+            player.removeMediaItems(current + 1, player.mediaItemCount)
+        }
+    }
+
+    /**
+     * Moves the queue row identified by [mediaId] by [steps] positions.
+     *
+     * Addressed by id rather than by row index because the row that received the drag is not the
+     * dragged item any more once a previous step has reordered the list.
+     */
+    fun moveQueueItemBy(mediaId: String, steps: Int) {
+        val player = controller ?: return
+        val count = player.mediaItemCount
+        if (count <= 1 || steps == 0) return
+
+        val from = (0 until count).firstOrNull { player.getMediaItemAt(it).mediaId == mediaId }
+            ?: return
+        val to = (from + steps).coerceIn(0, count - 1)
+        if (to != from) player.moveMediaItem(from, to)
     }
 
     fun consumeMessage() {

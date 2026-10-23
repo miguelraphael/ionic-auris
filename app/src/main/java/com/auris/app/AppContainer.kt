@@ -12,6 +12,7 @@ import com.auris.app.data.remote.music.DefaultMusicSource
 import com.auris.app.data.remote.music.FallbackStreamResolver
 import com.auris.app.data.remote.music.InnerTubeClient
 import com.auris.app.data.remote.music.InnerTubeParser
+import com.auris.app.data.remote.music.ITunesAlbumArtSource
 import com.auris.app.data.remote.music.InvidiousSource
 import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.data.remote.music.NewPipeStreamResolver
@@ -235,6 +236,20 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     /**
+     * Cover-art lookups.
+     *
+     * A short budget on a dedicated client: artwork is cosmetic, so a slow metadata server must
+     * not hold up playback. The caller also caps the lookup with `withTimeoutOrNull`.
+     */
+    private val artworkHttpClient: okhttp3.OkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
      * The composed music source.
      *
      * The instance list is read through a lambda rather than captured, so an instance added in
@@ -254,6 +269,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                     instances = { invidiousInstanceStore.current() },
                 ),
             ),
+            artwork = ITunesAlbumArtSource(artworkHttpClient),
         )
     }
 
