@@ -189,10 +189,28 @@ fun AurisNavHost(
         }
 
         composable(TopLevelDestination.MANGA.route) {
-            BrowseScreen(
-                mediaType = MediaType.MANGA,
-                entries = library.filter { it.mediaType == MediaType.MANGA },
-                onEntryClick = openLibraryEntry,
+            val mangaCatalogue: CatalogueViewModel = viewModel(
+                key = "manga-catalogue",
+                factory = CatalogueViewModel.factory(
+                    extensionLoader = extensionLoader,
+                    sourceKey = com.auris.app.data.remote.manga.MangaDexSource.KEY,
+                    mediaType = MediaType.MANGA,
+                    extensionContentRepository = extensionContentRepository,
+                    libraryRepository = libraryRepository,
+                ),
+            )
+            val mangaState by mangaCatalogue.state.collectAsStateWithLifecycle()
+            LaunchedEffect(mangaCatalogue) {
+                mangaCatalogue.openDetail.collectLatest { id -> navController.navigate(Routes.animeDetail(id)) }
+            }
+            CatalogueScreen(
+                state = mangaState,
+                onItemClick = mangaCatalogue::onItemClick,
+                onModeChange = mangaCatalogue::selectMode,
+                onQueryChange = mangaCatalogue::onQueryChange,
+                onRetry = mangaCatalogue::retry,
+                onLoadMore = mangaCatalogue::loadMore,
+                onBack = { navController.navigate(TopLevelDestination.HOME.route) },
             )
         }
 
@@ -326,6 +344,11 @@ fun AurisNavHost(
                 onToggleOverlay = viewModel::toggleOverlay,
                 onRetry = viewModel::retry,
                 onBack = { navController.popBackStack() },
+                onChapterChange = { index ->
+                    navController.navigate(Routes.mangaReader(entryId, index)) {
+                        popUpTo(navEntry.destination.id) { inclusive = true }
+                    }
+                },
             )
         }
 
@@ -448,6 +471,7 @@ fun AurisNavHost(
                 onModeChange = catalogueViewModel::selectMode,
                 onQueryChange = catalogueViewModel::onQueryChange,
                 onRetry = catalogueViewModel::retry,
+                onLoadMore = catalogueViewModel::loadMore,
                 modifier = Modifier,
                 onBack = { navController.popBackStack() },
             )

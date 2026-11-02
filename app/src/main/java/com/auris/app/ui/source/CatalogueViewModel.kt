@@ -11,6 +11,8 @@ import com.auris.app.source.ExtensionLoader
 import com.auris.app.source.MediaSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import com.auris.app.data.remote.manga.MangaDexSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -51,7 +53,9 @@ class CatalogueViewModel(
 
     private fun resolveAndLoad() {
         viewModelScope.launch {
-            val resolved = SourceResolver.resolve(extensionLoader, sourceKey)
+            val resolved = if (sourceKey == MangaDexSource.KEY) {
+                extensionContentRepository.builtInSources.firstOrNull { it.id == MangaDexSource.ID }
+            } else SourceResolver.resolve(extensionLoader, sourceKey)
 
             if (resolved == null) {
                 _state.value = _state.value.copy(
@@ -65,7 +69,8 @@ class CatalogueViewModel(
             source = resolved
             _state.value = _state.value.copy(
                 isSourceAvailable = true,
-                sourceName = SourceResolver.nameOf(extensionLoader, sourceKey).orEmpty(),
+                sourceName = resolved.name,
+                sourceLanguage = if (resolved.id == MangaDexSource.ID) "English chapters · MangaDex" else "",
                 error = null,
             )
             show(CatalogueUiState.Mode.POPULAR)
@@ -89,16 +94,21 @@ class CatalogueViewModel(
             return
         }
 
-        loadJob = viewModelScope.launch {
-            delay(SEARCH_DEBOUNCE_MS)
-            show(CatalogueUiState.Mode.SEARCH)
-        }
+        show(CatalogueUiState.Mode.SEARCH, debounce = true)
     }
 
     fun retry() = show(_state.value.mode)
 
-    private fun show(mode: CatalogueUiState.Mode) {
+    private var currentPage = 1
+
+    fun loadMore() {
+        if (!_state.value.isLoading && _state.value.hasNextPage) show(_state.value.mode, append = true)
+    }
+
+    private fun show(mode: CatalogueUiState.Mode, debounce: Boolean = false, append: Boolean = false) {
         val current = source ?: return
+        val query = _state.value.query
+        val pageNumber = if (append) currentPage + 1 else 1
 
         loadJob?.cancel()
         // IO, not Main: catalogue fetches block (RxJava `toBlocking`, extension
@@ -107,26 +117,30 @@ class CatalogueViewModel(
         // (verified: main parked in `awaitSingle` with no return). StateFlow
         // emissions are thread-safe, so no context switch is needed to publish.
         loadJob = viewModelScope.launch(Dispatchers.IO) {
-            _state.value = _state.value.copy(isLoading = true, error = null)
+            _state.value = _state.value.copy(isLoading = true, error = null, mode = mode,
+                items = if (append) _state.value.items else emptyList())
+            if (debounce) delay(SEARCH_DEBOUNCE_MS)
 
             val result = runCatching {
                 when (mode) {
-                    CatalogueUiState.Mode.POPULAR -> current.popular(1)
-                    CatalogueUiState.Mode.LATEST -> current.latest(1)
-                    CatalogueUiState.Mode.SEARCH -> current.search(1, _state.value.query, FilterList())
+                    CatalogueUiState.Mode.POPULAR -> current.popular(pageNumber)
+                    CatalogueUiState.Mode.LATEST -> current.latest(pageNumber)
+                    CatalogueUiState.Mode.SEARCH -> current.search(pageNumber, query, FilterList())
                 }
             }
 
             result
                 .onSuccess { page ->
+                    currentPage = pageNumber
                     _state.value = _state.value.copy(
-                        items = page.items,
+                        items = (if (append) _state.value.items + page.items else page.items).distinctBy { it.url },
                         isLoading = false,
                         hasNextPage = page.hasNextPage,
                         error = null,
                     )
                 }
                 .onFailure { error ->
+                    if (error is CancellationException) throw error
                     _state.value = _state.value.copy(
                         isLoading = false,
                         error = error.message?.takeIf { it.isNotBlank() }
@@ -182,14 +196,15 @@ class CatalogueViewModel(
      */
     fun onItemClick(item: com.auris.app.source.SourceItem) {
         viewModelScope.launch {
+            val builtIn = source?.takeIf { sourceKey == MangaDexSource.KEY }
             val loaded = SourceResolver.resolveLoaded(extensionLoader, _state.value.sourceKey)
-                ?: return@launch
+            if (builtIn == null && loaded == null) return@launch
             val candidate = extensionContentRepository.entryForSourceItem(
                 sourceItem = item,
-                sourcePackageName = loaded.packageName,
-                sourceAniyomiId = loaded.aniyomiId,
-                mediaType = mediaType,
-            )
+                sourcePackageName = loaded?.packageName ?: "builtin",
+                sourceAniyomiId = loaded?.aniyomiId ?: 0L,
+                mediaType = builtIn?.mediaType ?: mediaType,
+            ).let { if (builtIn != null) it.copy(sourceId = builtIn.id) else it }
             val saved = runCatching {
                 val existing = libraryRepository.findBySource(
                     mediaType = candidate.mediaType,

@@ -38,6 +38,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 
 /**
@@ -288,6 +289,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         ExtensionContentRepository(
             registry = extensionLoader,
             persistUnits = libraryRepository::upsertUnits,
+            builtInSources = listOf(com.auris.app.data.remote.manga.MangaDexSource(httpClient)),
+            storedUnits = { libraryRepository.observeUnits(it).first() },
         )
     }
 

@@ -44,8 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisLogo
@@ -80,6 +79,7 @@ fun MangaReaderScreen(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
+    onChapterChange: (Int) -> Unit = {},
 ) {
     val pagerState = rememberPagerState(
         initialPage = state.currentPage,
@@ -87,8 +87,11 @@ fun MangaReaderScreen(
     )
 
     // Report page changes upward so the ViewModel's state and the pager's cannot drift.
-    LaunchedEffect(pagerState) {
-        snapshotFlowCompat(pagerState) { it.currentPage }.collect(onPageChanged)
+    LaunchedEffect(pagerState, state.isLoading, state.totalPages) {
+        if (!state.isLoading && state.totalPages > 0) {
+            pagerState.scrollToPage(state.currentPage.coerceIn(0, state.totalPages - 1))
+            snapshotFlowCompat(pagerState) { it.currentPage }.collect(onPageChanged)
+        }
     }
 
     Box(
@@ -122,7 +125,7 @@ fun MangaReaderScreen(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    AsyncImage(
+                    SubcomposeAsyncImage(
                         model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
                             .data(state.pages[pageIndex].imageUrl ?: state.pages[pageIndex].url)
                             // Manga pages are tall; Fit keeps the whole page visible rather than
@@ -132,6 +135,8 @@ fun MangaReaderScreen(
                         contentDescription = "Page ${pageIndex + 1}",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize(),
+                        loading = { ReaderLoading() },
+                        error = { ReaderEmpty("This page could not load. Retry to refresh the chapter images.", onRetry) },
                     )
 
                     // Watermark. Uses the light-ink variant explicitly: the backdrop is fixed
@@ -166,7 +171,7 @@ fun MangaReaderScreen(
             exit = fadeOut() + slideOutVertically { it },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            ReaderProgressBar(state)
+            ReaderProgressBar(state, onChapterChange)
         }
     }
 }
@@ -241,7 +246,7 @@ private fun ReaderTopBar(
 }
 
 @Composable
-private fun ReaderProgressBar(state: MangaReaderUiState) {
+private fun ReaderProgressBar(state: MangaReaderUiState, onChapterChange: (Int) -> Unit) {
     val fraction = if (state.totalPages == 0) 0f else {
         (state.currentPage + 1f) / state.totalPages
     }
@@ -257,6 +262,16 @@ private fun ReaderProgressBar(state: MangaReaderUiState) {
                 top = 12.dp,
             ),
     ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            androidx.compose.material3.TextButton(
+                enabled = state.previousChapter != null,
+                onClick = { state.previousChapter?.let(onChapterChange) },
+            ) { Text("Previous chapter") }
+            androidx.compose.material3.TextButton(
+                enabled = state.nextChapter != null,
+                onClick = { state.nextChapter?.let(onChapterChange) },
+            ) { Text("Next chapter") }
+        }
         // Slim bar rather than a Material slider: a slider would imply the user can drag to seek,
         // which is not how paging works, and its thumb would invite a gesture that does nothing.
         Box(

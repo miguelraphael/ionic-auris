@@ -124,13 +124,14 @@ class LibraryRepository(
         unitTitle: String?,
         positionMs: Long,
         status: EntryStatus?,
+        mediaType: MediaType = MediaType.MUSIC,
     ) = write {
         val now = System.currentTimeMillis()
         libraryDao.updateProgress(entryId, progress, unitIndex, unitTitle, positionMs, status, now)
         syncDao.enqueue(
             SyncOutboxEntity(
                 entityId = entryId,
-                mediaType = MediaType.MUSIC,
+                mediaType = mediaType,
                 syncOp = SyncOp.PUSH_PROGRESS,
                 dedupeKey = "$entryId:progress",
             ),

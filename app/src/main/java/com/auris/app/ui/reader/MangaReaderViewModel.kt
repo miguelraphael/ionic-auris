@@ -15,6 +15,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import com.auris.app.core.model.EntryStatus
 
 /** Everything the reader renders. */
 data class MangaReaderUiState(
@@ -29,11 +32,13 @@ data class MangaReaderUiState(
     val error: String? = null,
     /** Progress overlay visibility; toggled by a tap. */
     val isOverlayVisible: Boolean = false,
+    val previousChapter: Int? = null,
+    val nextChapter: Int? = null,
 ) {
     val totalPages: Int get() = pages.size
 
     /** "3 / 24". */
-    val progressLabel: String get() = "${currentPage + 1} / $totalPages"
+    val progressLabel: String get() = if (totalPages == 0) "0 / 0" else "${currentPage + 1} / $totalPages"
 }
 
 /**
@@ -62,6 +67,7 @@ class MangaReaderViewModel(
 
     /** Survives recomposition; the pager owns its own scroll, so this is only a restore hint. */
     private var pageLoadStarted = false
+    private var pageLoadJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -71,9 +77,8 @@ class MangaReaderViewModel(
                 libraryRepository.observeUnits(entryId),
             ) { entry, units -> entry to units }
                 .collect { (entry, units) -> applyMetadata(entry, units) }
-
-            loadPages()
         }
+        pageLoadJob = viewModelScope.launch { loadPages() }
     }
 
     private fun applyMetadata(entry: LibraryEntryEntity?, units: List<LibraryUnitEntity>) {
@@ -85,13 +90,15 @@ class MangaReaderViewModel(
             return
         }
 
-        // A reader opened for a unit index that no longer exists falls back to the first
-        // chapter rather than showing an empty screen with no way out.
-        val chapter = units.firstOrNull { it.unitIndex == unitIndex } ?: units.firstOrNull()
+        // Never silently substitute a different chapter for a stale saved route.
+        val chapter = units.firstOrNull { it.unitIndex == unitIndex }
+        val position = chapter?.let { units.indexOf(it) } ?: -1
 
         _state.value = _state.value.copy(
             title = entry.title,
             chapterTitle = chapter?.title.orEmpty(),
+            previousChapter = position.takeIf { it > 0 }?.let { units[it - 1].unitIndex },
+            nextChapter = position.takeIf { it >= 0 && it < units.lastIndex }?.let { units[it + 1].unitIndex },
         )
     }
 
@@ -106,13 +113,13 @@ class MangaReaderViewModel(
         }
 
         val units = libraryRepository.observeUnits(entryId).first()
-        val chapter = units.firstOrNull { it.unitIndex == unitIndex } ?: units.firstOrNull()
+        val chapter = units.firstOrNull { it.unitIndex == unitIndex }
 
         if (chapter == null) {
             _state.value = _state.value.copy(
                 isLoading = false,
                 isEmpty = true,
-                error = "This chapter has no pages",
+                error = "This chapter is no longer available. Go back and refresh the chapter list.",
             )
             return
         }
@@ -126,16 +133,20 @@ class MangaReaderViewModel(
             ),
         )
             .onSuccess { pages ->
+                val restoredPage = chapter.lastPositionMs.toInt().coerceIn(0, (pages.size - 1).coerceAtLeast(0))
                 _state.value = _state.value.copy(
                     pages = pages,
+                    currentPage = restoredPage,
                     isLoading = false,
                     // Distinguishing "empty" from "loaded nothing" matters: the first needs a
                     // spinner, the second needs an explanation.
                     isEmpty = pages.isEmpty(),
                     error = if (pages.isEmpty()) "This chapter has no readable pages" else null,
                 )
+                if (pages.isNotEmpty()) saveProgress(restoredPage)
             }
             .onFailure { error ->
+                if (error is CancellationException) throw error
                 Log.w(TAG, "Page load failed for $entryId/$unitIndex: ${error.message}")
                 _state.value = _state.value.copy(
                     isLoading = false,
@@ -149,8 +160,29 @@ class MangaReaderViewModel(
     }
 
     fun onPageChanged(index: Int) {
+        if (_state.value.isLoading || index !in _state.value.pages.indices) return
         if (index == _state.value.currentPage) return
         _state.value = _state.value.copy(currentPage = index)
+        saveProgress(index)
+    }
+
+    private var progressJob: Job? = null
+
+    private fun saveProgress(index: Int) {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            val units = libraryRepository.observeUnits(entryId).first()
+            val chapter = units.firstOrNull { it.unitIndex == unitIndex } ?: return@launch
+            val complete = index == _state.value.totalPages - 1
+            // Manga uses lastPositionMs as a zero-based page index; audio/video keep milliseconds.
+            libraryRepository.updateUnitProgress(entryId, unitIndex, chapter.isWatched || complete, index.toLong())
+            val fraction = (index + 1f) / _state.value.totalPages.coerceAtLeast(1)
+            val ordinal = units.indexOfFirst { it.unitIndex == unitIndex }.coerceAtLeast(0)
+            libraryRepository.updateProgress(entryId, (ordinal + fraction) / units.size.coerceAtLeast(1),
+                unitIndex, chapter.title, index.toLong(),
+                if (complete && ordinal == units.lastIndex) EntryStatus.COMPLETED else EntryStatus.IN_PROGRESS,
+                mediaType = com.auris.app.core.model.MediaType.MANGA)
+        }
     }
 
     /** Tapping the page surface shows or hides the progress overlay. */
@@ -159,8 +191,9 @@ class MangaReaderViewModel(
     }
 
     fun retry() {
+        pageLoadJob?.cancel()
         pageLoadStarted = false
-        viewModelScope.launch {
+        pageLoadJob = viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, isEmpty = false)
             loadPages()
         }

@@ -210,7 +210,7 @@ fun AurisApp(
 /** Routes an entry to its pillar-specific destination. */
 private fun LibraryEntryEntity.destinationRoute(): String = when (mediaType) {
     MediaType.ANIME -> Routes.animeDetail(id)
-    MediaType.MANGA -> Routes.mangaReader(id, currentUnitIndex)
+    MediaType.MANGA -> Routes.animeDetail(id)
     MediaType.MUSIC -> Routes.PLAYER
 }
 

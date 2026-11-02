@@ -158,7 +158,7 @@ fun MediaDetailScreen(
             }
 
             if (state.isUnitsLoading && state.units.isEmpty()) {
-                item(key = "units-loading") { LoadingBlock("Loading episodes…") }
+                item(key = "units-loading") { LoadingBlock(if (state.isManga()) "Loading chapters…" else "Loading episodes…") }
             }
 
             state.message?.let { message ->
@@ -170,7 +170,7 @@ fun MediaDetailScreen(
             }
 
             if (!state.isUnitsLoading && state.units.isEmpty() && state.error == null) {
-                item(key = "units-empty") { EmptyBlock("No episodes listed for this title") }
+                item(key = "units-empty") { EmptyBlock(if (state.isManga()) "No readable chapters are available from this source" else "No episodes listed for this title") }
             }
 
             items(state.units, key = { it.url }) { unit ->

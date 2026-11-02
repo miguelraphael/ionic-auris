@@ -74,6 +74,7 @@ fun CatalogueScreen(
     modifier: Modifier = Modifier,
     /** Returns to the extensions list; this screen draws no nav pill. */
     onBack: () -> Unit = {},
+    onLoadMore: () -> Unit = {},
 ) {
     val palette = rememberArtworkPaletteValue(artworkKey = state.items.firstOrNull()?.thumbnailUrl)
 
@@ -95,9 +96,9 @@ fun CatalogueScreen(
 
             when {
                 state.error != null -> CatalogueError(state.error, onRetry)
-                state.isLoading -> LoadingGrid()
+                state.isLoading && state.items.isEmpty() -> LoadingGrid()
                 state.isEmpty -> EmptyCatalogue(state)
-                else -> CatalogueGrid(state, onItemClick = onItemClick)
+                else -> CatalogueGrid(state, onItemClick = onItemClick, onLoadMore = onLoadMore)
             }
         }
     }
@@ -257,7 +258,7 @@ private fun CatalogueSearchField(query: String, onQueryChange: (String) -> Unit)
 // ---- Content -----------------------------------------------------------------
 
 @Composable
-private fun CatalogueGrid(state: CatalogueUiState, onItemClick: (SourceItem) -> Unit) {
+private fun CatalogueGrid(state: CatalogueUiState, onItemClick: (SourceItem) -> Unit, onLoadMore: () -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 150.dp),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 130.dp),
@@ -285,10 +286,11 @@ private fun CatalogueGrid(state: CatalogueUiState, onItemClick: (SourceItem) -> 
                 // and an unbounded grid is a worse failure than a missing page. Flagged rather
                 // than silently truncating.
                 Text(
-                    text = "More results are not loaded on this screen.",
+                    text = if (state.isLoading) "Loading…" else "Load more",
                     style = MaterialTheme.typography.labelSmall,
                     color = AurisOnSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 12.dp),
+                    modifier = Modifier.clickable(enabled = !state.isLoading, onClick = onLoadMore)
+                        .padding(vertical = 12.dp),
                 )
             }
         }

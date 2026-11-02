@@ -48,6 +48,8 @@ class ExtensionContentRepository(
      * keeps these tests on the JVM rather than moving them to Robolectric.
      */
     private val log: (String, String) -> Unit = { tag, message -> Log.w(tag, message) },
+    val builtInSources: List<com.auris.app.source.MediaSource> = emptyList(),
+    private val storedUnits: suspend (String) -> List<LibraryUnitEntity> = { emptyList() },
 ) {
 
     /**
@@ -58,6 +60,8 @@ class ExtensionContentRepository(
      * source renaming would otherwise silently detach every library entry using it.
      */
     fun resolveSource(entry: LibraryEntryEntity): com.auris.app.source.MediaSource? {
+        builtInSources.firstOrNull { it.id == entry.sourceId && it.mediaType == entry.mediaType }
+            ?.let { return it }
         val loaded = registry.sources.firstOrNull { it.aniyomiId.toString() == entry.sourceId }
             ?: return null
 
@@ -102,7 +106,23 @@ class ExtensionContentRepository(
         val result = fetchUnits(entry)
         result.getOrNull()?.takeIf { it.isNotEmpty() }?.let { units ->
             runCatching {
-                persistUnits(entry.id, units.map { it.toEntity(entry) })
+                val existing = storedUnits(entry.id)
+                val byUrl = existing.filter { !it.sourceUnitId.isNullOrBlank() }.associateBy { it.sourceUnitId }
+                var nextIndex = (existing.maxOfOrNull { it.unitIndex } ?: 0) + 1
+                val mapped = units.map { unit ->
+                    val old = byUrl[unit.url]
+                    if (old != null) {
+                        old.copy(title = unit.title, thumbnailUrl = unit.thumbnailUrl ?: old.thumbnailUrl)
+                    } else {
+                        // Built-in manga indices are ordinals, not chapter numbers. Preserve saved
+                        // chapter identities when new chapters or translations are inserted earlier.
+                        val index = if (entry.sourceId == com.auris.app.data.remote.manga.MangaDexSource.ID) {
+                            nextIndex++
+                        } else unit.index
+                        unit.copy(index = index).toEntity(entry)
+                    }
+                }
+                persistUnits(entry.id, mapped)
             }.onFailure {
                 log(TAG, "Could not persist units for ${entry.id}: ${it.message}")
             }
