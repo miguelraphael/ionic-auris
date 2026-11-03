@@ -172,10 +172,8 @@ class MediaDetailViewModel(
     /**
      * Handles a unit tap.
      *
-     * Manga navigates straight to the reader: a chapter needs no resolution step, so a loading
-     * state would only slow it down. Anime resolves a stream first, because most sources return
-     * an embed page rather than a media URL, and handing that to a player would fail silently
-     * once playback started.
+     * Navigate with the saved unit identity. The player resolves fresh streams exactly once
+     * when it opens, and owns retry; resolving here too doubles source requests and startup time.
      */
     fun onUnitClick(
         unit: SourceUnit,
@@ -189,30 +187,7 @@ class MediaDetailViewModel(
             return
         }
 
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isResolvingStream = true)
-
-            contentRepository.fetchStreams(entry, unit)
-                .onSuccess { targets ->
-                    _state.value = _state.value.copy(isResolvingStream = false)
-
-                    if (targets.isEmpty()) {
-                        // Empty is a real answer from a real source, not a failure: the episode is
-                        // listed but nothing is playable yet.
-                        _state.value = _state.value.copy(
-                            message = "No playable stream for this episode yet",
-                        )
-                    } else {
-                        onPlay(unit, targets)
-                    }
-                }
-                .onFailure { error ->
-                    _state.value = _state.value.copy(
-                        isResolvingStream = false,
-                        message = error.toUserMessage(),
-                    )
-                }
-        }
+        onPlay(unit, emptyList())
     }
 
     /** User-triggered retry for both Kitsu and the extension. */

@@ -181,10 +181,28 @@ fun AurisNavHost(
         }
 
         composable(TopLevelDestination.ANIME.route) {
-            BrowseScreen(
-                mediaType = MediaType.ANIME,
-                entries = library.filter { it.mediaType == MediaType.ANIME },
-                onEntryClick = openLibraryEntry,
+            val animeCatalogue: CatalogueViewModel = viewModel(
+                key = "anime-catalogue",
+                factory = CatalogueViewModel.factory(
+                    extensionLoader = extensionLoader,
+                    sourceKey = com.auris.app.data.remote.anime.HiAnimeSource.KEY,
+                    mediaType = MediaType.ANIME,
+                    extensionContentRepository = extensionContentRepository,
+                    libraryRepository = libraryRepository,
+                ),
+            )
+            val animeState by animeCatalogue.state.collectAsStateWithLifecycle()
+            LaunchedEffect(animeCatalogue) {
+                animeCatalogue.openDetail.collectLatest { id -> navController.navigate(Routes.animeDetail(id)) }
+            }
+            CatalogueScreen(
+                state = animeState,
+                onItemClick = animeCatalogue::onItemClick,
+                onModeChange = animeCatalogue::selectMode,
+                onQueryChange = animeCatalogue::onQueryChange,
+                onRetry = animeCatalogue::retry,
+                onLoadMore = animeCatalogue::loadMore,
+                onBack = { navController.navigate(TopLevelDestination.HOME.route) },
             )
         }
 
@@ -372,14 +390,8 @@ fun AurisNavHost(
 
             EpisodePlayerRoute(
                 entry = entry,
-                // The unit's source URL is not in the library snapshot, so it is reconstructed
-                // from the entry's units by the caller's screen; here the index is enough to
-                // identify the episode and resolve its stream.
-                unit = com.auris.app.source.SourceUnit(
-                    url = "",
-                    index = unitIndex,
-                    title = "Episode ${unitIndex + 1}",
-                ),
+                unitIndex = unitIndex,
+                libraryRepository = libraryRepository,
                 contentRepository = extensionContentRepository,
                 episodePlayer = episodePlayer,
                 onBack = { navController.popBackStack() },

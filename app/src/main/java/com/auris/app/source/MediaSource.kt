@@ -99,6 +99,16 @@ data class StreamTarget(
     val mimeType: String? = null,
     /** Adaptive DASH manifest when the source offers one. */
     val isAdaptive: Boolean = false,
+    val label: String = "Auto",
+    val subtitles: List<SubtitleTrack> = emptyList(),
+)
+
+data class SubtitleTrack(
+    val url: String,
+    val language: String? = null,
+    val label: String = "Subtitles",
+    val isDefault: Boolean = false,
+    val mimeType: String = "text/vtt",
 )
 
 /** A manga chapter's page list. */

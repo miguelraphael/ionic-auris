@@ -210,6 +210,8 @@ implementation(libs.kotlinx.coroutines.core)
 
 
     implementation(libs.androidx.media3.exoplayer)
+    implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
+    implementation("androidx.media3:media3-exoplayer-dash:${libs.versions.media3.get()}")
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource.okhttp)

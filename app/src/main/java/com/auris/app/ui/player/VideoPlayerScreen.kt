@@ -79,10 +79,8 @@ import com.auris.app.ui.theme.AurisTrack
  * auto-hide.
  *
  * ### Lifecycle
- * [EpisodePlayer] is created on first composition and released when the composition leaves.
- * It is additionally registered as a [androidx.lifecycle.LifecycleObserver] so playback pauses on
- * `onStop` — the composition may survive while the activity is backgrounded (another app on top),
- * and a paused-but-alive player keeps the audio focus and the wake lock.
+ * EpisodePlayerRoute owns [EpisodePlayer] and registers its lifecycle observer. This screen
+ * binds the current video surface and controls, without becoming a second release owner.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -94,23 +92,14 @@ fun VideoPlayerScreen(
     onBack: () -> Unit = {},
     onError: (String) -> Unit = {},
 ) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-
     // The player follows the flow, not a captured reference: `EpisodePlayer` rebuilds it per
     // episode so each stream gets its own request headers, and a captured instance would go
     // stale the moment a second episode is loaded.
     val player by episodePlayer.player.collectAsStateWithLifecycle()
     val isBuffering by episodePlayer.isBuffering.collectAsStateWithLifecycle()
 
-    // Registering as an observer is what pauses on backgrounding; `DisposableEffect` only runs on
-    // composition disposal, which does not happen when the activity is merely stopped.
-    DisposableEffect(lifecycleOwner, episodePlayer) {
-        lifecycleOwner.lifecycle.addObserver(episodePlayer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(episodePlayer)
-            episodePlayer.release()
-        }
-    }
+    // EpisodePlayerRoute owns lifecycle and release. A second owner here would release
+    // the player when switching between its error view and the video surface.
 
     // Collected rather than polled: the error arrives from the player's own thread, so reading
     // it once at composition would always capture `null`.

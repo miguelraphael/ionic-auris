@@ -116,7 +116,7 @@ class ExtensionContentRepository(
                     } else {
                         // Built-in manga indices are ordinals, not chapter numbers. Preserve saved
                         // chapter identities when new chapters or translations are inserted earlier.
-                        val index = if (entry.sourceId == com.auris.app.data.remote.manga.MangaDexSource.ID) {
+                        val index = if (builtInSources.any { it.id == entry.sourceId }) {
                             nextIndex++
                         } else unit.index
                         unit.copy(index = index).toEntity(entry)

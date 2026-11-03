@@ -8,6 +8,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -71,7 +72,7 @@ class EpisodePlayer(
      *
      * @return the player, or null when nothing was playable.
      */
-    fun play(targets: List<StreamTarget>): ExoPlayer? {
+    fun play(targets: List<StreamTarget>, startPositionMs: Long = 0L): ExoPlayer? {
         val target = targets.firstOrNull()
         if (target == null || target.url.isBlank()) {
             _error.value = "No playable stream for this episode"
@@ -81,6 +82,7 @@ class EpisodePlayer(
         // Release before rebuilding: two live players would both hold a codec and fight over
         // audio focus.
         release()
+        _error.value = null
 
         val exo = build(target.headers)
         _player.value = exo
@@ -90,8 +92,13 @@ class EpisodePlayer(
             MediaItem.Builder()
                 .setUri(target.url)
                 .setMimeType(target.mimeType ?: inferMimeType(target.url))
+                .setSubtitleConfigurations(target.subtitles.map { track ->
+                    MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(track.url))
+                        .setMimeType(track.mimeType).setLanguage(track.language).setLabel(track.label)
+                        .setSelectionFlags(if (track.isDefault) C.SELECTION_FLAG_DEFAULT else 0).build()
+                })
                 .build(),
-            /* startPositionMs = */ 0L,
+            startPositionMs.coerceAtLeast(0L),
         )
         exo.prepare()
         exo.playWhenReady = true
@@ -103,7 +110,7 @@ class EpisodePlayer(
      *
      * Buffering is tuned for what sources actually serve: extension hosts are frequently slow, so
      * the defaults — which optimise for start-up latency — cause repeated stalls mid-episode.
-     * 30s of buffer rides out a hiccup without making the first frame feel late.
+     * Up to 50s of buffer rides out a hiccup, with a smaller startup threshold for the first frame.
      */
     private fun build(headers: Map<String, String>): ExoPlayer =
         ExoPlayer.Builder(context)
@@ -117,9 +124,9 @@ class EpisodePlayer(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
                         /* minBufferMs = */ 15_000,
-                        /* maxBufferMs = */ 30_000,
-                        /* bufferForPlaybackMs = */ 2_500,
-                        /* bufferForPlaybackAfterRebufferMs = */ 5_000,
+                        /* maxBufferMs = */ 50_000,
+                        /* bufferForPlaybackMs = */ 1_000,
+                        /* bufferForPlaybackAfterRebufferMs = */ 2_000,
                     )
                     .build(),
             )
@@ -145,6 +152,7 @@ class EpisodePlayer(
     fun release() {
         _player.value?.release()
         _player.value = null
+        _isBuffering.value = false
     }
 
     /** Returns and clears the pending error, so it is shown exactly once. */

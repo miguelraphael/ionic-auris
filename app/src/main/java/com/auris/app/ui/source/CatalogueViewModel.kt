@@ -53,9 +53,8 @@ class CatalogueViewModel(
 
     private fun resolveAndLoad() {
         viewModelScope.launch {
-            val resolved = if (sourceKey == MangaDexSource.KEY) {
-                extensionContentRepository.builtInSources.firstOrNull { it.id == MangaDexSource.ID }
-            } else SourceResolver.resolve(extensionLoader, sourceKey)
+            val resolved = extensionContentRepository.builtInSources.firstOrNull { "builtin-${it.id}" == sourceKey }
+                ?: SourceResolver.resolve(extensionLoader, sourceKey)
 
             if (resolved == null) {
                 _state.value = _state.value.copy(
@@ -70,7 +69,11 @@ class CatalogueViewModel(
             _state.value = _state.value.copy(
                 isSourceAvailable = true,
                 sourceName = resolved.name,
-                sourceLanguage = if (resolved.id == MangaDexSource.ID) "English chapters · MangaDex" else "",
+                sourceLanguage = when (resolved.id) {
+                    MangaDexSource.ID -> "English chapters · MangaDex"
+                    com.auris.app.data.remote.anime.HiAnimeSource.ID -> "Sub / Dub where available · HiAnime"
+                    else -> ""
+                },
                 error = null,
             )
             show(CatalogueUiState.Mode.POPULAR)
@@ -196,7 +199,7 @@ class CatalogueViewModel(
      */
     fun onItemClick(item: com.auris.app.source.SourceItem) {
         viewModelScope.launch {
-            val builtIn = source?.takeIf { sourceKey == MangaDexSource.KEY }
+            val builtIn = source?.takeIf { candidate -> extensionContentRepository.builtInSources.any { it.id == candidate.id } }
             val loaded = SourceResolver.resolveLoaded(extensionLoader, _state.value.sourceKey)
             if (builtIn == null && loaded == null) return@launch
             val candidate = extensionContentRepository.entryForSourceItem(

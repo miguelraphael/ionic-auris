@@ -289,7 +289,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         ExtensionContentRepository(
             registry = extensionLoader,
             persistUnits = libraryRepository::upsertUnits,
-            builtInSources = listOf(com.auris.app.data.remote.manga.MangaDexSource(httpClient)),
+            builtInSources = listOf(
+                com.auris.app.data.remote.manga.MangaDexSource(httpClient),
+                com.auris.app.data.remote.anime.HiAnimeSource(),
+            ),
             storedUnits = { libraryRepository.observeUnits(it).first() },
         )
     }
