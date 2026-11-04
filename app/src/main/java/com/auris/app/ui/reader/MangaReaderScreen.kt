@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -278,7 +279,7 @@ private fun ReaderProgressBar(state: MangaReaderUiState, onChapterChange: (Int) 
             modifier = Modifier
                 .fillMaxWidth()
                 .height(3.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .clip(CircleShape)
                 .background(AurisTrack),
         ) {
             Box(

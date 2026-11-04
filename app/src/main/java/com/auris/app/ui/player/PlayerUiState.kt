@@ -24,6 +24,8 @@ data class PlayerUiState(
     val volume: Float = 1f,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val shuffleEnabled: Boolean = false,
+    val smartShuffleEnabled: Boolean = false,
+    val sleepRemainingMs: Long = 0L,
     val queueSize: Int = 0,
     val queuePosition: Int = 0,
 

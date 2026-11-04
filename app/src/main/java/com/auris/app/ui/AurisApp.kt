@@ -175,7 +175,8 @@ fun AurisApp(
     val isLibraryLoading = libraryState == null
     val pending by pendingSyncCount.collectAsStateWithLifecycle(initialValue = 0)
 
-    val showNavBar = TopLevelDestination.entries.any { it.route == currentRoute }
+    val navigationRoute = if (currentRoute == Routes.MUSIC_BROWSE) TopLevelDestination.MUSIC.route else currentRoute
+    val showNavBar = TopLevelDestination.entries.any { it.route == navigationRoute }
 
     CompositionLocalProvider(LocalIsOnline provides isOnline) {
         Box(Modifier.fillMaxSize()) {
@@ -210,7 +211,7 @@ fun AurisApp(
                 ) {
                     FloatingNavigationBar(
                         destinations = TopLevelDestination.entries.toList(),
-                        currentRoute = currentRoute,
+                        currentRoute = navigationRoute,
                         onNavigate = { destination ->
                             navController.navigate(destination.route) {
                                 // Single-top with state restoration: moving between tabs must
@@ -228,7 +229,7 @@ fun AurisApp(
                 // The only global chrome beyond navigation: how many local changes are still
                 // waiting for a network. Sits just above the pill, right-aligned.
                 AnimatedVisibility(
-                    visible = showNavBar && pending > 0,
+                    visible = showNavBar && navigationRoute != TopLevelDestination.MUSIC.route && pending > 0,
                     enter = fadeIn(),
                     exit = fadeOut(),
                     modifier = Modifier

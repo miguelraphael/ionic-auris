@@ -1,0 +1,421 @@
+{
+  "contents": [
+    {
+      "musicCardShelfRenderer": {
+        "thumbnail": {
+          "musicThumbnailRenderer": {
+            "thumbnail": {
+              "thumbnails": [
+                {
+                  "url": "https://i.ytimg.com/vi/NwFVSclD_uc/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3mmeZqf6IARuc9ztI9TZzDAWnwTgQ",
+                  "width": 400,
+                  "height": 225
+                }
+              ]
+            },
+            "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+            "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT"
+          }
+        },
+        "title": {
+          "runs": [
+            {
+              "text": "I Love You So",
+              "navigationEndpoint": {
+                "watchEndpoint": {
+                  "videoId": "NwFVSclD_uc",
+                  "watchEndpointMusicSupportedConfigs": {
+                    "watchEndpointMusicConfig": {
+                      "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "subtitle": {
+          "runs": [
+            {
+              "text": "Video"
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "The Walters",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UCWXnGZRSAZJQ7JV7id5fufg",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "346M views"
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "2:41"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "thumbnail": {
+          "musicThumbnailRenderer": {
+            "thumbnail": {
+              "thumbnails": [
+                {
+                  "url": "https://i.ytimg.com/vi/0pQZitAQKYo/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3kkbCp1MVtfM3n_5EudIpUUv6wk3w",
+                  "width": 400,
+                  "height": 225
+                }
+              ]
+            },
+            "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+            "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT"
+          }
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "I LOVE YOU SO JUMPSTYLE (Ultra Slowed)",
+                    "navigationEndpoint": {
+                      "watchEndpoint": {
+                        "videoId": "0pQZitAQKYo",
+                        "watchEndpointMusicSupportedConfigs": {
+                          "watchEndpointMusicConfig": {
+                            "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "HUSSVRX",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCLXi-OHwagq3uB56Fo2y8Ag",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "6.2M views"
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "4:01"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "thumbnail": {
+          "musicThumbnailRenderer": {
+            "thumbnail": {
+              "thumbnails": [
+                {
+                  "url": "https://yt3.googleusercontent.com/sHsKHkfo7Js0ZI4OZFKfJPHJK6kPbgBk3DwFK3mIgGAsXrz9eEqFXLJGXLSb5QvzSKRnvyOxsJDJq0s=w60-h60-l90-rj",
+                  "width": 60,
+                  "height": 60
+                },
+                {
+                  "url": "https://yt3.googleusercontent.com/sHsKHkfo7Js0ZI4OZFKfJPHJK6kPbgBk3DwFK3mIgGAsXrz9eEqFXLJGXLSb5QvzSKRnvyOxsJDJq0s=w120-h120-l90-rj",
+                  "width": 120,
+                  "height": 120
+                },
+                {
+                  "url": "https://yt3.googleusercontent.com/sHsKHkfo7Js0ZI4OZFKfJPHJK6kPbgBk3DwFK3mIgGAsXrz9eEqFXLJGXLSb5QvzSKRnvyOxsJDJq0s=w226-h226-l90-rj",
+                  "width": 226,
+                  "height": 226
+                },
+                {
+                  "url": "https://yt3.googleusercontent.com/sHsKHkfo7Js0ZI4OZFKfJPHJK6kPbgBk3DwFK3mIgGAsXrz9eEqFXLJGXLSb5QvzSKRnvyOxsJDJq0s=w544-h544-l90-rj",
+                  "width": 544,
+                  "height": 544
+                }
+              ]
+            },
+            "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+            "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT"
+          }
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "I LOVE YOU SO"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Single"
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "Lieless",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCb85xV87N9WOSSNOmbcKSzA",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": ", "
+                  },
+                  {
+                    "text": "Zak Conner",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UC1ApHHLQVFIvWo3vNXO7LPg",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " & "
+                  },
+                  {
+                    "text": "hornja",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCl3f5Ed4QUekC3eiF9sqaew",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "2025"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "navigationEndpoint": {
+          "browseEndpoint": {
+            "browseId": "MPREb_gzYqPCaClKC",
+            "browseEndpointContextSupportedConfigs": {
+              "browseEndpointContextMusicConfig": {
+                "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "thumbnail": {
+          "musicThumbnailRenderer": {
+            "thumbnail": {
+              "thumbnails": [
+                {
+                  "url": "https://yt3.googleusercontent.com/5eFFSA6D4kN30OoJmDTcdqfZKlCiTqZII2hP8g3JswZIOjqFc0c5u7fFJJzlx5tuQgPXOAFEuDI=s192",
+                  "width": 192,
+                  "height": 192
+                },
+                {
+                  "url": "https://yt3.googleusercontent.com/5eFFSA6D4kN30OoJmDTcdqfZKlCiTqZII2hP8g3JswZIOjqFc0c5u7fFJJzlx5tuQgPXOAFEuDI=s576",
+                  "width": 576,
+                  "height": 576
+                },
+                {
+                  "url": "https://yt3.googleusercontent.com/5eFFSA6D4kN30OoJmDTcdqfZKlCiTqZII2hP8g3JswZIOjqFc0c5u7fFJJzlx5tuQgPXOAFEuDI=s1200",
+                  "width": 1200,
+                  "height": 1200
+                }
+              ]
+            },
+            "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+            "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT"
+          }
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "I love you so"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Playlist"
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "Langlang Tadlas",
+                    "navigationEndpoint": {
+                      "browseEndpoint": {
+                        "browseId": "UCsYEil9gZYDA4HDYXMinPJA",
+                        "browseEndpointContextSupportedConfigs": {
+                          "browseEndpointContextMusicConfig": {
+                            "pageType": "MUSIC_PAGE_TYPE_USER_CHANNEL"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "82 views"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "navigationEndpoint": {
+          "browseEndpoint": {
+            "browseId": "VLPLHZb1pFo5zBc",
+            "browseEndpointContextSupportedConfigs": {
+              "browseEndpointContextMusicConfig": {
+                "pageType": "MUSIC_PAGE_TYPE_PLAYLIST"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemRenderer": {
+        "thumbnail": {
+          "musicThumbnailRenderer": {
+            "thumbnail": {
+              "thumbnails": [
+                {
+                  "url": "https://lh3.googleusercontent.com/KsBXVCxmfY_rgnM3ctB5gOemJRkdq6CJM7qglzhiCIGxcNnDlcCD2vzBUEiNgp9tOu2dytSoC1iFPZbY=w60-h60-p-l90-rj",
+                  "width": 60,
+                  "height": 60
+                },
+                {
+                  "url": "https://lh3.googleusercontent.com/KsBXVCxmfY_rgnM3ctB5gOemJRkdq6CJM7qglzhiCIGxcNnDlcCD2vzBUEiNgp9tOu2dytSoC1iFPZbY=w120-h120-p-l90-rj",
+                  "width": 120,
+                  "height": 120
+                }
+              ]
+            },
+            "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_CIRCLE",
+            "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FILL"
+          }
+        },
+        "flexColumns": [
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Ne-Yo"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+                "runs": [
+                  {
+                    "text": "Artist"
+                  },
+                  {
+                    "text": " • "
+                  },
+                  {
+                    "text": "28.3M monthly audience"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "navigationEndpoint": {
+          "browseEndpoint": {
+            "browseId": "UCOHN2Rba82QVQTLJ3Gumx_g",
+            "browseEndpointContextSupportedConfigs": {
+              "browseEndpointContextMusicConfig": {
+                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

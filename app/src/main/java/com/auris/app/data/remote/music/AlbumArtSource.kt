@@ -89,6 +89,7 @@ class ITunesAlbumArtSource(
         val term = listOfNotNull(title, artist).joinToString(" ")
         val url = "$baseUrl/search".toHttpUrl().newBuilder()
             .addQueryParameter("term", term)
+            .addQueryParameter("country", InnerTubeClient.CONTENT_COUNTRY)
             .addQueryParameter("media", "music")
             .addQueryParameter("entity", "song")
             .addQueryParameter("limit", "8")

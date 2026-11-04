@@ -2,6 +2,9 @@ package com.auris.app.ui.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
+import android.os.SystemClock
+import androidx.media3.session.SessionCommand
 import android.media.AudioManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -74,7 +77,10 @@ class PlayerViewModel(context: Context) : ViewModel() {
             appContext,
             ComponentName(appContext, MusicPlaybackService::class.java),
         )
-        val future = MediaController.Builder(appContext, token).buildAsync()
+        val future = MediaController.Builder(appContext, token)
+            .setListener(object : MediaController.Listener {
+                override fun onExtrasChanged(controller: MediaController, extras: Bundle) { publish() }
+            }).buildAsync()
         future.addListener(
             {
                 val connected = runCatching { future.get() }.getOrNull()
@@ -121,6 +127,9 @@ class PlayerViewModel(context: Context) : ViewModel() {
             volume = mediaVolumeFraction(),
             repeatMode = RepeatMode.fromExoPlayer(player.repeatMode),
             shuffleEnabled = player.shuffleModeEnabled,
+            smartShuffleEnabled = player.sessionExtras.getBoolean(MusicPlaybackService.SMART_ENABLED),
+            sleepRemainingMs = player.sessionExtras.getLong(MusicPlaybackService.SLEEP_DEADLINE)
+                .let { if (it == 0L) 0L else (it - SystemClock.elapsedRealtime()).coerceAtLeast(0L) },
             queueSize = player.mediaItemCount,
             queuePosition = player.currentMediaItemIndex,
         )
@@ -222,7 +231,24 @@ class PlayerViewModel(context: Context) : ViewModel() {
 
     fun toggleShuffle() {
         val player = controller ?: return
-        player.shuffleModeEnabled = !player.shuffleModeEnabled
+        when {
+            player.sessionExtras.getBoolean(MusicPlaybackService.SMART_ENABLED) -> {
+                player.sendCustomCommand(SessionCommand(MusicPlaybackService.SET_SMART_SHUFFLE, Bundle.EMPTY),
+                    Bundle().apply { putBoolean(MusicPlaybackService.SMART_ENABLED, false) })
+                player.shuffleModeEnabled = false
+            }
+            player.shuffleModeEnabled -> player.sendCustomCommand(
+                SessionCommand(MusicPlaybackService.SET_SMART_SHUFFLE, Bundle.EMPTY),
+                Bundle().apply { putBoolean(MusicPlaybackService.SMART_ENABLED, true) })
+            else -> player.shuffleModeEnabled = true
+        }
+    }
+
+    fun setSleepTimer(minutes: Int) = setSleepTimerDuration(minutes * 60_000L)
+
+    fun setSleepTimerDuration(durationMs: Long) {
+        controller?.sendCustomCommand(SessionCommand(MusicPlaybackService.SET_SLEEP_TIMER, Bundle.EMPTY),
+            Bundle().apply { putLong(MusicPlaybackService.SLEEP_DURATION, durationMs) })
     }
 
     fun playQueueItem(index: Int) {

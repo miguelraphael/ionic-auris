@@ -320,11 +320,11 @@ class InnerTubeClient(
          * home screen reflects the configured content country rather than a US default.
          */
         val DISCOVERY_SHELVES = listOf(
-            MusicShelfSeed("Top Picks for You", "popular music"),
-            MusicShelfSeed("New Releases", "new releases"),
+            MusicShelfSeed("Popular in the Philippines", "popular music Philippines"),
+            MusicShelfSeed("New Releases", "new music releases Philippines"),
             MusicShelfSeed("OPM", "OPM"),
             MusicShelfSeed("K-Pop", "K-Pop"),
-            MusicShelfSeed("Chill", "chill beats"),
+            MusicShelfSeed("Chill", "chill music Philippines"),
         )
 
         /** Untitled view of [DISCOVERY_SHELVES], for callers that only need the queries. */

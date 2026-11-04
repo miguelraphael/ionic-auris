@@ -6,30 +6,25 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/**
- * Corner radii used across the app.
- *
- * The artwork value (28dp) comes from the reference screenshot: the 972px album art's
- * corner radius measured ~80px at 2.625x density ≈ 30dp, snapped to this scale's step.
- */
+/** Shared corner scale: 24dp surfaces, 12dp compact elements, fully rounded transport/pills. */
 object AurisRadii {
     /** Grid thumbnails, episode cards, cover art. */
-    val artwork: Dp = 28.dp
-    val artworkLarge: Dp = 32.dp
-    val artworkSmall: Dp = 18.dp
+    val artwork: Dp = 24.dp
+    val artworkLarge: Dp = 24.dp
+    val artworkSmall: Dp = 12.dp
 
     /** Floating nav pill: 50dp tall, fully rounded. */
-    val navPill: Dp = 28.dp
+    val navPill: Dp = 24.dp
 
     /** Chips, badges, small control clusters. */
-    val chip: Dp = 14.dp
-    val button: Dp = 20.dp
-    val sheet: Dp = 32.dp
+    val chip: Dp = 12.dp
+    val button: Dp = 24.dp
+    val sheet: Dp = 24.dp
 }
 
 /** Material3 shape scale for every card, sheet and dialog in the app. */
 val AurisShapes: Shapes = Shapes(
-    extraSmall = RoundedCornerShape(AurisRadii.chip),
+    extraSmall = RoundedCornerShape(AurisRadii.button),
     small = RoundedCornerShape(AurisRadii.artworkSmall),
     medium = RoundedCornerShape(AurisRadii.artwork),
     large = RoundedCornerShape(AurisRadii.artworkLarge),

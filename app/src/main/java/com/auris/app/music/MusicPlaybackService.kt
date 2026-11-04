@@ -2,6 +2,23 @@ package com.auris.app.music
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Bundle
+import android.os.SystemClock
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import com.auris.app.AurisApplication
+
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -38,6 +55,13 @@ import androidx.media3.session.MediaSessionService
 @OptIn(UnstableApi::class)
 class MusicPlaybackService : MediaSessionService() {
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val sleepTimer = SleepTimer(scope, SystemClock::elapsedRealtime,
+        onDeadlineChanged = { sleepDeadline = it; publishModes() },
+        onExpire = { player?.pause() })
+    private var smartJob: Job? = null
+    private var sleepDeadline = 0L
+    private var smartShuffle = false
     private var player: ExoPlayer? = null
     private var session: MediaSession? = null
 
@@ -62,6 +86,30 @@ class MusicPlaybackService : MediaSessionService() {
             .build()
 
         val mediaSession = MediaSession.Builder(this, exo)
+            .setCallback(object : MediaSession.Callback {
+                override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+                    val base = super.onConnect(session, controller)
+                    val commands = base.availableSessionCommands.buildUpon()
+                    if (controller.packageName == packageName) {
+                        commands.add(SessionCommand(SET_SLEEP_TIMER, Bundle.EMPTY))
+                        commands.add(SessionCommand(SET_SMART_SHUFFLE, Bundle.EMPTY))
+                    }
+                    return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                        .setAvailableSessionCommands(commands.build())
+                        .setAvailablePlayerCommands(base.availablePlayerCommands)
+                        .build()
+                }
+
+                override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo,
+                    command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+                    when (command.customAction) {
+                        SET_SLEEP_TIMER -> setSleepTimer(args.getLong(SLEEP_DURATION))
+                        SET_SMART_SHUFFLE -> setSmartShuffle(args.getBoolean(SMART_ENABLED))
+                        else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                    }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+            })
             .setId(SESSION_ID)
             .setSessionActivity(pendingIntentToOpenApp())
             .build()
@@ -82,6 +130,63 @@ class MusicPlaybackService : MediaSessionService() {
         session = mediaSession
     }
 
+    private fun publishModes() {
+        session?.setSessionExtras(Bundle().apply {
+            putLong(SLEEP_DEADLINE, sleepDeadline)
+            putBoolean(SMART_ENABLED, smartShuffle)
+        })
+    }
+
+    private fun setSleepTimer(durationMs: Long) {
+        sleepTimer.set(durationMs)
+    }
+
+    private fun setSmartShuffle(enabled: Boolean) {
+        smartJob?.cancel()
+        smartShuffle = enabled
+        publishModes()
+        val exo = player ?: return
+        if (!enabled) {
+            for (index in exo.mediaItemCount - 1 downTo 0) {
+                if (index != exo.currentMediaItemIndex &&
+                    exo.getMediaItemAt(index).mediaMetadata.extras?.getBoolean(SMART_ITEM) == true) {
+                    exo.removeMediaItem(index)
+                }
+            }
+            return
+        }
+        exo.shuffleModeEnabled = true
+        val seed = exo.currentMediaItem ?: return
+        val artist = seed.mediaMetadata.artist?.toString()
+        smartJob = scope.launch {
+            try {
+                val container = (application as AurisApplication).container
+                val source = container.musicSource
+                val existing = (0 until exo.mediaItemCount).map { exo.getMediaItemAt(it).mediaId }.toSet()
+                val candidates = MusicSuggestions.suggest(
+                    source, container.libraryRepository.observeLibrary().first(),
+                    seedArtist = artist, excludedIds = existing, limit = 3,
+                )
+                for (track in candidates) {
+                    val stream = source.resolveAudioStream(track.videoId).getOrNull()?.stream
+                        ?.takeIf { it.isPlayable() } ?: continue
+                    currentCoroutineContext().ensureActive()
+                    // A new selection replaces the queue while recommendations are resolving.
+                    if ((0 until exo.mediaItemCount).none { exo.getMediaItemAt(it).mediaId == seed.mediaId }) return@launch
+                    if ((0 until exo.mediaItemCount).any { exo.getMediaItemAt(it).mediaId == track.videoId }) continue
+                    val item = buildMediaItem(track.videoId, track.title, track.artist, track.album,
+                        track.largeArtworkUrl ?: track.artworkUrl, stream.url, stream.mimeType)
+                    exo.addMediaItem(item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon()
+                        .setExtras(Bundle().apply { putBoolean(SMART_ITEM, true) }).build()).build())
+                }
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                android.util.Log.w("AurisMusic", "Smart shuffle could not load suggestions", error)
+            }
+        }
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -94,6 +199,7 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        scope.cancel()
         session?.run {
             player.release()
             release()
@@ -122,6 +228,12 @@ class MusicPlaybackService : MediaSessionService() {
          * A controller binds by id, so it must survive a process restart or the notification's
          * buttons would bind to a fresh session each time the app is opened.
          */
+        const val SET_SLEEP_TIMER = "auris.SET_SLEEP_TIMER"
+        const val SLEEP_DURATION = "durationMs"
+        const val SLEEP_DEADLINE = "sleepDeadline"
+        const val SET_SMART_SHUFFLE = "auris.SET_SMART_SHUFFLE"
+        const val SMART_ENABLED = "smartShuffle"
+        private const val SMART_ITEM = "smartItem"
         const val SESSION_ID = "auris-music"
 
         private const val REQUEST_OPEN_APP = 1001

@@ -1,5 +1,6 @@
 package com.auris.app.ui.music
 
+import com.auris.app.data.remote.music.MusicResultType
 import com.auris.app.data.remote.music.MusicAlbum
 import com.auris.app.data.remote.music.MusicCollectionItem
 import com.auris.app.data.remote.music.MusicPlaylist
@@ -36,6 +37,13 @@ class MusicBrowseRowsTest {
         playlistId = null,
         trackIndex = null,
     )
+
+    @Test
+    fun preservesCatalogueProvenanceForSearchRanking() {
+        val rows = MusicCollectionItem(MusicCollectionItem.Kind.TRACK,
+            tracks = listOf(track().copy(resultType = MusicResultType.SONG))).toRows()
+        assertEquals(MusicResultType.SONG, rows.single().resultType)
+    }
 
     @Test
     fun mapsTrackWithArtistAndAlbum() {

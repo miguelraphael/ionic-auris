@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -89,7 +90,7 @@ fun StateActionButton(
     modifier: Modifier = Modifier,
     filled: Boolean = true,
 ) {
-    val shape = RoundedCornerShape(AurisRadii.chip)
+    val shape = RoundedCornerShape(AurisRadii.button)
     Box(
         modifier = modifier
             .clip(shape)
@@ -554,17 +555,14 @@ fun SessionExpiredDialog(
 
 // ---- Skeletons ---------------------------------------------------------------
 
-/**
- * The shimmer used by every placeholder.
- *
- * One sweep shared by all blocks in a screen would be nicer, but a transition per block is
- * visually identical here and keeps the API composable-local. The highlight is deliberately
- * faint: on an OLED base a bright shimmer reads as content rather than as absence.
- */
+/** Reads animation state during drawing so shimmer frames do not recompose placeholders. */
 @Composable
-private fun skeletonBrush(): Brush {
+fun SkeletonBlock(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(AurisRadii.chip),
+) {
     val transition = rememberInfiniteTransition(label = "auris-skeleton")
-    val x by transition.animateFloat(
+    val x = transition.animateFloat(
         initialValue = -700f,
         targetValue = 1_400f,
         animationSpec = infiniteRepeatable(
@@ -572,19 +570,19 @@ private fun skeletonBrush(): Brush {
         ),
         label = "sweep",
     )
-    return Brush.linearGradient(
-        colors = listOf(AurisTrack, GlassEdge, AurisTrack),
-        start = Offset(x, 0f),
-        end = Offset(x + 700f, 700f),
+    val colors = remember { listOf(AurisTrack, GlassEdge, AurisTrack) }
+    Box(
+        modifier.clip(shape).drawBehind {
+            val offset = x.value
+            drawRect(
+                brush = Brush.linearGradient(
+                    colors = colors,
+                    start = Offset(offset, 0f),
+                    end = Offset(offset + 700f, 700f),
+                ),
+            )
+        },
     )
-}
-
-@Composable
-fun SkeletonBlock(
-    modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(AurisRadii.chip),
-) {
-    Box(modifier.clip(shape).background(skeletonBrush()))
 }
 
 /** A text-line placeholder: width as a fraction of the parent, with a fixed line height. */

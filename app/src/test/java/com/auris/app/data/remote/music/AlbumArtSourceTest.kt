@@ -54,6 +54,13 @@ class AlbumArtSourceTest {
     }
 
     @Test
+    fun `uses Philippines cover art storefront`() = runBlocking {
+        enqueueResults("Swim|Chase Atlantic|https://art.test/swim/100x100bb.jpg")
+        source.artworkFor("Swim", "Chase Atlantic")
+        assertEquals("PH", server.takeRequest().requestUrl!!.queryParameter("country"))
+    }
+
+    @Test
     fun `returns the 600px version of the matching cover`() = runBlocking {
         enqueueResults("ESCORT|Chase Atlantic|https://art.test/ESCORT/100x100bb.jpg")
 

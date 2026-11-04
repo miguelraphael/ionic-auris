@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.auris.app.data.remote.music.MusicCollectionItem
 import com.auris.app.data.remote.music.MusicLibraryMapper
 import com.auris.app.data.remote.music.MusicSource
+import com.auris.app.data.remote.music.MusicResultType
 import com.auris.app.data.remote.music.MusicTrack
 import com.auris.app.data.remote.music.StreamRefusalInfo
 import com.auris.app.data.remote.music.youtubeThumbnailUrl
@@ -17,9 +18,15 @@ import com.auris.app.music.buildMediaItem
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import com.auris.app.music.MusicSuggestions
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -37,6 +44,7 @@ data class MusicRow(
     val artworkUrl: String?,
     /** Video id for tracks; browse id for albums and playlists. */
     val id: String,
+    val resultType: MusicResultType = MusicResultType.UNKNOWN,
 ) {
     enum class Kind { TRACK, ALBUM, PLAYLIST }
 }
@@ -71,6 +79,9 @@ data class MusicBrowseUiState(
     val nowPlayingArtworkUrl: String? = null,
     /** Mirrors the service's play/pause state for the home strip. */
     val isPlaying: Boolean = false,
+    val isBuffering: Boolean = false,
+    val canGoPrevious: Boolean = false,
+    val canGoNext: Boolean = false,
     /** Home shelves, filled progressively as each seed answers. */
     val shelves: List<MusicHomeShelf> = emptyList(),
     val isHomeLoading: Boolean = false,
@@ -105,6 +116,8 @@ class MusicBrowseViewModel(
     val state: StateFlow<MusicBrowseUiState> = _state.asStateFlow()
 
     private var controller: MediaController? = null
+    private var playbackJob: Job? = null
+    private var playbackRequest = 0
     private var searchJob: kotlinx.coroutines.Job? = null
 
     /**
@@ -154,13 +167,28 @@ class MusicBrowseViewModel(
                             player: androidx.media3.common.Player,
                             events: androidx.media3.common.Player.Events,
                         ) {
-                            _state.value = _state.value.copy(isPlaying = player.isPlaying)
+                            if (!_state.value.isResolving) syncPlayback(player)
                         }
                     },
                 )
+                if (!_state.value.isResolving) controller?.let { syncPlayback(it) }
                 controllerReady.complete(controller)
             },
             MoreExecutors.directExecutor(),
+        )
+    }
+
+    private fun syncPlayback(player: androidx.media3.common.Player) {
+        val metadata = player.mediaMetadata
+        _state.value = _state.value.copy(
+            nowPlayingId = player.currentMediaItem?.mediaId,
+            nowPlayingTitle = metadata.title?.toString(),
+            nowPlayingArtist = metadata.artist?.toString(),
+            nowPlayingArtworkUrl = metadata.artworkUri?.toString(),
+            isPlaying = player.isPlaying,
+            isBuffering = player.playbackState == androidx.media3.common.Player.STATE_BUFFERING,
+            canGoPrevious = player.currentMediaItem != null,
+            canGoNext = player.hasNextMediaItem(),
         )
     }
 
@@ -215,6 +243,12 @@ class MusicBrowseViewModel(
             _state.value = _state.value.copy(isHomeLoading = true, homeError = null)
 
             val loaded = mutableListOf<MusicHomeShelf>()
+            val suggestions = MusicSuggestions.suggest(source, libraryRepository.observeLibrary().first())
+            if (suggestions.isNotEmpty()) {
+                val rows = MusicCollectionItem(kind = MusicCollectionItem.Kind.TRACK, tracks = suggestions).toRows()
+                loaded += MusicHomeShelf("Recommended for you", rows)
+                _state.value = _state.value.copy(shelves = loaded.toList())
+            }
 
             for (seed in source.discoveryShelves) {
                 val items = source.search(seed.seed, SHELF_LIMIT).getOrNull().orEmpty()
@@ -250,6 +284,8 @@ class MusicBrowseViewModel(
         isLoading: Boolean,
     ): MusicBrowseUiState {
         val rows = items.flatMap { item -> item.toRows() }
+            .filter { it.id.isNotBlank() }.sortedBy { it.resultType.searchPriority }
+            .distinctBy { it.kind to it.id }
         return copy(
             results = rows,
             isLoading = isLoading,
@@ -280,49 +316,70 @@ class MusicBrowseViewModel(
      *   why a tap showed whatever was already playing — or "Nothing is playing" on a cold start.
      */
     fun play(row: MusicRow, openPlayer: Boolean = false) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isResolving = true, error = null, message = null)
-            lastRefusal = null
-            lastError = null
+        val request = ++playbackRequest
+        playbackJob?.cancel()
+        _state.value = _state.value.copy(
+            isResolving = true, error = null, message = null,
+            nowPlayingId = row.id, nowPlayingTitle = row.title,
+            nowPlayingArtist = row.artistHint(), nowPlayingArtworkUrl = row.artworkUrl,
+        )
+        playbackJob = viewModelScope.launch {
+            try {
+                lastRefusal = null
+                lastError = null
 
-            val tracks = when (row.kind) {
-                MusicRow.Kind.TRACK -> {
-                    // Start the cover lookup now, alongside the stream resolve, rather than after
-                    // it. On a slow network a stream takes several seconds; the artwork request
-                    // is then already finished and costs nothing. The artwork is attached after
-                    // the resolve so the stream starts immediately — awaiting it as an argument
-                    // would put the two requests back in sequence.
-                    val artwork = async { officialArtwork(row.title, row.artistHint()) }
-                    val playable = resolveTrack(row.id, row.title)
-                    listOfNotNull(playable?.withArtwork(artwork.await()))
+                val tracks = when (row.kind) {
+                    MusicRow.Kind.TRACK -> {
+                        // Start the cover lookup now, alongside the stream resolve, rather than after
+                        // it. On a slow network a stream takes several seconds; the artwork request
+                        // is then already finished and costs nothing. The artwork is attached after
+                        // the resolve so the stream starts immediately — awaiting it as an argument
+                        // would put the two requests back in sequence.
+                        val artwork = async { officialArtwork(row.title, row.artistHint()) }
+                        val playable = resolveTrack(row.id, row.title)
+                        listOfNotNull(playable?.withArtwork(artwork.await()))
+                    }
+                    else -> collectionTracks(row.id).mapNotNull { resolveTrack(it) }
                 }
-                else -> collectionTracks(row.id).mapNotNull { resolveTrack(it) }
-            }
 
-            if (tracks.isEmpty()) {
+                currentCoroutineContext().ensureActive()
+                if (tracks.isEmpty()) {
+                    _state.value = _state.value.copy(
+                        isResolving = false,
+                        message = StreamRefusal.describe(row.title, lastRefusal, lastError),
+                    )
+                    return@launch
+                }
+
+                currentCoroutineContext().ensureActive()
+                if (!enqueue(tracks)) {
+                    _state.value = _state.value.copy(isResolving = false)
+                    return@launch
+                }
+
+                currentCoroutineContext().ensureActive()
+                val first = tracks.first().track
                 _state.value = _state.value.copy(
                     isResolving = false,
-                    message = StreamRefusal.describe(row.title, lastRefusal, lastError),
+                    nowPlayingId = first.videoId,
+                    nowPlayingTitle = first.title,
+                    nowPlayingArtist = first.artist,
+                    nowPlayingArtworkUrl = first.artworkUrl,
+                    message = null,
                 )
-                return@launch
+
+                controller?.let { syncPlayback(it) }
+                if (openPlayer) _playerOpenRequests.tryEmit(Unit)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _state.value = _state.value.copy(message = error.message ?: "Could not play this track")
+            } finally {
+                if (request == playbackRequest) {
+                    _state.value = _state.value.copy(isResolving = false)
+                    controller?.let { syncPlayback(it) }
+                }
             }
-
-            if (!enqueue(tracks)) {
-                _state.value = _state.value.copy(isResolving = false)
-                return@launch
-            }
-
-            val first = tracks.first().track
-            _state.value = _state.value.copy(
-                isResolving = false,
-                nowPlayingId = first.videoId,
-                nowPlayingTitle = first.title,
-                nowPlayingArtist = first.artist,
-                nowPlayingArtworkUrl = first.artworkUrl,
-                message = "Playing ${first.title}",
-            )
-
-            if (openPlayer) _playerOpenRequests.tryEmit(Unit)
         }
     }
 
@@ -337,6 +394,17 @@ class MusicBrowseViewModel(
             }
             else -> player.play()
         }
+    }
+
+    fun previous() {
+        val player = controller ?: return
+        if (_state.value.isResolving) return
+        if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0L)
+    }
+
+    fun next() {
+        val player = controller ?: return
+        if (!_state.value.isResolving && player.hasNextMediaItem()) player.seekToNextMediaItem()
     }
 
     /**
@@ -478,6 +546,7 @@ class MusicBrowseViewModel(
         sessionController.setMediaItems(items, /* startIndex = */ 0, /* startPositionMs = */ 0L)
         sessionController.prepare()
         sessionController.play()
+        homeRequested = false
 
         // Persist the first track so the library grid shows it and progress is restorable.
         runCatching {
@@ -597,6 +666,7 @@ internal fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
                     .takeIf { it.isNotBlank() },
                 artworkUrl = track.artworkUrl,
                 id = track.videoId,
+                resultType = track.resultType,
             ),
         )
     }

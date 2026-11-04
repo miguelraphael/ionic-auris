@@ -26,7 +26,11 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -79,6 +83,8 @@ fun MusicHomeScreen(
     modifier: Modifier = Modifier,
     onOpenPlayer: () -> Unit = {},
     onTogglePlayPause: () -> Unit = {},
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
     /** A failed home load is retryable; the ViewModel otherwise fetches it only once. */
     onRetryHome: () -> Unit = {},
 ) {
@@ -207,8 +213,13 @@ fun MusicHomeScreen(
                     artist = state.nowPlayingArtist,
                     artworkUrl = state.nowPlayingArtworkUrl,
                     isPlaying = state.isPlaying,
-                    onClick = onOpenPlayer,
+                    isLoading = state.isResolving || state.isBuffering,
+                    onClick = { if (!state.isResolving) onOpenPlayer() },
                     onTogglePlayPause = onTogglePlayPause,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
+                    canGoPrevious = !state.isResolving && state.canGoPrevious,
+                    canGoNext = !state.isResolving && state.canGoNext,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 16.dp, vertical = 104.dp),
@@ -350,17 +361,22 @@ private fun MusicCard(
  * no-op until the next screen was opened.
  */
 @Composable
-private fun NowPlayingStrip(
+internal fun NowPlayingStrip(
     title: String,
     artist: String?,
     artworkUrl: String?,
     isPlaying: Boolean,
+    isLoading: Boolean = false,
     onClick: () -> Unit,
     onTogglePlayPause: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    canGoPrevious: Boolean,
+    canGoNext: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(AurisRadii.artworkSmall),
+        shape = RoundedCornerShape(AurisRadii.artwork),
         // Opaque rather than the glass surface: the strip floats over shelf cards, and a
         // translucent panel let their titles bleed through it.
         color = AurisBackground,
@@ -369,7 +385,7 @@ private fun NowPlayingStrip(
             .border(
                 width = 1.dp,
                 color = AurisOnSurfaceVariant.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(AurisRadii.artworkSmall),
+                shape = RoundedCornerShape(AurisRadii.artwork),
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -385,11 +401,11 @@ private fun NowPlayingStrip(
                 imageUrl = artworkUrl,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(40.dp)
                     .background(AurisTrack, ArtworkShapeSmall),
                 shape = ArtworkShapeSmall,
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -408,23 +424,34 @@ private fun NowPlayingStrip(
                     )
                 }
             }
+            IconButton(onClick = onPrevious, enabled = canGoPrevious) {
+                Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous track",
+                    tint = if (canGoPrevious) AurisOnSurface else AurisOnSurfaceVariant.copy(alpha = 0.4f))
+            }
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
+                        enabled = !isLoading,
                         onClick = onTogglePlayPause,
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
+                if (isLoading) {
+                    CircularProgressIndicator(Modifier.size(24.dp), color = AurisAccent, strokeWidth = 2.dp)
+                } else Icon(
                     if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = AurisOnSurface,
                     modifier = Modifier.size(26.dp),
                 )
+            }
+            IconButton(onClick = onNext, enabled = canGoNext) {
+                Icon(Icons.Filled.SkipNext, contentDescription = "Next track",
+                    tint = if (canGoNext) AurisOnSurface else AurisOnSurfaceVariant.copy(alpha = 0.4f))
             }
         }
     }

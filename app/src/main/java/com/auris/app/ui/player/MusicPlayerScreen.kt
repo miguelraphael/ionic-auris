@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
@@ -46,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.auris.app.data.remote.music.nowPlayingArtworkUrl
 import com.auris.app.ui.components.AurisSlider
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.components.PlayerGhostIcon
@@ -65,7 +68,7 @@ import com.auris.app.ui.theme.rememberArtworkPaletteValue
  * | Element | Measured (px) | Here |
  * |---|---|---|
  * | Album art | 972x972 at x 54..1025, y 161..1132 | 370dp square, 20.5dp side inset, `aspectRatio(1f)` |
- * | Art corner radius | ~80 | 32dp (`ArtworkShapeLarge`) |
+ * | Art corner radius | ~80 | 24dp (`ArtworkShapeLarge`) |
  * | Art → seek bar | 76 | 29dp |
  * | Seek track | 21 tall, x 81..998 | 8dp, 31dp horizontal inset |
  * | Timestamps | baseline ~1080 | row under the seek bar |
@@ -144,7 +147,8 @@ fun MusicPlayerScreen(
 
             // ---- Album art ------------------------------------------------------
             MediaArtwork(
-                imageUrl = state.artworkUrl,
+                imageUrl = nowPlayingArtworkUrl(state.artworkUrl),
+                fallbackImageUrl = state.artworkUrl,
                 contentDescription = state.album.ifBlank { state.title },
                 shape = ArtworkShapeLarge,
                 modifier = Modifier
@@ -241,11 +245,12 @@ fun MusicPlayerScreen(
                 PlayerGhostIcon(
                     onClick = onOpenSleepTimer,
                     icon = Icons.Filled.Bedtime,
-                    contentDescription = "Sleep timer",
+                    contentDescription = if (state.sleepRemainingMs > 0) "Sleep timer: ${state.sleepRemainingMs.toTimestamp()} remaining" else "Sleep timer",
+                    tint = if (state.sleepRemainingMs > 0) AurisAccent else AurisOnSurfaceVariant,
                 )
                 PlayerGhostIcon(
                     onClick = onCycleRepeat,
-                    icon = Icons.Filled.Repeat,
+                    icon = if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
                     contentDescription = when (state.repeatMode) {
                         RepeatMode.OFF -> "Repeat off"
                         RepeatMode.ALL -> "Repeat all"
@@ -259,8 +264,12 @@ fun MusicPlayerScreen(
                 )
                 PlayerGhostIcon(
                     onClick = onToggleShuffle,
-                    icon = Icons.Filled.Shuffle,
-                    contentDescription = "Shuffle",
+                    icon = if (state.smartShuffleEnabled) Icons.Filled.AutoAwesome else Icons.Filled.Shuffle,
+                    contentDescription = when {
+                        state.smartShuffleEnabled -> "Smart shuffle on"
+                        state.shuffleEnabled -> "Shuffle on"
+                        else -> "Shuffle off"
+                    },
                     tint = if (state.shuffleEnabled) AurisAccent else AurisOnSurfaceVariant,
                 )
                 PlayerGhostIcon(

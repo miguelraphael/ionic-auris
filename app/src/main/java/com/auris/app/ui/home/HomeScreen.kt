@@ -3,9 +3,7 @@ package com.auris.app.ui.home
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -26,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -72,151 +71,159 @@ fun HomeScreen(
 ) {
     // The library arrives ordered `last_activity_at DESC`, so taking the head of each filter
     // keeps the shelf order meaningful without sorting it again here.
-    val inProgress = library.filter { it.progress > 0f && !isComplete(it) }
-    val allAnime = library.filter { it.mediaType == MediaType.ANIME }
-    val allManga = library.filter { it.mediaType == MediaType.MANGA }
-    val allMusic = library.filter { it.mediaType == MediaType.MUSIC }
+    val inProgress = remember(library) { library.filter { it.progress > 0f && !isComplete(it) } }
+    val allAnime = remember(library) { library.filter { it.mediaType == MediaType.ANIME } }
+    val allManga = remember(library) { library.filter { it.mediaType == MediaType.MANGA } }
+    val allMusic = remember(library) { library.filter { it.mediaType == MediaType.MUSIC } }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            // One vertical scroll for the whole dashboard: the shelves are horizontal
-            // carousels, so nested scrolling stays on axis.
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            // Bottom padding clears the floating nav pill.
-            .padding(bottom = 110.dp),
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        // Bottom padding clears the floating nav pill.
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 110.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 56.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "Auris",
-                    style = MaterialTheme.typography.displayLarge,
-                    color = AurisOnSurface,
-                )
-                Text(
-                    text = "Anime, manga and music in one place",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = AurisOnSurfaceVariant,
+        item(key = "header", contentType = "header") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 56.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Auris",
+                        style = MaterialTheme.typography.displayLarge,
+                        color = AurisOnSurface,
+                    )
+                    Text(
+                        text = "Anime, manga and music in one place",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AurisOnSurfaceVariant,
+                    )
+                }
+
+                /**
+                 * The only way into Settings.
+                 *
+                 * Home had no header action, so Settings — and the extension manager inside it,
+                 * which is how anime sources get installed — was reachable from no top-level
+                 * destination. Settings opened Extensions and Extensions opened Settings, and
+                 * neither could be entered. Caught only by running the app on real hardware.
+                 */
+                HomeHeaderIconButton(
+                    icon = Icons.Filled.Settings,
+                    contentDescription = "Settings",
+                    onClick = onOpenSettings,
                 )
             }
-
-            /**
-             * The only way into Settings.
-             *
-             * Home had no header action, so Settings — and the extension manager inside it,
-             * which is how anime sources get installed — was reachable from no top-level
-             * destination. Settings opened Extensions and Extensions opened Settings, and
-             * neither could be entered. Caught only by running the app on real hardware.
-             */
-            HomeHeaderIconButton(
-                icon = Icons.Filled.Settings,
-                contentDescription = "Settings",
-                onClick = onOpenSettings,
-            )
         }
 
         if (isLoading && library.isEmpty()) {
             // A skeleton, not a spinner: the dashboard has a known shape, and showing that
             // shape before the data lands avoids the empty-then-pop reflow a spinner causes.
-            SkeletonShelf()
-            SkeletonShelf()
-            return
+            items(2, key = { "loading-$it" }, contentType = { "loading" }) {
+                SkeletonShelf()
+            }
+            return@LazyColumn
         }
 
         if (library.isEmpty()) {
-            StateEmpty(
-                title = "Your library is empty",
-                description = "Browse anime or manga, or search for music. Everything you open " +
-                    "or save lands here, ready to resume.",
-                actionLabel = "Browse anime",
-                onAction = { onSeeAll(MediaType.ANIME) },
-            )
-            return
+            item(key = "empty", contentType = "empty") {
+                StateEmpty(
+                    title = "Your library is empty",
+                    description = "Browse anime or manga, or search for music. Everything you open " +
+                        "or save lands here, ready to resume.",
+                    actionLabel = "Browse anime",
+                    onAction = { onSeeAll(MediaType.ANIME) },
+                )
+            }
+            return@LazyColumn
         }
 
         // ---- Continue shelf: the cross-pillar "resume" row --------------------
         if (inProgress.isNotEmpty()) {
-            Shelf(title = "Continue") {
-                items(inProgress.take(SHELF_LIMIT), key = { it.id }) { entry ->
-                    ContinueCard(
-                        entry = entry,
-                        onClick = { onEntryClick(entry) },
-                    )
+            item(key = "continue", contentType = "shelf") {
+                Shelf(title = "Continue") {
+                    items(inProgress.take(SHELF_LIMIT), key = { it.id }) { entry ->
+                        ContinueCard(
+                            entry = entry,
+                            onClick = { onEntryClick(entry) },
+                        )
+                    }
                 }
             }
         }
 
         // ---- Per-pillar shelves ----------------------------------------------
         if (allMusic.isNotEmpty()) {
-            Shelf(
-                title = "Music",
-                onSeeAll = if (allMusic.size > SHELF_LIMIT) {
-                    { onSeeAll(MediaType.MUSIC) }
-                } else {
-                    null
-                },
-            ) {
-                items(allMusic.take(SHELF_LIMIT), key = { it.id }) { entry ->
-                    MediaGridCard(
-                        imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
-                        title = entry.title,
-                        subtitle = entry.author,
-                        progress = entry.progress.takeIf { it > 0f },
-                        // Width only: the card sizes to its content, so the 2-line title is never
-                        // squeezed out by a fixed height.
-                        modifier = Modifier.width(150.dp),
-                        onClick = { onEntryClick(entry) },
-                    )
+            item(key = "music", contentType = "shelf") {
+                Shelf(
+                    title = "Music",
+                    onSeeAll = if (allMusic.size > SHELF_LIMIT) {
+                        { onSeeAll(MediaType.MUSIC) }
+                    } else {
+                        null
+                    },
+                ) {
+                    items(allMusic.take(SHELF_LIMIT), key = { it.id }) { entry ->
+                        MediaGridCard(
+                            imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
+                            title = entry.title,
+                            subtitle = entry.author,
+                            progress = entry.progress.takeIf { it > 0f },
+                            // Width only: the card sizes to its content, so the 2-line title is never
+                            // squeezed out by a fixed height.
+                            modifier = Modifier.width(150.dp),
+                            onClick = { onEntryClick(entry) },
+                        )
+                    }
                 }
             }
         }
 
         if (allAnime.isNotEmpty()) {
-            Shelf(
-                title = "Anime",
-                onSeeAll = if (allAnime.size > SHELF_LIMIT) {
-                    { onSeeAll(MediaType.ANIME) }
-                } else {
-                    null
-                },
-            ) {
-                items(allAnime.take(SHELF_LIMIT), key = { it.id }) { entry ->
-                    MediaGridCard(
-                        imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
-                        title = entry.title,
-                        subtitle = entry.currentUnitTitle ?: entry.subtitle,
-                        progress = entry.progress.takeIf { it > 0f },
-                        modifier = Modifier.width(120.dp),
-                        onClick = { onEntryClick(entry) },
-                    )
+            item(key = "anime", contentType = "shelf") {
+                Shelf(
+                    title = "Anime",
+                    onSeeAll = if (allAnime.size > SHELF_LIMIT) {
+                        { onSeeAll(MediaType.ANIME) }
+                    } else {
+                        null
+                    },
+                ) {
+                    items(allAnime.take(SHELF_LIMIT), key = { it.id }) { entry ->
+                        MediaGridCard(
+                            imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
+                            title = entry.title,
+                            subtitle = entry.currentUnitTitle ?: entry.subtitle,
+                            progress = entry.progress.takeIf { it > 0f },
+                            modifier = Modifier.width(120.dp),
+                            onClick = { onEntryClick(entry) },
+                        )
+                    }
                 }
             }
         }
 
         if (allManga.isNotEmpty()) {
-            Shelf(
-                title = "Manga",
-                onSeeAll = if (allManga.size > SHELF_LIMIT) {
-                    { onSeeAll(MediaType.MANGA) }
-                } else {
-                    null
-                },
-            ) {
-                items(allManga.take(SHELF_LIMIT), key = { it.id }) { entry ->
-                    MediaGridCard(
-                        imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
-                        title = entry.title,
-                        subtitle = entry.currentUnitTitle ?: entry.subtitle,
-                        progress = entry.progress.takeIf { it > 0f },
-                        modifier = Modifier.width(120.dp),
-                        onClick = { onEntryClick(entry) },
-                    )
+            item(key = "manga", contentType = "shelf") {
+                Shelf(
+                    title = "Manga",
+                    onSeeAll = if (allManga.size > SHELF_LIMIT) {
+                        { onSeeAll(MediaType.MANGA) }
+                    } else {
+                        null
+                    },
+                ) {
+                    items(allManga.take(SHELF_LIMIT), key = { it.id }) { entry ->
+                        MediaGridCard(
+                            imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
+                            title = entry.title,
+                            subtitle = entry.currentUnitTitle ?: entry.subtitle,
+                            progress = entry.progress.takeIf { it > 0f },
+                            modifier = Modifier.width(120.dp),
+                            onClick = { onEntryClick(entry) },
+                        )
+                    }
                 }
             }
         }

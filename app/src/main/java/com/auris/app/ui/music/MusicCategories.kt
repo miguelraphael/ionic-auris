@@ -29,12 +29,12 @@ data class MusicCategory(
 val MUSIC_CATEGORIES: List<MusicCategory> = listOf(
     MusicCategory(
         title = "Live Music",
-        query = "live music",
+        query = "live music Philippines",
         colors = listOf(Color(0xFFE8305A), Color(0xFF6E1030)),
     ),
     MusicCategory(
         title = "Pop",
-        query = "pop hits",
+        query = "pop hits Philippines",
         colors = listOf(Color(0xFFFF5E8A), Color(0xFFB01E86)),
     ),
     MusicCategory(
@@ -74,7 +74,7 @@ val MUSIC_CATEGORIES: List<MusicCategory> = listOf(
     ),
     MusicCategory(
         title = "Charts",
-        query = "top hits",
+        query = "top hits Philippines",
         colors = listOf(Color(0xFFFFD54F), Color(0xFFB36A00)),
     ),
 )

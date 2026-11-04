@@ -23,6 +23,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +47,7 @@ import com.auris.app.ui.theme.ArtworkShapeSmall
 
 /**
  * Rounded artwork surface shared by grid thumbnails, posters, covers and the player's
- * album art. The single 28dp radius from [AurisRadii.artwork] is applied everywhere so
+ * album art. The shared 24dp radius from [AurisRadii.artwork] is applied everywhere so
  * the app reads as one system.
  */
 @Composable
@@ -58,7 +60,9 @@ fun MediaArtwork(
     /** Dark scrim over the artwork so a progress overlay or title stays readable. */
     scrim: Float = 0f,
     placeholderIcon: (@Composable () -> Unit)? = null,
+    fallbackImageUrl: String? = null,
 ) {
+    var displayedImageUrl by remember(imageUrl, fallbackImageUrl) { mutableStateOf(imageUrl) }
     val progress by animateFloatAsState(
         targetValue = scrim.coerceIn(0f, 1f),
         animationSpec = tween(300),
@@ -80,9 +84,14 @@ fun MediaArtwork(
                 },
             ),
     ) {
-        if (!imageUrl.isNullOrBlank()) {
+        if (!displayedImageUrl.isNullOrBlank()) {
             AsyncImage(
-                model = imageUrl,
+                model = displayedImageUrl,
+                onError = {
+                    if (!fallbackImageUrl.isNullOrBlank() && displayedImageUrl != fallbackImageUrl) {
+                        displayedImageUrl = fallbackImageUrl
+                    }
+                },
                 contentDescription = contentDescription,
                 contentScale = contentScale,
                 modifier = Modifier
@@ -92,7 +101,7 @@ fun MediaArtwork(
                     // the player's square art showed thick bars top and bottom. Zooming by
                     // 4/3 removes exactly the bands; every other variant is untouched.
                     .then(
-                        if (imageUrl.contains("hqdefault")) {
+                        if (displayedImageUrl?.contains("hqdefault") == true) {
                             Modifier.graphicsLayer {
                                 scaleX = HQ_DEFAULT_CONTENT_RATIO
                                 scaleY = HQ_DEFAULT_CONTENT_RATIO

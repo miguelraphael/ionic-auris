@@ -53,40 +53,8 @@ class InnerTubeParser {
 
         val found = mutableListOf<MusicCollectionItem>()
 
-        // A renderer with no video id cannot be played, so it is dropped rather than surfaced as
-        // an empty row — the caller would have nothing to put in `sourceId`.
-        this["musicItemRenderer"]?.asObject()?.let { found += parseTrack(it) }
-        this["musicResponsiveListItemRenderer"]?.asObject()?.let { found += parseTrack(it) }
-        this["musicTwoRowItemRenderer"]?.asObject()?.let { renderer ->
-            renderer.firstTitle()?.let { title ->
-                found += MusicCollectionItem(
-                    kind = MusicCollectionItem.Kind.ALBUM,
-                    album = MusicAlbum(
-                        browseId = renderer.browseId() ?: "",
-                        title = title,
-                        artist = renderer.secondTitle(),
-                        artworkUrl = renderer.thumbnailUrl(THUMB_LARGE),
-                        year = null,
-                        trackCount = null,
-                    ),
-                )
-            }
-        }
-        this["musicShelfRenderer"]?.asObject()?.let { shelf ->
-            val shelfTitle = shelf.firstTitle()
-            if (shelfTitle != null) {
-                found += MusicCollectionItem(
-                    kind = MusicCollectionItem.Kind.PLAYLIST,
-                    playlist = MusicPlaylist(
-                        browseId = shelf.browseId() ?: "",
-                        title = shelfTitle,
-                        subtitle = shelf.firstSubtitle(),
-                        artworkUrl = shelf.thumbnailUrl(THUMB_LARGE),
-                        trackCount = null,
-                    ),
-                )
-            }
-        }
+        listOf("musicItemRenderer", "musicResponsiveListItemRenderer", "musicTwoRowItemRenderer", "musicCardShelfRenderer")
+            .forEach { key -> this[key]?.asObject()?.let { found += parseMusicItem(it) } }
 
         // Recurse into every object/array child.
         values.forEach { value ->
@@ -100,6 +68,40 @@ class InnerTubeParser {
         }
 
         return found.filter { it.kind != MusicCollectionItem.Kind.UNKNOWN }
+    }
+
+    /** Only an item's own endpoint identifies its kind; subtitle links often point at artists/albums. */
+    private fun JsonObject.itemEndpoint(): JsonObject? = (this["navigationEndpoint"] as? JsonObject)
+        ?: runs("title").firstNotNullOfOrNull { it["navigationEndpoint"] as? JsonObject }
+        ?: (this["flexColumns"] as? JsonArray)?.firstOrNull()?.asObject()
+            ?.get("musicResponsiveListItemFlexColumnRenderer")?.asObject()
+            ?.get("text")?.asObject()?.ownRuns()
+            ?.firstNotNullOfOrNull { it["navigationEndpoint"] as? JsonObject }
+
+    private fun parseMusicItem(renderer: JsonObject): MusicCollectionItem {
+        if (renderer.firstVideoId() != null) return parseTrack(renderer)
+        val endpoint = renderer.itemEndpoint()?.get("browseEndpoint") as? JsonObject
+        val id = endpoint?.string("browseId") ?: renderer.string("browseId")
+            ?: return MusicCollectionItem(MusicCollectionItem.Kind.UNKNOWN)
+        val title = renderer.firstTitle() ?: renderer.flexColumnText(0)?.joinToString("")
+            ?: return MusicCollectionItem(MusicCollectionItem.Kind.UNKNOWN)
+        val subtitle = renderer.firstSubtitle() ?: renderer.flexColumnText(1)?.joinToString("")
+            ?: renderer.secondTitle()
+        val metadata = subtitle?.split("•")?.map { it.trim() }
+            ?.filterIndexed { index, part -> part.isNotBlank() && !part.isNonMetadata(index) }.orEmpty()
+        val pageType = endpoint?.get("browseEndpointContextSupportedConfigs")?.asObject()
+            ?.get("browseEndpointContextMusicConfig")?.asObject()?.string("pageType")
+        return when {
+            pageType == "MUSIC_PAGE_TYPE_PLAYLIST" || id.startsWith("VL") -> MusicCollectionItem(
+                kind = MusicCollectionItem.Kind.PLAYLIST,
+                playlist = MusicPlaylist(id, title, metadata.joinToString(" · ").takeIf { it.isNotBlank() }, renderer.thumbnailUrl(THUMB_LARGE), null),
+            )
+            pageType == "MUSIC_PAGE_TYPE_ALBUM" || id.startsWith("MPRE") -> MusicCollectionItem(
+                kind = MusicCollectionItem.Kind.ALBUM,
+                album = MusicAlbum(id, title, metadata.firstOrNull(), renderer.thumbnailUrl(THUMB_LARGE), subtitle?.extractYear(), null),
+            )
+            else -> MusicCollectionItem(MusicCollectionItem.Kind.UNKNOWN)
+        }
     }
 
     // ---- Track --------------------------------------------------------------
@@ -136,6 +138,7 @@ class InnerTubeParser {
         val subtitle = renderer.flexText("subtitle")
             ?: renderer.flexColumnText(1)?.joinToString("") { it }
                 ?.takeIf { it.isNotBlank() }
+            ?: renderer.firstSubtitle()
             ?: renderer.fixedText(1)
 
         // Classify the subtitle's segments: a duration and a media-type token ("Song") are not
@@ -160,7 +163,7 @@ class InnerTubeParser {
             tracks = listOf(
                 MusicTrack(
                     videoId = videoId,
-                    title = (labelledTitle ?: positionalTitle) ?: videoId,
+                    title = (labelledTitle ?: positionalTitle ?: renderer.firstTitle()) ?: videoId,
                     artist = labelledArtist ?: metadata.getOrNull(0),
                     album = labelledAlbum ?: metadata.getOrNull(1),
                     durationMs = duration,
@@ -170,6 +173,16 @@ class InnerTubeParser {
                         ?: youtubeThumbnailUrl(videoId, large = true),
                     playlistId = renderer.firstPlaylistId(),
                     trackIndex = null,
+                    resultType = when (renderer.itemEndpoint()?.get("watchEndpoint")?.asObject()
+                        ?.get("watchEndpointMusicSupportedConfigs")?.asObject()
+                        ?.get("watchEndpointMusicConfig")?.asObject()?.string("musicVideoType")) {
+                        "MUSIC_VIDEO_TYPE_ATV" -> MusicResultType.SONG
+                        "MUSIC_VIDEO_TYPE_OMV" -> MusicResultType.OFFICIAL_VIDEO
+                        "MUSIC_VIDEO_TYPE_UGC" -> MusicResultType.USER_VIDEO
+                        else -> if (segments.firstOrNull().equals("Song", ignoreCase = true)) {
+                            MusicResultType.SONG
+                        } else MusicResultType.UNKNOWN
+                    },
                 ),
             ),
         )
@@ -418,19 +431,12 @@ class InnerTubeParser {
         runs("subtitle").joinToString(" ") { it.string("text").orEmpty() }.takeIf { it.isNotBlank() }
 
     private fun JsonObject.firstVideoId(): String? =
-        string("videoId")
-            ?: ((this["navigationEndpoint"] as? JsonObject)
-                ?.get("watchEndpoint") as? JsonObject)?.string("videoId")
+        string("videoId") ?: itemEndpoint()?.get("watchEndpoint")?.asObject()?.string("videoId")
 
     private fun JsonObject.firstPlaylistId(): String? =
         ((this["navigationEndpoint"] as? JsonObject)
             ?.get("watchEndpoint") as? JsonObject)
             ?.get("playlistId")?.jsonPrimitive?.contentOrNull
-
-    private fun JsonObject.browseId(): String? =
-        string("browseId")
-            ?: ((this["navigationEndpoint"] as? JsonObject)
-                ?.get("browseEndpoint") as? JsonObject)?.string("browseId")
 
     /**
      * A thumbnail URL at [preferredWidth].
@@ -439,8 +445,12 @@ class InnerTubeParser {
      * player's 512dp artwork is worse than a slightly small large.
      */
     private fun JsonObject.thumbnailUrl(preferredWidth: Int): String? {
-        val thumbnails = (this["thumbnail"] as? JsonObject)
-            ?.get("thumbnails") as? JsonArray ?: return null
+        val thumbnails = (this["thumbnail"] as? JsonObject)?.let { thumbnail ->
+            thumbnail["thumbnails"] as? JsonArray
+                ?: thumbnail["musicThumbnailRenderer"]?.asObject()?.get("thumbnail")?.asObject()
+                    ?.get("thumbnails") as? JsonArray
+        } ?: this["thumbnailRenderer"]?.asObject()?.get("musicThumbnailRenderer")?.asObject()
+            ?.get("thumbnail")?.asObject()?.get("thumbnails") as? JsonArray ?: return null
 
         val candidates = thumbnails.mapNotNull { it as? JsonObject }
             .mapNotNull { thumb ->

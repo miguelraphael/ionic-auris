@@ -14,6 +14,10 @@ import kotlinx.serialization.json.JsonElement
  * UI and the tests.
  */
 
+enum class MusicResultType(val searchPriority: Int) {
+    SONG(0), OFFICIAL_VIDEO(1), UNKNOWN(2), USER_VIDEO(3),
+}
+
 /** A playable track. */
 data class MusicTrack(
     /** YouTube video id. Stable, and what InnerTube calls `videoId`. */
@@ -29,6 +33,8 @@ data class MusicTrack(
     val playlistId: String?,
     /** Index within its album/playlist, 0-based. Null when not supplied. */
     val trackIndex: Int?,
+    /** Catalogue provenance, used to rank releases ahead of video uploads in search. */
+    val resultType: MusicResultType = MusicResultType.UNKNOWN,
 ) {
     /**
      * `videoId` as a Room `sourceId`.
@@ -164,7 +170,9 @@ data class InnerTubeClientIdentity(
     /** Android-only; required by the ANDROID client and harmless elsewhere. */
     @SerialName("androidSdkVersion") val androidSdkVersion: Int? = null,
     @SerialName("hl") val language: String = "en",
-    @SerialName("gl") val country: String = "US",
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault
+    @SerialName("gl") val country: String = "PH",
 )
 
 @Serializable

@@ -21,6 +21,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.auris.app.music.customSleepDurationMs
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -77,6 +83,8 @@ fun MusicPlayerRoute(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val queue by viewModel.queue.collectAsStateWithLifecycle()
 
+    var showCustomTimer by rememberSaveable { mutableStateOf(false) }
+    var showSleepTimer by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -101,7 +109,7 @@ fun MusicPlayerRoute(
             onNext = viewModel::next,
             onPrevious = viewModel::previous,
             onOpenQueue = { showQueue = true },
-            onOpenSleepTimer = { viewModel.unavailable("Sleep timer") },
+            onOpenSleepTimer = { showSleepTimer = true },
         )
 
         SnackbarHost(
@@ -109,6 +117,32 @@ fun MusicPlayerRoute(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 90.dp),
+        )
+    }
+
+    if (showSleepTimer) {
+        ModalBottomSheet(onDismissRequest = { showSleepTimer = false }, containerColor = AurisBackground) {
+            Text("Sleep timer", style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 20.dp))
+            if (state.sleepRemainingMs > 0) {
+                Text("Pausing in ${state.sleepRemainingMs.toTimestamp()}", modifier = Modifier.padding(20.dp))
+            }
+            listOf(15, 30, 45, 60).forEach { minutes ->
+                TextButton(onClick = { viewModel.setSleepTimer(minutes); showSleepTimer = false },
+                    modifier = Modifier.fillMaxWidth()) { Text("$minutes minutes") }
+            }
+            TextButton(onClick = { showSleepTimer = false; showCustomTimer = true },
+                modifier = Modifier.fillMaxWidth()) { Text("Custom timer") }
+            TextButton(onClick = { viewModel.setSleepTimer(0); showSleepTimer = false },
+                modifier = Modifier.fillMaxWidth()) { Text("Turn off timer") }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (showCustomTimer) {
+        CustomSleepTimerDialog(
+            onDismiss = { showCustomTimer = false },
+            onStart = { duration -> viewModel.setSleepTimerDuration(duration); showCustomTimer = false },
         )
     }
 
@@ -130,6 +164,48 @@ fun MusicPlayerRoute(
             )
         }
     }
+}
+
+@Composable
+private fun CustomSleepTimerDialog(onDismiss: () -> Unit, onStart: (Long) -> Unit) {
+    var hours by rememberSaveable { mutableStateOf("") }
+    var minutes by rememberSaveable { mutableStateOf("") }
+    var seconds by rememberSaveable { mutableStateOf("") }
+    val duration = customSleepDurationMs(hours, minutes, seconds)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom sleep timer") },
+        text = {
+            Column {
+                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    listOf(Triple("Hours", hours, 23), Triple("Minutes", minutes, 59), Triple("Seconds", seconds, 59))
+                        .forEachIndexed { index, (label, value, max) ->
+                            val invalid = value.isNotEmpty() && (value.toIntOrNull() ?: -1) !in 0..max
+                            OutlinedTextField(
+                                value = value,
+                                onValueChange = { input ->
+                                    if (input.length <= 2 && input.all(Char::isDigit)) when (index) {
+                                        0 -> hours = input
+                                        1 -> minutes = input
+                                        else -> seconds = input
+                                    }
+                                },
+                                label = { Text(label) },
+                                placeholder = { Text("0") },
+                                isError = invalid,
+                                supportingText = if (invalid) ({ Text("0–$max") }) else null,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                }
+                if (duration == null) Text("Enter a duration greater than zero.")
+            }
+        },
+        confirmButton = { TextButton(onClick = { duration?.let(onStart) }, enabled = duration != null) { Text("Start timer") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**
@@ -215,7 +291,11 @@ private fun QueueSheet(
 
         Text(
             text = buildString {
-                append(if (state.shuffleEnabled) "Shuffle on" else "Shuffle off")
+                append(when {
+                    state.smartShuffleEnabled -> "Smart shuffle on"
+                    state.shuffleEnabled -> "Shuffle on"
+                    else -> "Shuffle off"
+                })
                 append(" · ")
                 append(
                     when (state.repeatMode) {

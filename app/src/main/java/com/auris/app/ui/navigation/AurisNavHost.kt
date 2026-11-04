@@ -257,6 +257,8 @@ fun AurisNavHost(
                 onOpenSearch = { navController.navigate(Routes.MUSIC_BROWSE) },
                 onOpenPlayer = { navController.navigate(Routes.PLAYER) },
                 onTogglePlayPause = music::togglePlayPause,
+                onPrevious = music::previous,
+                onNext = music::next,
                 onRetryHome = music::retryHome,
             )
         }
@@ -416,6 +418,9 @@ fun AurisNavHost(
                 state = musicState,
                 onQueryChange = music::search,
                 onPlay = music::play,
+                onTogglePlayPause = music::togglePlayPause,
+                onPrevious = music::previous,
+                onNext = music::next,
                 onSave = music::saveToLibrary,
                 onOpenPlayer = { navController.navigate(Routes.PLAYER) },
             )
