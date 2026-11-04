@@ -29,11 +29,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      # ubuntu-latest already ships the Android SDK with platform 35 and
+      # build-tools 35.0.0, and exports ANDROID_HOME. The setup-android action
+      # is unnecessary (and failed here), so only install the packages if a
+      # future image drops them.
+      - name: Ensure Android SDK 35
+        run: |
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+          fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
