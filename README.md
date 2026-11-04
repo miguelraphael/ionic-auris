@@ -1,5 +1,7 @@
 # Auris
 
+[![Android CI](https://github.com/miguelraphael/ionic-auris/actions/workflows/android.yml/badge.svg?branch=main)](https://github.com/miguelraphael/ionic-auris/actions/workflows/android.yml)
+
 All-in-one anime streaming, manga reading and music listening for Android. Native Kotlin +
 Jetpack Compose, local-first: **Room is the only thing the UI ever reads from.**
 
