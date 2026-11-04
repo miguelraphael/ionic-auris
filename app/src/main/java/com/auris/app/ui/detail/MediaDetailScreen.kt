@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +50,10 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.auris.app.core.model.MediaType
 import com.auris.app.source.SourceUnit
+import com.auris.app.ui.components.SkeletonUnitRows
+import com.auris.app.ui.components.SlowNetworkHint
+import com.auris.app.ui.components.StateEmpty
+import com.auris.app.ui.components.StateError
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.ArtworkPalette
 import com.auris.app.ui.theme.AurisAccent
@@ -158,7 +161,12 @@ fun MediaDetailScreen(
             }
 
             if (state.isUnitsLoading && state.units.isEmpty()) {
-                item(key = "units-loading") { LoadingBlock(if (state.isManga()) "Loading chapters…" else "Loading episodes…") }
+                item(key = "units-loading") {
+                    Column(Modifier.padding(horizontal = 20.dp)) {
+                        SkeletonUnitRows(count = 4)
+                        SlowNetworkHint(isLoading = true)
+                    }
+                }
             }
 
             state.message?.let { message ->
@@ -571,27 +579,12 @@ private fun formatTimestamp(epochMillis: Long): String {
 // ---- States -----------------------------------------------------------------
 
 @Composable
-private fun LoadingBlock(label: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = AurisOnSurfaceVariant)
-    }
-}
-
-@Composable
 private fun EmptyBlock(label: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = AurisOnSurfaceVariant)
-    }
+    StateEmpty(
+        title = label,
+        description = "This source returned no readable units for this title. Try another " +
+            "source, or refresh later.",
+    )
 }
 
 /** A non-fatal notice: the title loaded fine, one thing about it did not. */
@@ -615,49 +608,12 @@ private fun TransientNotice(message: String) {
 
 @Composable
 private fun DetailError(message: String, onRetry: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(AurisRadii.artworkSmall),
-        color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Filled.Close,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = AurisOnSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(10.dp))
-            Surface(
-                shape = RoundedCornerShape(AurisRadii.button),
-                color = AurisAccent,
-                modifier = Modifier.clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                    onClick = onRetry,
-                ),
-            ) {
-                Text(
-                    text = "Retry",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = AurisBackground,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                )
-            }
-        }
-    }
+    StateError(
+        title = "Could not load the episode list",
+        description = message,
+        onRetry = onRetry,
+        modifier = Modifier.padding(horizontal = 4.dp),
+    )
 }
 
 // ---- Helpers ----------------------------------------------------------------

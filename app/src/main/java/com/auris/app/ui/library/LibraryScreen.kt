@@ -47,6 +47,9 @@ import androidx.compose.ui.unit.dp
 import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.components.MediaGridCard
+import com.auris.app.ui.components.SkeletonPosterGrid
+import com.auris.app.ui.components.StateEmpty
+import com.auris.app.ui.components.StateNoResults
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackground
@@ -80,6 +83,8 @@ fun LibraryScreen(
     onEntryClick: (LibraryEntryEntity) -> Unit,
     onDelete: (List<LibraryEntryEntity>) -> Unit,
     modifier: Modifier = Modifier,
+    /** The first Room emission has not arrived yet, as opposed to a genuinely empty library. */
+    isLoading: Boolean = false,
     contentPadding: PaddingValues = PaddingValues(
         start = 20.dp,
         end = 20.dp,
@@ -158,7 +163,11 @@ fun LibraryScreen(
                         color = AurisOnSurface,
                     )
                     Text(
-                        text = countLabel(total = entries.size, shown = visible.size),
+                        text = if (isLoading && entries.isEmpty()) {
+                            "Loading your library\u2026"
+                        } else {
+                            countLabel(total = entries.size, shown = visible.size)
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = AurisOnSurfaceVariant,
                     )
@@ -218,16 +227,37 @@ fun LibraryScreen(
 
             if (visible.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
-                    Text(
-                        text = if (entries.isEmpty()) {
-                            "Nothing saved yet. Add something from a pillar to see it here."
-                        } else {
-                            "No titles match. Try a different search or filter."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = AurisOnSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+                    when {
+                        entries.isEmpty() && isLoading -> {
+                            // The grid's own geometry, so the real cards land in the same place.
+                            SkeletonPosterGrid(rows = 2, columns = 2)
+                        }
+
+                        entries.isEmpty() -> {
+                            StateEmpty(
+                                title = "Nothing saved yet",
+                                description = "Open something from Anime, Manga or Music and it " +
+                                    "will appear here, ready to resume.",
+                            )
+                        }
+
+                        else -> {
+                            StateNoResults(
+                                query = query.ifBlank { filter?.name?.lowercase() ?: "these filters" },
+                                title = if (query.isBlank()) {
+                                    "Nothing matches this filter"
+                                } else {
+                                    "No titles match \u201C$query\u201D"
+                                },
+                                description = "Try a different search, or clear the filters to " +
+                                    "see everything you have saved.",
+                                onClear = {
+                                    query = ""
+                                    filterName = null
+                                },
+                            )
+                        }
+                    }
                 }
             }
 

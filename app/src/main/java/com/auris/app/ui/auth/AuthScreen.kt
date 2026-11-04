@@ -49,6 +49,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.auris.app.ui.components.ErrorBanner
+import com.auris.app.ui.components.InlineFieldError
+import com.auris.app.ui.components.SuccessBanner
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackdrop
 import com.auris.app.ui.theme.AurisBackground
@@ -122,6 +125,7 @@ fun AuthScreen(
                         imeAction = ImeAction.Next,
                     ),
                     enabled = !state.isLoading,
+                    error = state.emailError,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -142,6 +146,7 @@ fun AuthScreen(
                     ),
                     keyboardActions = KeyboardActions(onDone = { onSubmit() }),
                     enabled = !state.isLoading,
+                    error = state.passwordError,
                     trailing = {
                         Icon(
                             imageVector = if (passwordVisible) {
@@ -165,24 +170,12 @@ fun AuthScreen(
 
                 if (state.error != null) {
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = state.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    ErrorBanner(state.error)
                 }
 
                 if (state.notice != null) {
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = state.notice,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = AurisAccent,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    SuccessBanner(state.notice)
                 }
 
                 Spacer(Modifier.height(20.dp))
@@ -346,54 +339,64 @@ private fun AuthField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailing: @Composable (() -> Unit)? = null,
+    error: String? = null,
 ) {
     // Cursor pinned to the end; see ExtensionSearchField for the reversal this avoids.
     var field by remember(value) {
         mutableStateOf(TextFieldValue(value, TextRange(value.length)))
     }
 
-    Surface(
-        shape = RoundedCornerShape(AurisRadii.button),
-        color = GlassField,
-        border = BorderStroke(1.dp, GlassEdge),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxWidth()) {
+        Surface(
+            shape = RoundedCornerShape(AurisRadii.button),
+            color = GlassField,
+            border = BorderStroke(
+                width = 1.dp,
+                color = if (error != null) MaterialTheme.colorScheme.error else GlassEdge,
+            ),
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Box(Modifier.weight(1f)) {
-                if (field.text.isEmpty()) {
-                    Text(
-                        text = hint,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = AurisOnSurfaceVariant,
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.weight(1f)) {
+                    if (field.text.isEmpty()) {
+                        Text(
+                            text = hint,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = AurisOnSurfaceVariant,
+                        )
+                    }
+                    BasicTextField(
+                        value = field,
+                        onValueChange = { next ->
+                            field = next
+                            onValueChange(next.text)
+                        },
+                        singleLine = true,
+                        enabled = enabled,
+                        textStyle = TextStyle(
+                            color = AurisOnSurface,
+                            fontSize = MaterialTheme.typography.bodyLarge.fontSize,
+                        ),
+                        cursorBrush = SolidColor(AurisAccent),
+                        visualTransformation = visualTransformation,
+                        keyboardOptions = keyboardOptions,
+                        keyboardActions = keyboardActions,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                BasicTextField(
-                    value = field,
-                    onValueChange = { next ->
-                        field = next
-                        onValueChange(next.text)
-                    },
-                    singleLine = true,
-                    enabled = enabled,
-                    textStyle = TextStyle(
-                        color = AurisOnSurface,
-                        fontSize = MaterialTheme.typography.bodyLarge.fontSize,
-                    ),
-                    cursorBrush = SolidColor(AurisAccent),
-                    visualTransformation = visualTransformation,
-                    keyboardOptions = keyboardOptions,
-                    keyboardActions = keyboardActions,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
 
-            if (trailing != null) {
-                Spacer(Modifier.width(10.dp))
-                trailing()
+                if (trailing != null) {
+                    Spacer(Modifier.width(10.dp))
+                    trailing()
+                }
             }
+        }
+
+        if (error != null) {
+            InlineFieldError(error)
         }
     }
 }

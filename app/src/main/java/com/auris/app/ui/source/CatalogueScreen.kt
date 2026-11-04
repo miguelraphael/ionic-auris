@@ -25,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -47,6 +46,11 @@ import coil.compose.AsyncImage
 import com.auris.app.source.SourceItem
 import com.auris.app.ui.components.MediaGridCard
 import com.auris.app.ui.components.SectionHeader
+import com.auris.app.ui.components.SkeletonPosterGrid
+import com.auris.app.ui.components.SlowNetworkHint
+import com.auris.app.ui.components.StateEmpty
+import com.auris.app.ui.components.StateError
+import com.auris.app.ui.components.StateNoResults
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackground
@@ -94,10 +98,16 @@ fun CatalogueScreen(
                 onQueryChange = onQueryChange,
             )
 
+            SlowNetworkHint(isLoading = state.isLoading)
+
             when {
                 state.error != null -> CatalogueError(state.error, onRetry)
                 state.isLoading && state.items.isEmpty() -> LoadingGrid()
-                state.isEmpty -> EmptyCatalogue(state)
+                state.isEmpty -> EmptyCatalogue(
+                    state = state,
+                    onClear = { onQueryChange("") },
+                    onRetry = onRetry,
+                )
                 else -> CatalogueGrid(state, onItemClick = onItemClick, onLoadMore = onLoadMore)
             }
         }
@@ -299,96 +309,40 @@ private fun CatalogueGrid(state: CatalogueUiState, onItemClick: (SourceItem) -> 
 
 @Composable
 private fun LoadingGrid() {
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 150.dp),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-        modifier = Modifier.fillMaxSize(),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
     ) {
-        items(6) {
-            ShimmerCard()
-        }
-    }
-}
-
-/** A placeholder in the grid's own geometry, so laying out real items does not shift the list. */
-@Composable
-private fun ShimmerCard() {
-    Column {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp > 400) 210.dp else 170.dp)
-                .clip(RoundedCornerShape(AurisRadii.artwork))
-                .background(AurisSurface),
-        )
-        Spacer(Modifier.height(8.dp))
-        Box(
-            Modifier
-                .fillMaxWidth(0.7f)
-                .height(14.dp)
-                .clip(RoundedCornerShape(AurisRadii.chip))
-                .background(AurisSurface),
-        )
+        SkeletonPosterGrid(rows = 2, columns = 2)
     }
 }
 
 @Composable
 private fun CatalogueError(message: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = "Could not load this catalogue",
-            style = MaterialTheme.typography.titleMedium,
-            color = AurisOnSurface,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodySmall,
-            color = AurisOnSurfaceVariant,
-        )
-        Spacer(Modifier.height(16.dp))
-        Surface(
-            shape = RoundedCornerShape(AurisRadii.chip),
-            color = AurisAccent,
-            modifier = Modifier.clickable(onClick = onRetry),
-        ) {
-            Text(
-                text = "Retry",
-                style = MaterialTheme.typography.labelLarge,
-                color = AurisBackground,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-            )
-        }
-    }
+    StateError(
+        title = "Could not load this catalogue",
+        description = message,
+        onRetry = onRetry,
+    )
 }
 
 @Composable
-private fun EmptyCatalogue(state: CatalogueUiState) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = if (state.isSearching) "No results for \"${state.query}\"" else "Nothing here",
-            style = MaterialTheme.typography.titleMedium,
-            color = AurisOnSurface,
+private fun EmptyCatalogue(state: CatalogueUiState, onClear: () -> Unit, onRetry: () -> Unit) {
+    if (state.isSearching) {
+        StateNoResults(
+            query = state.query,
+            description = "This source returned no items. Try a shorter query or a different " +
+                "spelling.",
+            onClear = onClear,
         )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "This source returned no items.",
-            style = MaterialTheme.typography.bodySmall,
-            color = AurisOnSurfaceVariant,
+    } else {
+        StateEmpty(
+            title = "Nothing here",
+            description = "This source returned no items. Try another tab or refresh in a " +
+                "moment.",
+            actionLabel = "Retry",
+            onAction = onRetry,
         )
     }
 }

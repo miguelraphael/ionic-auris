@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -41,6 +40,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.components.MediaArtwork
+import com.auris.app.ui.components.SkeletonShelf
+import com.auris.app.ui.components.SlowNetworkHint
+import com.auris.app.ui.components.StateEmpty
+import com.auris.app.ui.components.StateError
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.ArtworkShape
 import com.auris.app.ui.theme.ArtworkShapeSmall
@@ -76,6 +79,8 @@ fun MusicHomeScreen(
     modifier: Modifier = Modifier,
     onOpenPlayer: () -> Unit = {},
     onTogglePlayPause: () -> Unit = {},
+    /** A failed home load is retryable; the ViewModel otherwise fetches it only once. */
+    onRetryHome: () -> Unit = {},
 ) {
     val heroArtwork = state.shelves.firstOrNull()?.rows?.firstOrNull()?.artworkUrl
     val palette = rememberArtworkPaletteValue(artworkKey = heroArtwork)
@@ -156,16 +161,35 @@ fun MusicHomeScreen(
                 }
 
                 if (state.isHomeLoading && state.shelves.isEmpty()) {
-                    item(key = "loading") { LoadingShelves() }
+                    item(key = "loading") {
+                        Column {
+                            SkeletonShelf()
+                            SkeletonShelf()
+                            SlowNetworkHint(isLoading = true)
+                        }
+                    }
                 }
 
                 if (state.homeError != null && state.shelves.isEmpty()) {
                     item(key = "error") {
-                        Text(
-                            text = state.homeError,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = AurisOnSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
+                        StateError(
+                            title = "Could not load music",
+                            description = state.homeError,
+                            onRetry = onRetryHome,
+                        )
+                    }
+                }
+
+                if (!state.isHomeLoading && state.homeError == null &&
+                    state.shelves.isEmpty() && savedMusic.isEmpty()
+                ) {
+                    item(key = "empty") {
+                        StateEmpty(
+                            title = "Nothing to play yet",
+                            description = "Search for a track, album or playlist to start " +
+                                "listening. What you play is saved here for next time.",
+                            actionLabel = "Search music",
+                            onAction = onOpenSearch,
                         )
                     }
                 }
@@ -403,22 +427,6 @@ private fun NowPlayingStrip(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun LoadingShelves() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(26.dp),
-            strokeWidth = 2.dp,
-            color = AurisAccent,
-        )
     }
 }
 

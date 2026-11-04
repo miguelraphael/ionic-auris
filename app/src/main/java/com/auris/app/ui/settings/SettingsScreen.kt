@@ -1,5 +1,12 @@
 package com.auris.app.ui.settings
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,9 +43,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.auris.app.ui.components.PermissionDeniedCard
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackdrop
 import com.auris.app.ui.theme.AurisBackground
@@ -158,6 +172,11 @@ fun SettingsScreen(
                 )
             }
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                item { SectionTitle("Notifications") }
+                item { NotificationsSection() }
+            }
+
             item { SectionTitle("Music") }
 
             item {
@@ -197,6 +216,75 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
+
+// ---- Notifications -----------------------------------------------------------
+
+/**
+ * The notification permission, which is what puts playback controls in the shade.
+ *
+ * The permission is not required to play anything: audio keeps working and the in-app player
+ * still has every control. It is presented as a denied state rather than hidden, because a user
+ * who dismissed the prompt has no other place in the app to discover that it can be re-enabled.
+ */
+@Composable
+private fun NotificationsSection() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var granted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+
+    // Re-read on resume: the user may have changed the permission in system settings and come
+    // straight back. The launcher callback covers the in-app prompt, not that route.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                granted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { result -> granted = result }
+
+    if (granted) {
+        SettingRow(
+            title = "Playback notifications",
+            subtitle = "Allowed \u2014 controls appear in the notification shade",
+            onClick = null,
+        )
+    } else {
+        PermissionDeniedCard(
+            title = "Notifications are off",
+            description = "Auris shows playback controls in the notification shade so you can " +
+                "pause, skip or stop without reopening the app. Playback still works without " +
+                "this permission; the controls simply stay inside Auris.",
+            onAllow = { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+            onOpenSettings = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        },
+                    )
+                }
+            },
+        )
     }
 }
 

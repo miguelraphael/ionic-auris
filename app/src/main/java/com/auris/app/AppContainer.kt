@@ -56,6 +56,8 @@ interface AppContainer {
     val libraryDao: LibraryDao
     val syncDao: SyncDao
     val libraryRepository: LibraryRepository
+    /** Process-wide connectivity, so the shell can show the offline strip without polling. */
+    val networkMonitor: com.auris.app.core.network.NetworkMonitor
     val extensionDao: ExtensionDao
     val extensionRepository: ExtensionRepository
 
@@ -117,6 +119,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val syncDao: SyncDao by lazy { database.syncDao() }
 
     override val syncScheduler: SyncScheduler by lazy { SyncScheduler(context) }
+
+    override val networkMonitor: com.auris.app.core.network.NetworkMonitor by lazy {
+        com.auris.app.core.network.NetworkMonitor(context.applicationContext)
+    }
 
     private val ioDispatcher: CoroutineDispatcher get() = Dispatchers.IO
 

@@ -78,6 +78,8 @@ fun AurisNavHost(
     navController: NavHostController,
     library: List<LibraryEntryEntity>,
     onEntryClick: (LibraryEntryEntity) -> Unit,
+    /** True until the first Room emission arrives; distinguishes loading from empty. */
+    isLibraryLoading: Boolean = false,
     // Required, not nullable: the detail screen cannot function without them, and making them
     // optional would mean a silently empty episode list rather than a compile error at the call
     // site. `extensionsViewModelFactory` stays optional because previews do not need it.
@@ -177,6 +179,7 @@ fun AurisNavHost(
                     }
                     navController.navigate(destination.route)
                 },
+                isLoading = isLibraryLoading,
             )
         }
 
@@ -254,6 +257,7 @@ fun AurisNavHost(
                 onOpenSearch = { navController.navigate(Routes.MUSIC_BROWSE) },
                 onOpenPlayer = { navController.navigate(Routes.PLAYER) },
                 onTogglePlayPause = music::togglePlayPause,
+                onRetryHome = music::retryHome,
             )
         }
 
@@ -269,6 +273,7 @@ fun AurisNavHost(
                 onEntryClick = openLibraryEntry,
                 onDelete = libraryViewModel::delete,
                 modifier = Modifier.fillMaxSize(),
+                isLoading = isLibraryLoading,
             )
         }
 

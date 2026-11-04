@@ -53,6 +53,8 @@ data class ExtensionsUiState(
     val focusIconKey: String? = null,
     val progress: Map<String, InstallProgress.Stage> = emptyMap(),
     val message: String? = null,
+    /** Whether [message] reports a failure rather than a completed action. */
+    val isMessageError: Boolean = false,
     /** Current search text; blank means no filtering. */
     val query: String = "",
     /** How many of [items] the list renders; the footer grows this page. */
@@ -289,11 +291,15 @@ class ExtensionsViewModel(
                 _state.value = _state.value.copy(
                     progress = progress.value,
                     message = "Installed ${item.remote.name}",
+                    isMessageError = false,
                 )
             }.onFailure { error ->
                 Log.w(TAG, "Install failed for $packageName", error)
                 setStage(packageName, InstallProgress.Stage.FAILED)
-                _state.value = _state.value.copy(message = "Install failed: ${error.message}")
+                _state.value = _state.value.copy(
+                    message = "Install failed: ${error.message}",
+                    isMessageError = true,
+                )
                 runCatching { temp.delete() }
             }
         }
@@ -355,7 +361,10 @@ class ExtensionsViewModel(
             extensionRepository.uninstall(item.remote.packageName)
             runCatching { File(extensionsDir, "${item.remote.packageName}.apk").delete() }
             extensionLoader.clearCache()
-            _state.value = _state.value.copy(message = "Removed ${item.remote.name}")
+            _state.value = _state.value.copy(
+                message = "Removed ${item.remote.name}",
+                isMessageError = false,
+            )
         }
     }
 

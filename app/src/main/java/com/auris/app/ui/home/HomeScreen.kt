@@ -38,6 +38,8 @@ import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.components.MediaGridCard
 import com.auris.app.ui.components.SectionHeader
+import com.auris.app.ui.components.SkeletonShelf
+import com.auris.app.ui.components.StateEmpty
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisAccent
@@ -64,6 +66,8 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     /** Opens a pillar's full archive; the "See all" action on a capped shelf. */
     onSeeAll: (MediaType) -> Unit,
+    /** The first Room emission has not arrived yet. Distinguishable from a genuinely empty library. */
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // The library arrives ordered `last_activity_at DESC`, so taking the head of each filter
@@ -117,8 +121,22 @@ fun HomeScreen(
             )
         }
 
-        if (inProgress.isEmpty() && library.isEmpty()) {
-            EmptyHome()
+        if (isLoading && library.isEmpty()) {
+            // A skeleton, not a spinner: the dashboard has a known shape, and showing that
+            // shape before the data lands avoids the empty-then-pop reflow a spinner causes.
+            SkeletonShelf()
+            SkeletonShelf()
+            return
+        }
+
+        if (library.isEmpty()) {
+            StateEmpty(
+                title = "Your library is empty",
+                description = "Browse anime or manga, or search for music. Everything you open " +
+                    "or save lands here, ready to resume.",
+                actionLabel = "Browse anime",
+                onAction = { onSeeAll(MediaType.ANIME) },
+            )
             return
         }
 
@@ -283,31 +301,6 @@ private fun ContinueCard(
 private fun isComplete(entry: LibraryEntryEntity): Boolean =
     entry.progress >= 1f || entry.totalUnits > 0 &&
         entry.currentUnitIndex >= entry.totalUnits
-
-@Composable
-private fun EmptyHome() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 80.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = "Nothing here yet",
-            style = MaterialTheme.typography.titleLarge,
-            color = AurisOnSurface,
-        )
-        Text(
-            text = "Add an extension or search the catalogues to start building your library.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = AurisOnSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp, start = 32.dp, end = 32.dp),
-        )
-    }
-
-
-}
 
 /** A 44dp circular header action, matching the app's other header controls. */
 @Composable

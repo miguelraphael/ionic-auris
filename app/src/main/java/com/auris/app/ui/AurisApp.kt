@@ -10,15 +10,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +43,9 @@ import com.auris.app.ui.player.EpisodePlayer
 import androidx.lifecycle.ViewModelProvider
 import com.auris.app.source.repo.ExtensionRepo
 import com.auris.app.ui.components.FloatingNavigationBar
+import com.auris.app.ui.components.LocalIsOnline
+import com.auris.app.ui.components.OfflineBanner
+import com.auris.app.ui.components.SessionExpiredDialog
 import com.auris.app.ui.navigation.AurisNavHost
 import com.auris.app.ui.navigation.Routes
 import com.auris.app.ui.navigation.TopLevelDestination
@@ -48,6 +54,8 @@ import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisLogo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
 /**
  * The app shell.
@@ -95,6 +103,8 @@ fun AurisApp(
      * nullable, for the same reason the detail screen's repositories are.
      */
     authRepository: com.auris.app.data.repository.AuthRepository,
+    /** Process-scoped connectivity; absent in previews, where the app is treated as online. */
+    networkMonitor: com.auris.app.core.network.NetworkMonitor? = null,
     modifier: Modifier = Modifier,
 ) {
     // Gate readiness first: the initial null is "not loaded yet", which is
@@ -107,6 +117,20 @@ fun AurisApp(
         authRepository.session.first()
         gateReady = true
     }
+
+    val sessionExpired by authRepository.sessionExpired
+        .collectAsStateWithLifecycle(initialValue = false)
+    var sessionExpiredDismissed by remember { mutableStateOf(false) }
+
+    // Connectivity is a modifier on the shell, not a gate: the library is local and keeps
+    // working without it.
+    val onlineFlow = remember(networkMonitor) { networkMonitor?.isOnline ?: flowOf(true) }
+    val isOnline by onlineFlow.collectAsStateWithLifecycle(initialValue = true)
+
+    val scope = rememberCoroutineScope()
+
+    // A new session (or a sign-out) makes the dialog relevant again.
+    LaunchedEffect(session) { sessionExpiredDismissed = false }
 
     if (!gateReady) {
         // Splash: the same OLED + brand backdrop and the same lockup the gate shows, so the
@@ -123,7 +147,19 @@ fun AurisApp(
     }
 
     if (session == null) {
-        AuthGate(authRepository = authRepository, modifier = modifier)
+        CompositionLocalProvider(LocalIsOnline provides isOnline) {
+            Box(Modifier.fillMaxSize()) {
+                AuthGate(authRepository = authRepository, modifier = Modifier.fillMaxSize())
+                OfflineOverlay(
+                    visible = !isOnline,
+                    message = "No internet \u2014 signing in needs a connection",
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(horizontal = 20.dp),
+                )
+            }
+        }
         return
     }
 
@@ -131,79 +167,133 @@ fun AurisApp(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    val library by repository.observeLibrary()
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    // Null until the first Room emission. That is the only way to tell a cold start from a
+    // genuinely empty library, and it is what turns the empty state into a skeleton.
+    val libraryState by repository.observeLibrary()
+        .collectAsStateWithLifecycle(initialValue = null)
+    val library = libraryState.orEmpty()
+    val isLibraryLoading = libraryState == null
     val pending by pendingSyncCount.collectAsStateWithLifecycle(initialValue = 0)
 
     val showNavBar = TopLevelDestination.entries.any { it.route == currentRoute }
 
-    AurisBackdrop(modifier = modifier) {
-        AurisNavHost(
-            navController = navController,
-            library = library,
-            onEntryClick = { entry -> navController.navigate(entry.destinationRoute()) },
-            libraryRepository = libraryRepository,
-            kitsuIdentifier = kitsuIdentifier,
-            extensionContentRepository = extensionContentRepository,
-            episodePlayer = episodePlayer,
-            appStateCollector = appStateCollector,
-            musicSource = musicSource,
-            invidiousInstanceStore = invidiousInstanceStore,
-            extensionRepository = extensionRepository,
-            extensionRepoStore = extensionRepoStore,
-            extensionLoader = extensionLoader,
-            authRepository = authRepository,
-            extensionsViewModelFactory = extensionsViewModelFactory,
-            extensionRepo = extensionRepo,
-            modifier = Modifier.fillMaxSize(),
-        )
+    CompositionLocalProvider(LocalIsOnline provides isOnline) {
+        Box(Modifier.fillMaxSize()) {
+            AurisBackdrop(modifier = Modifier.fillMaxSize()) {
+                AurisNavHost(
+                    navController = navController,
+                    library = library,
+                    onEntryClick = { entry -> navController.navigate(entry.destinationRoute()) },
+                    isLibraryLoading = isLibraryLoading,
+                    libraryRepository = libraryRepository,
+                    kitsuIdentifier = kitsuIdentifier,
+                    extensionContentRepository = extensionContentRepository,
+                    episodePlayer = episodePlayer,
+                    appStateCollector = appStateCollector,
+                    musicSource = musicSource,
+                    invidiousInstanceStore = invidiousInstanceStore,
+                    extensionRepository = extensionRepository,
+                    extensionRepoStore = extensionRepoStore,
+                    extensionLoader = extensionLoader,
+                    authRepository = authRepository,
+                    extensionsViewModelFactory = extensionsViewModelFactory,
+                    extensionRepo = extensionRepo,
+                    modifier = Modifier.fillMaxSize(),
+                )
 
-        // Floating pill, drawn last so it sits above all content.
-        AnimatedVisibility(
-            visible = showNavBar,
-            enter = fadeIn(tween(200)) + slideInVertically(tween(260)) { it / 2 },
-            exit = fadeOut(tween(160)) + slideOutVertically(tween(220)) { it / 2 },
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) {
-            FloatingNavigationBar(
-                destinations = TopLevelDestination.entries.toList(),
-                currentRoute = currentRoute,
-                onNavigate = { destination ->
-                    navController.navigate(destination.route) {
-                        // Single-top with state restoration: moving between tabs must not
-                        // reset the previous tab's scroll position.
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
+                // Floating pill, drawn last so it sits above all content.
+                AnimatedVisibility(
+                    visible = showNavBar,
+                    enter = fadeIn(tween(200)) + slideInVertically(tween(260)) { it / 2 },
+                    exit = fadeOut(tween(160)) + slideOutVertically(tween(220)) { it / 2 },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    FloatingNavigationBar(
+                        destinations = TopLevelDestination.entries.toList(),
+                        currentRoute = currentRoute,
+                        onNavigate = { destination ->
+                            navController.navigate(destination.route) {
+                                // Single-top with state restoration: moving between tabs must
+                                // not reset the previous tab's scroll position.
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                    )
+                }
+
+                // The only global chrome beyond navigation: how many local changes are still
+                // waiting for a network. Sits just above the pill, right-aligned.
+                AnimatedVisibility(
+                    visible = showNavBar && pending > 0,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 24.dp, bottom = 108.dp),
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface,
+                    ) {
+                        Text(
+                            text = if (pending == 1) {
+                                "1 change pending"
+                            } else {
+                                "$pending changes pending"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
                     }
-                },
+                }
+            }
+
+            OfflineOverlay(
+                visible = !isOnline,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp),
             )
         }
+    }
 
-        // The only global chrome beyond navigation: how many local changes are still
-        // waiting for a network. Sits just above the pill, right-aligned.
-        AnimatedVisibility(
-            visible = showNavBar && pending > 0,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 108.dp),
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                Text(
-                    text = if (pending == 1) "1 change pending" else "$pending changes pending",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                )
-            }
-        }
+    SessionExpiredDialog(
+        visible = sessionExpired && !sessionExpiredDismissed,
+        email = session?.email,
+        onSignInAgain = {
+            sessionExpiredDismissed = true
+            scope.launch { authRepository.signOut() }
+        },
+        onDismiss = { sessionExpiredDismissed = true },
+    )
+}
+
+/**
+ * The global offline strip.
+ *
+ * Deliberately an overlay rather than a row above the NavHost: every screen reserves its own
+ * top inset, and inserting a strip there would shift each screen's layout by its height when
+ * connectivity changed.
+ */
+@Composable
+private fun OfflineOverlay(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    message: String = "No internet \u2014 showing saved content",
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
+    ) {
+        OfflineBanner(message = message)
     }
 }
 

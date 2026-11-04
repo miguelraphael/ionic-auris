@@ -16,7 +16,11 @@ data class AuthUiState(
     val email: String = "",
     val password: String = "",
     val isLoading: Boolean = false,
+    /** Submission-level failure: wrong password, unreachable server, rate limit. */
     val error: String? = null,
+    /** Per-field validation, shown under the field rather than at the bottom of the card. */
+    val emailError: String? = null,
+    val passwordError: String? = null,
     /** Non-error notice, e.g. "confirm your email". Cleared on next submit. */
     val notice: String? = null,
 )
@@ -36,11 +40,11 @@ class AuthViewModel(
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
     fun onEmailChange(email: String) {
-        _state.value = _state.value.copy(email = email)
+        _state.value = _state.value.copy(email = email, emailError = null, error = null)
     }
 
     fun onPasswordChange(password: String) {
-        _state.value = _state.value.copy(password = password)
+        _state.value = _state.value.copy(password = password, passwordError = null, error = null)
     }
 
     fun toggleMode() {
@@ -48,6 +52,8 @@ class AuthViewModel(
         _state.value = current.copy(
             isRegisterMode = !current.isRegisterMode,
             error = null,
+            emailError = null,
+            passwordError = null,
             notice = null,
         )
     }
@@ -66,6 +72,8 @@ class AuthViewModel(
             email = DEMO_EMAIL,
             password = DEMO_PASSWORD,
             error = null,
+            emailError = null,
+            passwordError = null,
             notice = null,
         )
     }
@@ -79,24 +87,50 @@ class AuthViewModel(
      * with every field disabled, leaving no way to sign back in until the process is killed.
      */
     fun onGateShown() {
-        _state.value = _state.value.copy(isLoading = false, error = null, notice = null)
+        _state.value = _state.value.copy(
+            isLoading = false,
+            error = null,
+            emailError = null,
+            passwordError = null,
+            notice = null,
+        )
     }
 
     fun submit() {
         val email = _state.value.email.trim()
         val password = _state.value.password
-        if (!email.contains("@")) {
-            _state.value = _state.value.copy(error = "Enter a valid email address")
-            return
+
+        // Field validation stays on the field. The single bottom error it replaces made the
+        // user hunt for which input was wrong, and it survived edits to the other one.
+        val emailError = when {
+            email.isEmpty() -> "Enter your email address"
+            !EMAIL_PATTERN.matches(email) -> "That email address doesn\u2019t look right"
+            else -> null
         }
-        if (password.length < MIN_PASSWORD_LENGTH) {
+        val passwordError = when {
+            password.isEmpty() -> "Enter your password"
+            password.length < MIN_PASSWORD_LENGTH ->
+                "Use at least $MIN_PASSWORD_LENGTH characters"
+            else -> null
+        }
+
+        if (emailError != null || passwordError != null) {
             _state.value = _state.value.copy(
-                error = "Password needs at least $MIN_PASSWORD_LENGTH characters",
+                emailError = emailError,
+                passwordError = passwordError,
+                error = null,
+                notice = null,
             )
             return
         }
 
-        _state.value = _state.value.copy(isLoading = true, error = null, notice = null)
+        _state.value = _state.value.copy(
+            isLoading = true,
+            error = null,
+            emailError = null,
+            passwordError = null,
+            notice = null,
+        )
         viewModelScope.launch {
             if (_state.value.isRegisterMode) {
                 authRepository.signUp(email, password)
@@ -145,6 +179,13 @@ class AuthViewModel(
 
     companion object {
         const val MIN_PASSWORD_LENGTH = 6
+
+        /**
+         * Deliberately permissive: enough to catch a typo or a username in the email box,
+         * without rejecting a valid address the exact RFC would allow. The server is the
+         * authority on deliverability.
+         */
+        private val EMAIL_PATTERN = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 
         /**
          * Placeholder credentials for the demo prefill. These are UI fixtures only —

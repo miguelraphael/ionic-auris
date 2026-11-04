@@ -13,6 +13,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -44,16 +47,46 @@ class AuthRepository(
     /** Null when signed out — this is what gates the app. */
     val session: Flow<SyncSessionEntity?> = syncDao.observeSession()
 
+    private val _sessionExpired = MutableStateFlow(false)
+
+    /**
+     * True when the stored session ended without the user asking.
+     *
+     * supabase-kt clears its own token pair when a refresh is rejected (revoked or expired
+     * refresh token), emitting [SessionStatus.NotAuthenticated]. The Room mirror is deliberately
+     * left alone on that path, so a non-null mirror at that moment is what distinguishes an
+     * involuntary end from an explicit sign-out.
+     *
+     * Not a sign-out: the local library stays readable and editable offline, and a user may
+     * choose to finish what they are doing before re-authenticating. The shell turns this into
+     * a dismissible dialog.
+     */
+    val sessionExpired: StateFlow<Boolean> = _sessionExpired.asStateFlow()
+
     init {
         // Token refreshes land here: supabase-kt emits a new Authenticated
         // status after each rotation, and the mirror follows so the stored
-        // pair never goes stale. Never clears: transient states
-        // (Initializing, RefreshFailure) must not sign the user out —
-        // sign-out is explicit only.
+        // pair never goes stale. A RefreshFailure is transient by definition
+        // (`NetworkError` or `InternalServerError`) and is left to the offline
+        // and error states; signing out stays explicit, and local work must
+        // survive.
         appScope.launch {
             auth.sessionStatus.collect { status ->
-                if (status is SessionStatus.Authenticated) {
-                    runCatching { persist(status.session) }
+                when (status) {
+                    is SessionStatus.Authenticated -> {
+                        _sessionExpired.value = false
+                        runCatching { persist(status.session) }
+                    }
+
+                    is SessionStatus.NotAuthenticated -> {
+                        // Sign-out clears the Room mirror too, so a row that outlives
+                        // NotAuthenticated means the session ended underneath the user.
+                        _sessionExpired.value = syncDao.currentSession() != null
+                    }
+
+                    // Initializing and RefreshFailure do not change the verdict: neither says
+                    // anything certain about the stored session.
+                    else -> Unit
                 }
             }
         }
@@ -92,6 +125,9 @@ class AuthRepository(
     suspend fun signOut() {
         runCatching { auth.signOut(SignOutScope.GLOBAL) }
         withContext(ioDispatcher) { syncDao.clearSession() }
+        // Explicit sign-out is not an expiry. Reset after the clear so a collector that ran
+        // between the auth status change and the Room delete cannot leave the flag set.
+        _sessionExpired.value = false
     }
 
     /**
@@ -119,6 +155,7 @@ class AuthRepository(
             remote.deleteAllEntries(userId)
             runCatching { auth.signOut(SignOutScope.GLOBAL) }
             syncDao.clearSession()
+            _sessionExpired.value = false
         }
     }
 

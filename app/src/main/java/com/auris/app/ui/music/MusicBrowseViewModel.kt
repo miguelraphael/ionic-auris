@@ -234,6 +234,17 @@ class MusicBrowseViewModel(
         }
     }
 
+    /**
+     * Retries the home shelves after a failed load.
+     *
+     * [loadHome] is guarded by [homeRequested] so recomposition cannot refetch five shelves.
+     * The retry is the explicit way past that guard.
+     */
+    fun retryHome() {
+        homeRequested = false
+        loadHome()
+    }
+
     private fun MusicBrowseUiState.withResults(
         items: List<MusicCollectionItem>,
         isLoading: Boolean,

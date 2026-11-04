@@ -47,6 +47,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.auris.app.ui.components.ErrorBanner
+import com.auris.app.ui.components.SkeletonListRows
+import com.auris.app.ui.components.SlowNetworkHint
+import com.auris.app.ui.components.StateNoResults
+import com.auris.app.ui.components.SuccessBanner
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackground
@@ -112,11 +117,17 @@ fun MusicBrowseScreen(
             }
 
             state.error?.let { error ->
-                MessageBanner(error, isError = true)
+                ErrorBanner(
+                    message = error,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
             }
 
             state.message?.let { message ->
-                MessageBanner(message, isError = false)
+                SuccessBanner(
+                    message = message,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
             }
 
             when {
@@ -124,7 +135,11 @@ fun MusicBrowseScreen(
                 // result set is exactly what a blank query produces and it is not an error.
                 state.isBrowsingCategories -> CategoryGrid(onCategory = { onQueryChange(it.query) })
                 state.isResolving -> ResolvingRow()
-                state.isEmpty -> EmptyMusic(query = state.query, state = state)
+                state.isEmpty -> EmptyMusic(
+                    query = state.query,
+                    state = state,
+                    onClear = { onQueryChange("") },
+                )
                 else -> LazyColumn(
                     contentPadding = PaddingValues(
                         start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp,
@@ -366,67 +381,23 @@ private fun MusicRowItem(
 
 @Composable
 private fun ResolvingRow() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(24.dp),
-            strokeWidth = 2.dp,
-            color = AurisAccent,
-        )
-    }
-}
-
-@Composable
-private fun EmptyMusic(query: String, state: MusicBrowseUiState) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 20.dp),
     ) {
-        Text(
-            text = "No results for \"$query\"",
-            style = MaterialTheme.typography.titleMedium,
-            color = AurisOnSurface,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "YouTube Music returned nothing the parser recognised.",
-            style = MaterialTheme.typography.bodySmall,
-            color = AurisOnSurfaceVariant,
-        )
-        Spacer(Modifier.height(10.dp))
-        // Diagnostic only where it is actionable: an empty list cannot otherwise be told apart
-        // from a parser that silently matched nothing.
-        Text(
-            text = "Parsed ${state.parsedTrackCount} tracks, " +
-                "${state.parsedAlbumCount} albums, ${state.parsedPlaylistCount} playlists",
-            style = MaterialTheme.typography.labelSmall,
-            color = AurisOnSurfaceVariant.copy(alpha = 0.7f),
-        )
+        SkeletonListRows(count = 3)
+        SlowNetworkHint(isLoading = true)
     }
 }
 
 @Composable
-private fun MessageBanner(message: String, isError: Boolean) {
-    Surface(
-        shape = RoundedCornerShape(AurisRadii.chip),
-        color = if (isError) MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
-        else AurisSurface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp),
-    ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (isError) MaterialTheme.colorScheme.error else AurisOnSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        )
-    }
+private fun EmptyMusic(query: String, state: MusicBrowseUiState, onClear: () -> Unit) {
+    StateNoResults(
+        query = query,
+        description = "YouTube Music returned nothing the parser recognised. " +
+            "Parsed ${state.parsedTrackCount} tracks, ${state.parsedAlbumCount} albums, " +
+            "${state.parsedPlaylistCount} playlists.",
+        onClear = onClear,
+    )
 }

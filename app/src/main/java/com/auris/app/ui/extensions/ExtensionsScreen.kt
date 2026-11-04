@@ -61,7 +61,14 @@ import com.auris.app.R
 import com.auris.app.source.repo.ExtensionListItem
 import com.auris.app.source.repo.InstallProgress
 import com.auris.app.source.repo.ExtensionRepo
+import com.auris.app.ui.components.ErrorBanner
 import com.auris.app.ui.components.SectionHeader
+import com.auris.app.ui.components.SkeletonListRows
+import com.auris.app.ui.components.SlowNetworkHint
+import com.auris.app.ui.components.StateEmpty
+import com.auris.app.ui.components.StateError
+import com.auris.app.ui.components.StateNoResults
+import com.auris.app.ui.components.SuccessBanner
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.ArtworkPalette
 import com.auris.app.ui.theme.AurisAccent
@@ -139,11 +146,34 @@ fun ExtensionsScreen(
                 item(key = "error") { RepoErrorCard(state.error, actions.onRetry) }
             }
 
+            state.message?.let { message ->
+                item(key = "message") {
+                    if (state.isMessageError) {
+                        ErrorBanner(message)
+                    } else {
+                        SuccessBanner(message)
+                    }
+                }
+            }
+
             item(key = "search") {
                 ExtensionSearchField(
                     query = state.query,
                     onQueryChange = actions.onQueryChange,
                 )
+            }
+
+            if (state.isLoading && state.items.isEmpty() && state.error == null) {
+                item(key = "loading") {
+                    Column {
+                        SkeletonListRows(
+                            count = 4,
+                            thumbnailSize = 44.dp,
+                            thumbnailShape = RoundedCornerShape(AurisRadii.artworkSmall),
+                        )
+                        SlowNetworkHint(isLoading = true)
+                    }
+                }
             }
 
             if (!state.isLoading && state.items.isEmpty() && state.error == null) {
@@ -658,76 +688,31 @@ private fun LoadMoreFooter(shown: Int, total: Int, onLoadMore: () -> Unit) {
 
 @Composable
 private fun NoMatchCard(query: String, onClear: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = "No matches for \"$query\"",
-            style = MaterialTheme.typography.titleLarge,
-            color = AurisOnSurface,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Try a package name or language code instead.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = AurisOnSurfaceVariant,
-        )
-        Spacer(Modifier.height(16.dp))
-        InstallButton("Clear search", onClear)
-    }
+    StateNoResults(
+        query = query,
+        description = "Try a package name or language code instead.",
+        onClear = onClear,
+    )
 }
 
 // ---- States ------------------------------------------------------------------
 
 @Composable
 private fun RepoErrorCard(message: String, onRetry: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(AurisRadii.artwork),
-        color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                text = "Could not read the repository",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = AurisOnSurfaceVariant,
-            )
-            Spacer(Modifier.height(12.dp))
-            InstallButton("Retry", onRetry)
-        }
-    }
+    StateError(
+        title = "Could not read the repository",
+        description = message,
+        onRetry = onRetry,
+    )
 }
 
 @Composable
 private fun EmptyCatalog(repo: ExtensionRepo, onRefresh: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = "No extensions found",
-            style = MaterialTheme.typography.titleLarge,
-            color = AurisOnSurface,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "${repo.name} returned no usable entries. Check the URL in Settings.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = AurisOnSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
-        Spacer(Modifier.height(16.dp))
-        InstallButton("Refresh", onRefresh)
-    }
+    StateEmpty(
+        title = "No extensions found",
+        description = "${repo.name} returned no usable entries. Check the repository URL in " +
+            "Settings, or refresh in a moment.",
+        actionLabel = "Refresh",
+        onAction = onRefresh,
+    )
 }
