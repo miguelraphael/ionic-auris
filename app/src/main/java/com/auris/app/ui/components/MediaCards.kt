@@ -1,5 +1,7 @@
 package com.auris.app.ui.components
 
+import com.auris.app.ui.theme.pressFeedback
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -143,10 +145,11 @@ fun MediaGridCard(
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Column(
-        modifier = modifier
+        modifier = modifier.pressFeedback(interactionSource)
             .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = null,
                 onLongClick = onLongClick,
                 onClick = onClick,
@@ -228,12 +231,13 @@ fun EpisodeCard(
     isWatched: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
-        modifier = modifier
+        modifier = modifier.pressFeedback(interactionSource)
             .clip(ArtworkShape)
             .background(Color(0xFF1D222D))
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
             )

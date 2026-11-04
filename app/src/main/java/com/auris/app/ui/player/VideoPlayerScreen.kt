@@ -1,5 +1,7 @@
 package com.auris.app.ui.player
 
+import com.auris.app.ui.theme.pressFeedback
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -403,9 +405,11 @@ private fun ControlButton(
     onClick: () -> Unit,
     size: androidx.compose.ui.unit.Dp = 44.dp,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     FilledTonalIconButton(
         onClick = onClick,
-        modifier = Modifier.size(size),
+        modifier = Modifier.size(size).pressFeedback(interactionSource),
+        interactionSource = interactionSource,
         colors = IconButtonDefaults.filledTonalIconButtonColors(
             containerColor = AurisSurface,
             contentColor = AurisOnSurface,

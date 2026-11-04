@@ -1,6 +1,8 @@
 @file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 package com.auris.app.ui.music
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -59,7 +61,7 @@ internal fun MusicArtistPage(
                                     .padding(top = 12.dp)
                                     .clickable { expanded = !expanded }
                             ) {
-                                Column(Modifier.padding(14.dp)) {
+                                Column(Modifier.animateContentSize(tween(AurisMotion.Standard, easing = AurisMotion.Ease)).padding(14.dp)) {
                                     Text(
                                         text = "About",
                                         style = MaterialTheme.typography.titleMedium,

@@ -1,9 +1,10 @@
 package com.auris.app.ui.components
 
+import com.auris.app.ui.theme.AurisMotion
+import com.auris.app.ui.theme.pressFeedback
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -121,13 +122,13 @@ private fun FloatingNavItem(
     // The active icon is slightly larger — the screenshot's active glyph reads heavier.
     val scale by animateFloatAsState(
         targetValue = if (selected) 1.12f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        animationSpec = tween(AurisMotion.Standard, easing = AurisMotion.Ease),
         label = "navItemScale",
     )
     val interactionSource = remember { MutableInteractionSource() }
 
     Box(
-        modifier = modifier
+        modifier = modifier.pressFeedback(interactionSource)
             .fillMaxWidth()
             .height(64.dp)
             .selectable(
@@ -179,18 +180,19 @@ fun PlayerGhostIcon(
     tint: Color = AurisOnSurfaceVariant,
     enabled: Boolean = true,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     val scale by animateFloatAsState(
         targetValue = if (enabled) 1f else 0.9f,
         label = "ghostIconScale",
     )
     Box(
-        modifier = modifier
+        modifier = modifier.pressFeedback(interactionSource)
             .size(40.dp)
             .clip(CircleShape)
             .clickable(
                 enabled = enabled,
                 indication = null,
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 onClick = onClick,
             )
             .scale(scale),

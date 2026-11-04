@@ -1,6 +1,15 @@
 @file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 package com.auris.app.ui.music
 
+import com.auris.app.ui.theme.pressFeedback
+import com.auris.app.ui.theme.AurisMotion
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -212,7 +221,15 @@ fun MusicHomeScreen(
                 }
             }
 
-            if (showNowPlaying) {
+            AnimatedVisibility(
+                visible = showNowPlaying,
+                enter = fadeIn(tween(AurisMotion.Standard)) +
+                    slideInVertically(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it / 2 },
+                exit = fadeOut(tween(AurisMotion.Quick)) +
+                    slideOutVertically(tween(AurisMotion.Quick)) { it / 2 },
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 104.dp),
+            ) {
                 NowPlayingStrip(
                     title = state.nowPlayingTitle ?: "Now playing",
                     artist = state.nowPlayingArtist,
@@ -225,9 +242,7 @@ fun MusicHomeScreen(
                     onNext = onNext,
                     canGoPrevious = !state.isResolving && state.canGoPrevious,
                     canGoNext = !state.isResolving && state.canGoNext,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 16.dp, vertical = 104.dp),
+                    modifier = Modifier,
                 )
             }
         }
@@ -293,11 +308,12 @@ private fun MusicCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Column(
-        modifier = Modifier
+        modifier = Modifier.pressFeedback(interactionSource)
             .width(CARD_WIDTH)
             .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -382,12 +398,13 @@ internal fun NowPlayingStrip(
     canGoNext: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         shape = RoundedCornerShape(AurisRadii.artwork),
         // Opaque rather than the glass surface: the strip floats over shelf cards, and a
         // translucent panel let their titles bleed through it.
         color = AurisBackground,
-        modifier = modifier
+        modifier = modifier.pressFeedback(interactionSource)
             .fillMaxWidth()
             .border(
                 width = 1.dp,
@@ -395,7 +412,7 @@ internal fun NowPlayingStrip(
                 shape = RoundedCornerShape(AurisRadii.artwork),
             )
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
             ),

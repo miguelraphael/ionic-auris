@@ -242,9 +242,9 @@ fun AurisApp(
                     ) {
                         Text(
                             text = if (pending == 1) {
-                                "1 change pending"
+                                "1 change waiting to sync"
                             } else {
-                                "$pending changes pending"
+                                "$pending changes waiting to sync"
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

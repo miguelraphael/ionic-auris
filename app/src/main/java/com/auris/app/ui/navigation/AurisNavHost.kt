@@ -3,6 +3,9 @@ package com.auris.app.ui.navigation
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import com.auris.app.ui.theme.AurisMotion
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
@@ -160,11 +163,24 @@ fun AurisNavHost(
         navController = navController,
         startDestination = TopLevelDestination.HOME.route,
         modifier = modifier.fillMaxSize(),
-        // Matches the pill: content slides in rather than a full-width block swapping.
-        enterTransition = { fadeIn(tween(220)) },
-        exitTransition = { fadeOut(tween(180)) },
-        popEnterTransition = { fadeIn(tween(220)) },
-        popExitTransition = { fadeOut(tween(180)) },
+        enterTransition = {
+            val isTab = TopLevelDestination.entries.any { it.route == targetState.destination.route }
+            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER
+            fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) +
+                slideInHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) {
+                    if (isTab || isVideo) 0 else it / 10
+                }
+        },
+        exitTransition = { fadeOut(tween(AurisMotion.Quick)) },
+        popEnterTransition = { fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) },
+        popExitTransition = {
+            val isTab = TopLevelDestination.entries.any { it.route == initialState.destination.route }
+            val isVideo = initialState.destination.route == Routes.EPISODE_PLAYER
+            fadeOut(tween(AurisMotion.Quick)) +
+                slideOutHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) {
+                    if (isTab || isVideo) 0 else it / 10
+                }
+        },
     ) {
         composable(TopLevelDestination.HOME.route) {
             HomeScreen(
@@ -291,13 +307,16 @@ fun AurisNavHost(
         composable(
             route = Routes.PLAYER,
             enterTransition = {
-                slideInHorizontally(tween(280)) { it } + fadeIn(tween(280))
+                slideInVertically(tween(AurisMotion.Emphasized, easing = AurisMotion.Ease)) { it / 3 } +
+                    fadeIn(tween(AurisMotion.Standard))
             },
             exitTransition = {
-                slideOutHorizontally(tween(240)) { it } + fadeOut(tween(240))
+                slideOutVertically(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it / 3 } +
+                    fadeOut(tween(AurisMotion.Quick))
             },
             popExitTransition = {
-                slideOutHorizontally(tween(240)) { it } + fadeOut(tween(240))
+                slideOutVertically(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it / 3 } +
+                    fadeOut(tween(AurisMotion.Quick))
             },
         ) {
             MusicPlayerRoute(onBack = { navController.popBackStack() })

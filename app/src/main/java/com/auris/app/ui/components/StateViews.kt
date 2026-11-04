@@ -1,5 +1,8 @@
 package com.auris.app.ui.components
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.auris.app.ui.theme.pressFeedback
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -88,13 +91,15 @@ fun StateActionButton(
     modifier: Modifier = Modifier,
     filled: Boolean = true,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     val colors = androidx.compose.material3.ButtonDefaults.buttonColors(
         containerColor = if (filled) AurisAccent else AurisSurfaceOpaque,
         contentColor = if (filled) AurisBackground else AurisOnSurface,
     )
     androidx.compose.material3.Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.pressFeedback(interactionSource),
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(AurisRadii.button),
         colors = colors,
     ) {

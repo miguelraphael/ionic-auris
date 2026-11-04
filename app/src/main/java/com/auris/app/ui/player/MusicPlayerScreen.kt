@@ -1,5 +1,7 @@
 package com.auris.app.ui.player
 
+import com.auris.app.ui.theme.pressFeedback
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -423,13 +425,14 @@ private fun PlayPauseButton(
     isBuffering: Boolean,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
-        modifier = Modifier
+        modifier = Modifier.pressFeedback(interactionSource)
             .size(76.dp)
             .clip(CircleShape)
             .background(Color.White)
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
             ),

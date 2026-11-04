@@ -1,5 +1,12 @@
  package com.auris.app.ui.source
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.IntOffset
+import com.auris.app.ui.theme.AurisMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,6 +27,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -150,27 +161,42 @@ private fun ModeTabs(
         CatalogueUiState.Mode.LATEST to "Latest",
     )
 
-    Row(
+    val selection = animateFloatAsState(
+        targetValue = if (selected == CatalogueUiState.Mode.LATEST) 1f else 0f,
+        animationSpec = tween(AurisMotion.Standard, easing = AurisMotion.Ease),
+        label = "catalogueSelection",
+    )
+    BoxWithConstraints(
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+            .fillMaxWidth()
+            .height(48.dp)
             .clip(RoundedCornerShape(AurisRadii.chip))
             .background(AurisSurface)
             .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        modes.forEach { (mode, label) ->
-            val isSelected = selected == mode || (mode == CatalogueUiState.Mode.POPULAR && selected == CatalogueUiState.Mode.SEARCH)
-            Surface(
-                shape = RoundedCornerShape(AurisRadii.chip),
-                color = if (isSelected) AurisOnSurface.copy(alpha = 0.16f) else androidx.compose.ui.graphics.Color.Transparent,
-                onClick = { onSelect(mode) },
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) AurisOnSurface else AurisOnSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        val segmentWidth = maxWidth / 2
+        Box(Modifier
+            .offset { IntOffset((segmentWidth.roundToPx() * selection.value).toInt(), 0) }
+            .width(segmentWidth)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(AurisRadii.chip - 4.dp))
+            .background(AurisOnSurface.copy(alpha = 0.16f)))
+        Row(Modifier.fillMaxSize().selectableGroup()) {
+            modes.forEach { (mode, label) ->
+                val isSelected = selected == mode ||
+                    (mode == CatalogueUiState.Mode.POPULAR && selected == CatalogueUiState.Mode.SEARCH)
+                val tint by animateColorAsState(
+                    if (isSelected) AurisOnSurface else AurisOnSurfaceVariant,
+                    tween(AurisMotion.Quick), label = "catalogueLabel",
                 )
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                        .clip(RoundedCornerShape(AurisRadii.chip - 4.dp))
+                        .selectable(selected = isSelected, role = Role.Tab, onClick = { onSelect(mode) }),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = tint, maxLines = 1)
+                }
             }
         }
     }
