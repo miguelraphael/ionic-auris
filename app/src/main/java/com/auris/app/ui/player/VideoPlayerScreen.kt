@@ -11,16 +11,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Fullscreen
@@ -40,32 +40,32 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.key
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisLogo
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
-import com.auris.app.ui.theme.AurisRadii
 import com.auris.app.ui.theme.AurisSurface
 import com.auris.app.ui.theme.AurisTrack
 
@@ -91,6 +91,9 @@ fun VideoPlayerScreen(
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
     onError: (String) -> Unit = {},
+    isFullscreen: Boolean = false,
+    onToggleFullscreen: () -> Unit = {},
+    headerActions: @Composable RowScope.() -> Unit = {},
 ) {
     // The player follows the flow, not a captured reference: `EpisodePlayer` rebuilds it per
     // episode so each stream gets its own request headers, and a captured instance would go
@@ -115,16 +118,26 @@ fun VideoPlayerScreen(
     var durationMs by remember { mutableLongStateOf(0L) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var controlsVisible by remember { mutableStateOf(true) }
-    var isFullscreen by remember { mutableStateOf(false) }
     var seekFraction by remember { mutableFloatStateOf(-1f) }
 
     // Re-keyed on the player instance, so switching episodes re-binds and re-reads duration.
     DisposableEffect(player) {
         if (player == null) return@DisposableEffect onDispose { }
+        fun updatePosition() {
+            isPlaying = player?.isPlaying == true
+            durationMs = player?.duration?.coerceAtLeast(0L) ?: 0L
+            positionMs = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        }
+        updatePosition()
         val listener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                // Includes paused seeks, timeline changes, and server switches.
+                updatePosition()
+            }
+
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
-                if (playing) controlsVisible = false
+                controlsVisible = true
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -218,6 +231,7 @@ fun VideoPlayerScreen(
                 seekFraction = seekFraction,
                 isFullscreen = isFullscreen,
                 onBack = onBack,
+                headerActions = headerActions,
                 onPlayPause = {
                     val exo = player
                     if (exo == null) return@PlayerControls
@@ -228,14 +242,21 @@ fun VideoPlayerScreen(
                     }
                 },
                 onSeekBy = { deltaMs ->
-                    player?.seekTo(((player?.currentPosition ?: 0L) + deltaMs).coerceAtLeast(0L))
+                    player?.let { exo ->
+                        val limit = exo.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+                        exo.seekTo((exo.currentPosition + deltaMs).coerceIn(0L, limit))
+                        positionMs = exo.currentPosition.coerceAtLeast(0L)
+                    }
                 },
                 onSeekFraction = { fraction ->
-                    if (durationMs > 0) player?.seekTo((durationMs * fraction).toLong())
+                    if (durationMs > 0) player?.let { exo ->
+                        exo.seekTo((durationMs * fraction).toLong())
+                        positionMs = exo.currentPosition.coerceAtLeast(0L)
+                    }
                     seekFraction = -1f
                 },
                 onScrubFraction = { fraction -> seekFraction = fraction },
-                onToggleFullscreen = { isFullscreen = !isFullscreen },
+                onToggleFullscreen = onToggleFullscreen,
             )
         }
 
@@ -264,27 +285,26 @@ private fun PlayerControls(
     onSeekFraction: (Float) -> Unit,
     onScrubFraction: (Float) -> Unit,
     onToggleFullscreen: () -> Unit,
+    headerActions: @Composable RowScope.() -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xE0000000))
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .background(Color.Black.copy(alpha = 0.72f))
+            .safeDrawingPadding()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = AurisOnSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = AurisOnSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ControlButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBack)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = AurisOnSurface,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = AurisOnSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            headerActions()
+        }
 
         Spacer(Modifier.height(14.dp))
 
@@ -301,55 +321,30 @@ private fun PlayerControls(
 
         Spacer(Modifier.height(6.dp))
 
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatTime(if (seekFraction >= 0f) (durationMs * seekFraction).toLong() else positionMs),
+                style = MaterialTheme.typography.labelMedium, color = AurisOnSurfaceVariant)
+            Text(formatTime(durationMs), style = MaterialTheme.typography.labelMedium,
+                color = AurisOnSurfaceVariant)
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "${formatTime(positionMs)} / ${formatTime(durationMs)}",
-                style = MaterialTheme.typography.labelMedium,
-                color = AurisOnSurfaceVariant,
-            )
-
-            Spacer(Modifier.weight(1f))
-
-            ControlButton(
-                icon = Icons.Filled.Replay10,
-                contentDescription = "Back 10 seconds",
-                onClick = { onSeekBy(-10_000L) },
-            )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.size(44.dp))
+            ControlButton(Icons.Filled.Replay10, "Back 10 seconds", { onSeekBy(-10_000L) })
             ControlButton(
                 icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                 contentDescription = if (isPlaying) "Pause" else "Play",
-                size = 52.dp,
+                size = 56.dp,
                 onClick = onPlayPause,
             )
-            Spacer(Modifier.width(10.dp))
-            ControlButton(
-                icon = Icons.Filled.Forward10,
-                contentDescription = "Forward 10 seconds",
-                onClick = { onSeekBy(10_000L) },
-            )
-            Spacer(Modifier.width(10.dp))
+            ControlButton(Icons.Filled.Forward10, "Forward 10 seconds", { onSeekBy(10_000L) })
             ControlButton(
                 icon = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
                 contentDescription = if (isFullscreen) "Exit fullscreen" else "Fullscreen",
                 onClick = onToggleFullscreen,
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = "Back",
-                style = MaterialTheme.typography.labelLarge,
-                color = AurisOnSurface,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(AurisRadii.button))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onBack,
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
     }
@@ -370,7 +365,17 @@ private fun SeekBar(
     androidx.compose.foundation.Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(28.dp)
+            .height(44.dp)
+            .semantics {
+                contentDescription = "Playback position"
+                progressBarRangeInfo = ProgressBarRangeInfo(shown.coerceIn(0f, 1f), 0f..1f)
+                setProgress { fraction ->
+                    if (durationMs > 0) {
+                        onSeekFraction(fraction.coerceIn(0f, 1f))
+                        true
+                    } else false
+                }
+            }
             .pointerInputScrub(onScrubFraction, onSeekFraction),
     ) {
         val trackY = size.height / 2f
@@ -396,26 +401,17 @@ private fun ControlButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
-    size: androidx.compose.ui.unit.Dp = 40.dp,
+    size: androidx.compose.ui.unit.Dp = 44.dp,
 ) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(AurisSurface)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+    FilledTonalIconButton(
+        onClick = onClick,
+        modifier = Modifier.size(size),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = AurisSurface,
+            contentColor = AurisOnSurface,
+        ),
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = AurisOnSurface,
-            modifier = Modifier.size(size * 0.5f),
-        )
+        Icon(icon, contentDescription, modifier = Modifier.size(size * 0.5f))
     }
 }
 
@@ -445,24 +441,36 @@ private fun formatTime(ms: Long): String {
 }
 
 /** Drag-to-scrub on the seek bar. */
+@Composable
 private fun Modifier.pointerInputScrub(
     onScrubFraction: (Float) -> Unit,
     onSeekFraction: (Float) -> Unit,
-): Modifier = this
+): Modifier {
+    val currentScrub by rememberUpdatedState(onScrubFraction)
+    val currentSeek by rememberUpdatedState(onSeekFraction)
+    return this
     // Drag first, so a drag is not consumed as a tap on release — the two gesture detectors
     // compete, and tap-first would fire a seek on every scrub.
-    .pointerInput(onScrubFraction) {
+    .pointerInput(Unit) {
+        var fraction = 0f
         detectHorizontalDragGestures(
+            onDragEnd = { currentSeek(fraction) },
+            onDragCancel = { currentScrub(-1f) },
             onDragStart = { offset ->
-                onScrubFraction((offset.x / size.width).coerceIn(0f, 1f))
+                fraction = (offset.x / size.width).coerceIn(0f, 1f)
+                currentScrub(fraction)
             },
             onHorizontalDrag = { change, _ ->
-                onScrubFraction((change.position.x / size.width).coerceIn(0f, 1f))
+                change.consume()
+                fraction = (change.position.x / size.width).coerceIn(0f, 1f)
+                currentScrub(fraction)
             },
         )
     }
-    .pointerInput(onSeekFraction) {
+    .pointerInput(Unit) {
         detectTapGestures(
-            onTap = { offset -> onSeekFraction((offset.x / size.width).coerceIn(0f, 1f)) },
+            onTap = { offset -> currentSeek((offset.x / size.width).coerceIn(0f, 1f)) },
         )
     }
+
+}

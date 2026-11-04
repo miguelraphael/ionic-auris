@@ -27,8 +27,8 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -230,19 +230,10 @@ private fun ReaderTopBar(
 
         Spacer(Modifier.width(12.dp))
 
-        Text(
-            text = "Back",
-            style = MaterialTheme.typography.labelLarge,
-            color = AurisOnSurface,
-            modifier = Modifier
-                .clip(RoundedCornerShape(AurisRadii.button))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onBack,
-                )
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        )
+        androidx.compose.material3.FilledTonalIconButton(onClick = onBack) {
+            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back", tint = AurisOnSurface)
+        }
     }
 }
 
@@ -264,11 +255,11 @@ private fun ReaderProgressBar(state: MangaReaderUiState, onChapterChange: (Int) 
             ),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            androidx.compose.material3.TextButton(
+            androidx.compose.material3.FilledTonalButton(
                 enabled = state.previousChapter != null,
                 onClick = { state.previousChapter?.let(onChapterChange) },
             ) { Text("Previous chapter") }
-            androidx.compose.material3.TextButton(
+            androidx.compose.material3.FilledTonalButton(
                 enabled = state.nextChapter != null,
                 onClick = { state.nextChapter?.let(onChapterChange) },
             ) { Text("Next chapter") }
@@ -325,33 +316,7 @@ private fun ReaderEmpty(message: String?, onRetry: () -> Unit) {
                 color = AurisOnSurfaceVariant,
             )
             Spacer(Modifier.height(18.dp))
-            Surface(
-                shape = RoundedCornerShape(AurisRadii.button),
-                color = AurisAccent,
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onRetry,
-                ),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = null,
-                        tint = READER_BACKDROP,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Retry",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = READER_BACKDROP,
-                    )
-                }
-            }
+            com.auris.app.ui.components.StateActionButton("Retry", onRetry)
         }
     }
 }

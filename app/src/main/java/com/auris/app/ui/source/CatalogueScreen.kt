@@ -2,7 +2,6 @@
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +52,6 @@ import com.auris.app.ui.components.StateError
 import com.auris.app.ui.components.StateNoResults
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.AurisAccent
-import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisRadii
@@ -121,24 +119,8 @@ fun CatalogueScreen(
 @Composable
 private fun CatalogueHeader(state: CatalogueUiState, onBack: () -> Unit) {
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 56.dp)) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(AurisSurface)
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                    onClick = onBack,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = AurisOnSurface,
-                modifier = Modifier.size(20.dp),
-            )
+        androidx.compose.material3.FilledTonalIconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = AurisOnSurface)
         }
         Spacer(Modifier.height(12.dp))
         Text(
@@ -169,20 +151,24 @@ private fun ModeTabs(
     )
 
     Row(
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+            .clip(RoundedCornerShape(AurisRadii.chip))
+            .background(AurisSurface)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         modes.forEach { (mode, label) ->
             val isSelected = selected == mode || (mode == CatalogueUiState.Mode.POPULAR && selected == CatalogueUiState.Mode.SEARCH)
             Surface(
                 shape = RoundedCornerShape(AurisRadii.chip),
-                color = if (isSelected) AurisAccent else AurisSurface,
-                modifier = Modifier.clickable { onSelect(mode) },
+                color = if (isSelected) AurisOnSurface.copy(alpha = 0.16f) else androidx.compose.ui.graphics.Color.Transparent,
+                onClick = { onSelect(mode) },
+                modifier = Modifier.weight(1f),
             ) {
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) AurisBackground else AurisOnSurfaceVariant,
+                    color = if (isSelected) AurisOnSurface else AurisOnSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }

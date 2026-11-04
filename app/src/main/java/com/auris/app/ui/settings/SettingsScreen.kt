@@ -7,11 +7,8 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -40,9 +37,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.text.BasicTextField
@@ -54,13 +48,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.auris.app.ui.components.PermissionDeniedCard
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackdrop
-import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisRadii
 import com.auris.app.ui.theme.AurisSurface
-import com.auris.app.ui.theme.BrandIndigo
-import com.auris.app.ui.theme.BrandPurple
 
 /**
  * Settings.
@@ -696,41 +687,12 @@ private fun InfoBanner(text: String, isWarning: Boolean) {
 
 @Composable
 private fun SmallButton(text: String, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(AurisRadii.chip),
-        color = AurisAccent,
-        modifier = Modifier.clickable(onClick = onClick),
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            color = AurisBackground,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
-        )
-    }
+    com.auris.app.ui.components.StateActionButton(text, onClick, filled = false)
 }
 
-/**
- * The screen's primary action, filled with the same indigo-to-purple brand sweep as the sign-in
- * gate's call to action. Secondary actions stay [SmallButton], so Settings carries the gate's
- * hierarchy instead of a row of identical accent pills.
- */
 @Composable
 private fun BrandButton(text: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(AurisRadii.chip))
-            .background(Brush.horizontalGradient(listOf(BrandIndigo, BrandPurple)))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 9.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            color = Color.White,
-        )
-    }
+    com.auris.app.ui.components.StateActionButton(text, onClick)
 }
 
 /**
@@ -739,21 +701,15 @@ private fun BrandButton(text: String, onClick: () -> Unit) {
  */
 @Composable
 private fun DestructiveButton(text: String, enabled: Boolean, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(AurisRadii.chip),
-        color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.clickable(
-            enabled = enabled,
-            indication = null,
-            interactionSource = remember { MutableInteractionSource() },
-            onClick = onClick,
+    androidx.compose.material3.Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(AurisRadii.button),
+        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.error,
+            contentColor = MaterialTheme.colorScheme.onError,
         ),
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onError,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
-        )
+        Text(text, maxLines = 1)
     }
 }

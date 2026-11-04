@@ -37,13 +37,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.unit.Dp
 import com.auris.app.ui.navigation.TopLevelDestination
-import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisSurfaceOpaque
 import com.auris.app.ui.theme.NavPillShape
@@ -53,9 +53,9 @@ import com.auris.app.ui.theme.NavPillShape
  *
  * ### Geometry (measured from `UI/music-player-UI.jpg`, 1080x2400 @ 2.625x)
  *  - Horizontal inset 45dp, bottom inset 28dp (above the gesture bar).
- *  - Pill height 50dp, fully rounded ends.
- *  - Items evenly distributed; the active item is conveyed by colour + scale only, with
- *    no indicator pill, matching the screenshot's flat treatment.
+ *  - Pill height 64dp, fully rounded ends.
+ *  - Items evenly distributed; the active item is conveyed by colour + scale,
+ *    with compact labels beneath each icon.
  *
  * ### Why a Modifier param and no NavigationBar
  * A standard `NavigationBar` is a full-width bottom block and cannot float. This composable
@@ -80,7 +80,7 @@ fun FloatingNavigationBar(
                 .padding(horizontal = 45.dp)
                 .padding(bottom = 28.dp)
                 .widthIn(max = maxWidth)
-                .height(50.dp)
+                .height(64.dp)
                 // Opaque, not glass. The pill floats over album art and shelf cards, and the
                 // translucent fill let bright covers through until the icons disappeared.
                 .clip(NavPillShape)
@@ -115,7 +115,7 @@ private fun FloatingNavItem(
 ) {
     val label = stringResource(destination.labelRes)
     val tint by animateColorAsState(
-        targetValue = if (selected) AurisOnSurface else AurisOnSurfaceVariant,
+        targetValue = if (selected) com.auris.app.ui.theme.AurisAccent else AurisOnSurfaceVariant,
         label = "navItemTint",
     )
     // The active icon is slightly larger — the screenshot's active glyph reads heavier.
@@ -129,7 +129,7 @@ private fun FloatingNavItem(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .height(64.dp)
             .selectable(
                 selected = selected,
                 onClick = onClick,
@@ -153,14 +153,14 @@ private fun FloatingNavItem(
                 imageVector = destination.icon,
                 contentDescription = null,
                 tint = tint,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(22.dp),
             )
-            // Labels are hidden: the reference pill is icon-only at this width.
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.Transparent,
-                modifier = Modifier.height(0.dp),
+                color = tint,
+                maxLines = 1,
+                fontSize = 10.sp,
             )
         }
     }

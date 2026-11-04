@@ -4,6 +4,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalConfiguration
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.text.style.TextOverflow
+import com.auris.app.ui.theme.AurisOnSurface
+import com.auris.app.ui.theme.AurisSurface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +51,34 @@ fun EpisodePlayerRoute(
     modifier: Modifier = Modifier,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val activity = LocalContext.current.findActivity()
+    val view = LocalView.current
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var landscapeRequested by rememberSaveable(entry.id) { mutableStateOf(true) }
+
+    // Own the window for the whole route, including loading and retry screens.
+    DisposableEffect(activity, view) {
+        val originalOrientation = activity?.requestedOrientation
+        val wasKeepingAwake = view.keepScreenOn
+        val controller = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
+        val originalBehavior = controller?.systemBarsBehavior
+        val insets = androidx.core.view.ViewCompat.getRootWindowInsets(view)
+        view.keepScreenOn = true
+        controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller?.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose {
+            view.keepScreenOn = wasKeepingAwake
+            if (originalOrientation != null) activity.requestedOrientation = originalOrientation
+            if (originalBehavior != null) controller.systemBarsBehavior = originalBehavior
+            if (insets?.isVisible(WindowInsetsCompat.Type.statusBars()) != false)
+                controller?.show(WindowInsetsCompat.Type.statusBars())
+            if (insets?.isVisible(WindowInsetsCompat.Type.navigationBars()) != false)
+                controller?.show(WindowInsetsCompat.Type.navigationBars())
+        }
+    }
+    val requestedOrientation = if (landscapeRequested)
+        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    SideEffect { activity?.requestedOrientation = requestedOrientation }
     var message by remember(entry.id, unitIndex) { mutableStateOf<String?>(null) }
     var savedUnit by remember(entry.id, unitIndex) { mutableStateOf<LibraryUnitEntity?>(null) }
     var units by remember(entry.id, unitIndex) { mutableStateOf<List<LibraryUnitEntity>>(emptyList()) }
@@ -109,38 +152,51 @@ fun EpisodePlayerRoute(
                     Text("Loading episode…", color = Color.White)
                 } else {
                     Text(message.orEmpty(), color = Color.White)
-                    Button(onClick = { retry++ }) { Text("Retry with fresh links") }
+                    com.auris.app.ui.components.StateActionButton("Retry with fresh links", { retry++ })
                 }
-                TextButton(onClick = onBack) { Text("Back") }
+                com.auris.app.ui.components.StateActionButton("Back", onBack, filled = false)
             }
         } else {
             VideoPlayerScreen(episodePlayer, entry.title, savedUnit?.title.orEmpty(),
-                onBack = onBack, onError = { message = it })
-            Row(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp)) {
-                Box {
-                    TextButton(onClick = { menuOpen = true }) {
-                        Text(targets.getOrNull(selected)?.label ?: "Source", color = Color.White)
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        targets.forEachIndexed { index, target ->
-                            DropdownMenuItem(text = { Text(target.label) }, onClick = {
-                                val position = player?.currentPosition ?: 0L
-                                selected = index
-                                subtitlesEnabled = true
-                                menuOpen = false
-                                episodePlayer.play(listOf(target), position)
-                            })
+                onBack = onBack, onError = { message = it },
+                isFullscreen = isLandscape,
+                onToggleFullscreen = { landscapeRequested = !isLandscape },
+                headerActions = {
+                    Box {
+                        FilledTonalButton(onClick = { menuOpen = true },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = AurisSurface, contentColor = AurisOnSurface),
+                            modifier = Modifier.widthIn(max = 160.dp)) {
+                            Text(targets.getOrNull(selected)?.label ?: "Source", maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            targets.forEachIndexed { index, target ->
+                                DropdownMenuItem(text = { Text(target.label) }, onClick = {
+                                    val position = player?.currentPosition ?: 0L
+                                    selected = index
+                                    subtitlesEnabled = true
+                                    menuOpen = false
+                                    episodePlayer.play(listOf(target), position)
+                                })
+                            }
                         }
                     }
-                }
-                if (targets.getOrNull(selected)?.subtitles?.isNotEmpty() == true) {
-                    TextButton(onClick = {
-                        subtitlesEnabled = !subtitlesEnabled
-                        player?.let { exo -> exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
-                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled).build() }
-                    }) { Text(if (subtitlesEnabled) "CC on" else "CC off", color = Color.White) }
-                }
-            }
+                    if (targets.getOrNull(selected)?.subtitles?.isNotEmpty() == true) {
+                        FilledTonalButton(colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = AurisSurface, contentColor = AurisOnSurface), onClick = {
+                            subtitlesEnabled = !subtitlesEnabled
+                            player?.let { exo -> exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled).build() }
+                        }) { Text(if (subtitlesEnabled) "CC on" else "CC off", maxLines = 1) }
+                    }
+            })
         }
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

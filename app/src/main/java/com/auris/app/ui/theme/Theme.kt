@@ -18,13 +18,23 @@ import androidx.core.view.WindowCompat
  * [darkTheme] is accepted so previews can force the palette, not to support a light mode.
  */
 private val AurisColorScheme = darkColorScheme(
-    primary = AurisBlue,
-    onPrimary = Color.White,
-    primaryContainer = AurisIndigo,
+    primary = AurisAccent,
+    onPrimary = AurisBackground,
+    primaryContainer = AurisSurfaceOpaque,
     onPrimaryContainer = Color.White,
 
-    secondary = AurisViolet,
-    onSecondary = Color.White,
+    secondary = AurisAccent,
+    onSecondary = AurisBackground,
+
+    secondaryContainer = AurisSurfaceOpaque,
+    onSecondaryContainer = AurisOnSurface,
+    surfaceDim = AurisBackground,
+    surfaceBright = AurisSurfaceOpaque,
+    surfaceContainerLowest = AurisBackground,
+    surfaceContainerLow = AurisSurfaceOpaque,
+    surfaceContainer = AurisSurfaceOpaque,
+    surfaceContainerHigh = AurisSurfaceOpaque,
+    surfaceContainerHighest = AurisSurfaceOpaque,
 
     tertiary = AurisOrange,
     onTertiary = Color.White,

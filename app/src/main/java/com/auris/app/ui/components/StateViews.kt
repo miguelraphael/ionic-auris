@@ -11,8 +11,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,30 +88,17 @@ fun StateActionButton(
     modifier: Modifier = Modifier,
     filled: Boolean = true,
 ) {
-    val shape = RoundedCornerShape(AurisRadii.button)
-    Box(
-        modifier = modifier
-            .clip(shape)
-            .then(
-                if (filled) {
-                    Modifier.background(AurisAccent)
-                } else {
-                    Modifier.border(1.dp, GlassEdge, shape)
-                },
-            )
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = onClick,
-            )
-            .padding(horizontal = 18.dp, vertical = 9.dp),
-        contentAlignment = Alignment.Center,
+    val colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+        containerColor = if (filled) AurisAccent else AurisSurfaceOpaque,
+        contentColor = if (filled) AurisBackground else AurisOnSurface,
+    )
+    androidx.compose.material3.Button(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(AurisRadii.button),
+        colors = colors,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (filled) AurisBackground else AurisOnSurface,
-        )
+        Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 

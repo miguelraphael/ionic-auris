@@ -97,9 +97,9 @@ fun BrandGlow(modifier: Modifier = Modifier) {
         modifier = modifier.background(
             Brush.linearGradient(
                 colors = listOf(
-                    BrandIndigo.copy(alpha = 0.30f),
+                    BrandIndigo.copy(alpha = 0.12f),
                     AurisBackground.copy(alpha = 0f),
-                    BrandPurple.copy(alpha = 0.16f),
+                    BrandPurple.copy(alpha = 0.06f),
                 ),
             ),
         ),
