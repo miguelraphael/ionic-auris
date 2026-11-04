@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.auris.app.music.MusicLocalCollections
+import com.auris.app.data.remote.music.MusicArtistDetails
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.player.CustomSleepTimerDialog
 import com.auris.app.ui.player.PlayerViewModel
@@ -51,6 +52,7 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
     var message by remember { mutableStateOf<String?>(null) }
     var rows by remember { mutableStateOf(emptyList<MusicRow>()) }
     var artistOptions by remember { mutableStateOf<MusicRow?>(null) }
+    var currentArtistDetails by remember { mutableStateOf<MusicArtistDetails?>(null) }
     var rowHistory by remember { mutableStateOf(emptyList<List<MusicRow>>()) }
     fun open(title: String) { rowHistory = rowHistory + listOf(rows); pages = pages + title }
     fun back() {
@@ -126,10 +128,28 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
                         SongSection("Explore")
                         val hasArtist = !row.artistHint().isNullOrBlank()
                         SongAction("Go to Artist", Icons.Filled.Person, !busy && hasArtist) {
-                            open("Artist"); rows = emptyList(); runAction { rows = music.explore(row, false) }
+                            open("Artist")
+                            rows = emptyList()
+                            currentArtistDetails = null
+                            runAction {
+                                val (details, artistRows) = music.loadArtist(row)
+                                currentArtistDetails = details
+                                rows = artistRows
+                            }
                         }
                         SongAction("Go to Album", Icons.Filled.Album, !busy) {
-                            open("Albums"); rows = emptyList(); runAction { rows = music.explore(row, true) }
+                            runAction {
+                                val (albumTitle, albumTracks) = music.goToAlbum(row)
+                                if (albumTitle != null && albumTracks.isNotEmpty()) {
+                                    open("collection:$albumTitle")
+                                    rows = albumTracks
+                                } else if (albumTracks.isNotEmpty()) {
+                                    open("Albums")
+                                    rows = albumTracks
+                                } else {
+                                    message = "No album found for this song."
+                                }
+                            }
                         }
                         SongAction("Start Radio", Icons.Filled.Radio, !busy) { runAction("Radio started") { music.radio(row) } }
                         SongSection("Manage song")
@@ -205,10 +225,14 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
     }
     if (customTimer) CustomSleepTimerDialog({ customTimer = false }) { player.setSleepTimerDuration(it); customTimer = false }
     if (page == "Artist") MusicArtistPage(
-        name = row.artistHint().orEmpty(),
-        artwork = rows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl,
-        rows = rows.distinctBy { it.kind to it.id }, loading = busy, message = message,
-        onBack = { back() }, onPlay = { music.play(it) },
+        name = currentArtistDetails?.name ?: row.artistHint().orEmpty(),
+        artwork = currentArtistDetails?.photoUrl ?: rows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl,
+        bio = currentArtistDetails?.bio,
+        rows = rows.distinctBy { it.kind to it.id },
+        loading = busy,
+        message = message,
+        onBack = { back() },
+        onPlay = { music.play(it) },
         onPlayAll = { runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) } },
         onCollection = { item -> open("collection:${item.title}"); rows = emptyList(); runAction { rows = music.collectionRows(item.id) } },
         onOptions = { artistOptions = it },

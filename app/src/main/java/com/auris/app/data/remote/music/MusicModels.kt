@@ -77,6 +77,22 @@ data class MusicPlaylist(
     val trackCount: Int?,
 )
 
+/** Context about a song: its containing album and artist browse IDs. */
+data class MusicSongContext(
+    val albumBrowseId: String? = null,
+    val albumTitle: String? = null,
+    val artistBrowseId: String? = null,
+    val artistName: String? = null,
+)
+
+/** Full artist details extracted from the artist's official page. */
+data class MusicArtistDetails(
+    val id: String,
+    val name: String,
+    val bio: String? = null,
+    val photoUrl: String? = null,
+)
+
 /**
  * A playable audio stream for one track.
  *

@@ -203,6 +203,28 @@ class InnerTubeClient(
         transform = { json.parseToJsonElement(it).requireObject() },
     ).mapCatching { root -> parser.parseNext(root) }
 
+    /**
+     * Resolves song context (containing album and artist browse IDs) from InnerTube.
+     */
+    suspend fun songContext(videoId: String): Result<MusicSongContext> = post(
+        endpoint = "next",
+        body = """{"context":${json.encodeToString(InnerTubeContext.serializer(), context)},
+                  "videoId":${json.encodeToString(JsonPrimitive.serializer(), JsonPrimitive(videoId))}}""",
+        transform = { json.parseToJsonElement(it).requireObject() },
+    ).mapCatching { root -> parser.parseSongContext(root) }
+
+    /**
+     * Fetches artist details: official photo banner, clean name, and biography.
+     */
+    suspend fun artistDetails(artistId: String, defaultName: String = ""): Result<MusicArtistDetails> = post(
+        endpoint = "browse",
+        body = json.encodeToString(
+            InnerTubeBrowseRequest.serializer(),
+            InnerTubeBrowseRequest(context, browseId = artistId),
+        ),
+        transform = { json.parseToJsonElement(it).requireObject() },
+    ).mapCatching { root -> parser.parseArtistDetails(root, defaultName) }
+
     // ---- Transport ----------------------------------------------------------
 
     /**
@@ -320,6 +342,8 @@ class InnerTubeClient(
          * home screen reflects the configured content country rather than a US default.
          */
         val DISCOVERY_SHELVES = listOf(
+            MusicShelfSeed("Official Playlists", "YouTube Music official playlists"),
+            MusicShelfSeed("Top Hits & Charts", "Today's Hits playlist"),
             MusicShelfSeed("Popular in the Philippines", "popular music Philippines"),
             MusicShelfSeed("New Releases", "new music releases Philippines"),
             MusicShelfSeed("OPM", "OPM"),

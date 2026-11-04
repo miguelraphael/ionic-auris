@@ -67,6 +67,18 @@ interface MusicSource {
     suspend fun resolveAudioStream(videoId: String): Result<ResolvedAudio>
 
     /**
+     * Resolves containing album and artist browse IDs for [videoId].
+     */
+    suspend fun songContext(videoId: String): Result<MusicSongContext> =
+        Result.failure(UnsupportedOperationException())
+
+    /**
+     * Fetches official details, biography, and high-res portrait for [artistId].
+     */
+    suspend fun artistDetails(artistId: String, defaultName: String = ""): Result<MusicArtistDetails> =
+        Result.failure(UnsupportedOperationException())
+
+    /**
      * Best-effort official cover art for a track.
      *
      * A default of null keeps providers that cannot supply artwork working: the UI falls back to
@@ -110,6 +122,12 @@ class DefaultMusicSource(
 
     override suspend fun resolveAudioStream(videoId: String): Result<ResolvedAudio> =
         resolver.resolveAudioStream(videoId)
+
+    override suspend fun songContext(videoId: String): Result<MusicSongContext> =
+        catalogue.songContext(videoId)
+
+    override suspend fun artistDetails(artistId: String, defaultName: String): Result<MusicArtistDetails> =
+        catalogue.artistDetails(artistId, defaultName)
 
     override suspend fun findArtwork(title: String, artist: String?): String? =
         artwork?.artworkFor(title, artist)

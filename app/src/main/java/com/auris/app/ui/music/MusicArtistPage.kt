@@ -1,6 +1,7 @@
 @file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 package com.auris.app.ui.music
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -20,9 +22,19 @@ import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.theme.*
 
 @Composable
-internal fun MusicArtistPage(name: String, artwork: String?, rows: List<MusicRow>, loading: Boolean,
-    message: String?, onBack: () -> Unit, onPlay: (MusicRow) -> Unit, onPlayAll: () -> Unit,
-    onCollection: (MusicRow) -> Unit, onOptions: (MusicRow) -> Unit) {
+internal fun MusicArtistPage(
+    name: String,
+    artwork: String?,
+    bio: String? = null,
+    rows: List<MusicRow>,
+    loading: Boolean,
+    message: String?,
+    onBack: () -> Unit,
+    onPlay: (MusicRow) -> Unit,
+    onPlayAll: () -> Unit,
+    onCollection: (MusicRow) -> Unit,
+    onOptions: (MusicRow) -> Unit,
+) {
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = AurisBackground) {
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
@@ -36,6 +48,39 @@ internal fun MusicArtistPage(name: String, artwork: String?, rows: List<MusicRow
                     Column(Modifier.padding(20.dp)) {
                         Text(name, style = MaterialTheme.typography.displaySmall)
                         Text("Artist", color = AurisOnSurfaceVariant)
+                        if (!bio.isNullOrBlank()) {
+                            var expanded by remember { mutableStateOf(false) }
+                            Surface(
+                                shape = ArtworkShapeSmall,
+                                color = AurisSurface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp)
+                                    .clickable { expanded = !expanded }
+                            ) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Text(
+                                        text = "About",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = AurisOnSurface,
+                                        modifier = Modifier.padding(bottom = 6.dp),
+                                    )
+                                    Text(
+                                        text = bio,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = AurisOnSurfaceVariant,
+                                        maxLines = if (expanded) Int.MAX_VALUE else 3,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = if (expanded) "Show less" else "Read more",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = AurisAccent,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                }
+                            }
+                        }
                         Button(onClick = onPlayAll, enabled = !loading && rows.any { it.kind == MusicRow.Kind.TRACK }, modifier = Modifier.padding(top = 16.dp)) { Text("Play songs") }
                     }
                     if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())

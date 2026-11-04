@@ -92,7 +92,7 @@ class InnerTubeParser {
         val pageType = endpoint?.get("browseEndpointContextSupportedConfigs")?.asObject()
             ?.get("browseEndpointContextMusicConfig")?.asObject()?.string("pageType")
         return when {
-            pageType == "MUSIC_PAGE_TYPE_PLAYLIST" || id.startsWith("VL") -> MusicCollectionItem(
+            pageType == "MUSIC_PAGE_TYPE_PLAYLIST" || id.startsWith("VL") || id.startsWith("MPSP") || id.startsWith("RDCLAK5uy_") -> MusicCollectionItem(
                 kind = MusicCollectionItem.Kind.PLAYLIST,
                 playlist = MusicPlaylist(id, title, metadata.joinToString(" · ").takeIf { it.isNotBlank() }, renderer.thumbnailUrl(THUMB_LARGE), null),
             )
@@ -306,6 +306,138 @@ class InnerTubeParser {
     /** Parses a `next` response into its recommended track, or null. */
     fun parseNext(root: JsonObject): MusicTrack? =
         root.collectRenderers().firstNotNullOfOrNull { item -> item.tracks.firstOrNull() }
+
+    /** Parses a `next` response to extract album and artist context for a song. */
+    fun parseSongContext(root: JsonObject): MusicSongContext {
+        var albumId: String? = null
+        var albumTitle: String? = null
+        var artistId: String? = null
+        var artistName: String? = null
+
+        fun inspect(obj: JsonObject) {
+            val panel = obj["playlistPanelVideoRenderer"]?.asObject()
+            if (panel != null) {
+                val longRuns = (panel["longBylineText"] as? JsonObject)?.ownRuns().orEmpty()
+                for (run in longRuns) {
+                    val ep = (run["navigationEndpoint"] as? JsonObject)?.get("browseEndpoint") as? JsonObject
+                    val bid = ep?.string("browseId").orEmpty()
+                    val pageType = ep?.get("browseEndpointContextSupportedConfigs")?.asObject()
+                        ?.get("browseEndpointContextMusicConfig")?.asObject()?.string("pageType")
+                    if ((pageType == "MUSIC_PAGE_TYPE_ALBUM" || bid.startsWith("MPRE")) && albumId == null) {
+                        albumId = bid
+                        albumTitle = run.string("text")
+                    }
+                    if ((pageType == "MUSIC_PAGE_TYPE_ARTIST" || bid.startsWith("UC")) && artistId == null) {
+                        artistId = bid
+                        artistName = run.string("text")?.cleanArtist()
+                    }
+                }
+                val menuItems = (panel["menu"]?.asObject()?.get("menuRenderer") as? JsonObject)
+                    ?.get("items") as? JsonArray
+                menuItems?.mapNotNull { (it as? JsonObject)?.get("menuNavigationItemRenderer") as? JsonObject }
+                    ?.forEach { item ->
+                        val ep = (item["navigationEndpoint"] as? JsonObject)?.get("browseEndpoint") as? JsonObject
+                        val bid = ep?.string("browseId").orEmpty()
+                        val pageType = ep?.get("browseEndpointContextSupportedConfigs")?.asObject()
+                            ?.get("browseEndpointContextMusicConfig")?.asObject()?.string("pageType")
+                        if ((pageType == "MUSIC_PAGE_TYPE_ALBUM" || bid.startsWith("MPRE")) && albumId == null) {
+                            albumId = bid
+                        }
+                        if ((pageType == "MUSIC_PAGE_TYPE_ARTIST" || bid.startsWith("UC")) && artistId == null) {
+                            artistId = bid
+                        }
+                    }
+            }
+
+            val bep = (obj["navigationEndpoint"] as? JsonObject)?.get("browseEndpoint") as? JsonObject
+                ?: (obj["browseEndpoint"] as? JsonObject)
+            if (bep != null) {
+                val bid = bep.string("browseId").orEmpty()
+                val pageType = bep.get("browseEndpointContextSupportedConfigs")?.asObject()
+                    ?.get("browseEndpointContextMusicConfig")?.asObject()?.string("pageType")
+                if ((pageType == "MUSIC_PAGE_TYPE_ALBUM" || bid.startsWith("MPRE")) && albumId == null) {
+                    albumId = bid
+                }
+                if ((pageType == "MUSIC_PAGE_TYPE_ARTIST" || (bid.startsWith("UC") && pageType != "MUSIC_PAGE_TYPE_USER_CHANNEL")) && artistId == null) {
+                    artistId = bid
+                }
+            }
+        }
+
+        fun walk(element: JsonElement, depth: Int = 0) {
+            if (depth > MAX_DEPTH) return
+            when (element) {
+                is JsonObject -> {
+                    inspect(element)
+                    element.values.forEach { walk(it, depth + 1) }
+                }
+                is JsonArray -> element.forEach { walk(it, depth + 1) }
+                else -> Unit
+            }
+        }
+
+        walk(root)
+        return MusicSongContext(albumId, albumTitle, artistId, artistName)
+    }
+
+    /** Parses a `browse` response for an artist into details: official high-res portrait, bio, clean name. */
+    fun parseArtistDetails(root: JsonObject, defaultName: String = ""): MusicArtistDetails {
+        val header = root["header"]?.asObject()
+        val hData = header?.get("musicImmersiveHeaderRenderer")?.asObject()
+            ?: header?.get("musicVisualHeaderRenderer")?.asObject()
+            ?: header?.get("musicHeaderRenderer")?.asObject()
+
+        val name = hData?.firstTitle()?.cleanArtist()
+            ?: root.collectRenderers().firstNotNullOfOrNull { it.album?.artist }
+            ?: defaultName.cleanArtist()
+
+        val thumbs = (hData?.get("thumbnail") as? JsonObject)?.let { thumbnail ->
+            thumbnail["thumbnails"] as? JsonArray
+                ?: thumbnail["musicThumbnailRenderer"]?.asObject()?.get("thumbnail")?.asObject()
+                    ?.get("thumbnails") as? JsonArray
+        } ?: (hData?.get("thumbnails") as? JsonArray)
+
+        val photoUrl = thumbs?.mapNotNull { (it as? JsonObject)?.string("url") }?.lastOrNull()
+            ?: hData?.thumbnailUrl(THUMB_LARGE)
+
+        var bio: String? = null
+        val descRuns = hData?.runs("description")
+        if (!descRuns.isNullOrEmpty()) {
+            val fullDesc = descRuns.joinToString("") { it.string("text").orEmpty() }.trim()
+            if (fullDesc.isNotEmpty()) {
+                val cleaned = fullDesc.split(Regex("(?i)\\n\\s*(?:from wikipedia|wikipedia|read more)")).firstOrNull()?.trim()
+                bio = if (!cleaned.isNullOrBlank()) cleaned else fullDesc
+            }
+        }
+        if (bio == null) {
+            fun findBio(element: JsonElement, depth: Int = 0): String? {
+                if (depth > MAX_DEPTH) return null
+                if (element is JsonObject) {
+                    val shelf = element["musicDescriptionShelfRenderer"]?.asObject()
+                    if (shelf != null) {
+                        val runs = shelf.runs("description")
+                        val full = runs.joinToString("") { it.string("text").orEmpty() }.trim()
+                        if (full.isNotEmpty()) {
+                            val cleaned = full.split(Regex("(?i)\\n\\s*(?:from wikipedia|wikipedia|read more)")).firstOrNull()?.trim()
+                            return if (!cleaned.isNullOrBlank()) cleaned else full
+                        }
+                    }
+                    element.values.forEach { findBio(it, depth + 1)?.let { return it } }
+                } else if (element is JsonArray) {
+                    element.forEach { findBio(it, depth + 1)?.let { return it } }
+                }
+                return null
+            }
+            bio = findBio(root)
+        }
+
+        return MusicArtistDetails(
+            id = root.string("browseId").orEmpty(),
+            name = name,
+            bio = bio,
+            photoUrl = photoUrl,
+        )
+    }
 
     // ---- Continuation -------------------------------------------------------
 

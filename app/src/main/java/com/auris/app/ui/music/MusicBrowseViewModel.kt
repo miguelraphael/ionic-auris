@@ -10,6 +10,8 @@ import com.auris.app.data.remote.music.MusicLibraryMapper
 import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.data.remote.music.MusicResultType
 import com.auris.app.data.remote.music.MusicTrack
+import com.auris.app.data.remote.music.MusicArtistDetails
+import com.auris.app.data.remote.music.MusicSongContext
 import com.auris.app.data.remote.music.StreamRefusalInfo
 import com.auris.app.data.remote.music.cleanArtist
 import com.auris.app.data.remote.music.youtubeThumbnailUrl
@@ -633,6 +635,56 @@ class MusicBrowseViewModel(
                     item.title.contains(artist, ignoreCase = true)
             }.sortedBy { it.resultType.searchPriority }.distinctBy { it.kind to it.id }
         }
+    }
+
+    suspend fun goToAlbum(row: MusicRow): Pair<String?, List<MusicRow>> {
+        val ctx = source.songContext(row.id).getOrNull()
+        val albumId = ctx?.albumBrowseId
+        val albumTitle = ctx?.albumTitle ?: row.subtitle?.substringAfter("•", "")?.trim()?.takeIf { it.isNotEmpty() }
+        if (!albumId.isNullOrBlank()) {
+            val albumRows = source.collection(albumId, COLLECTION_TRACK_LIMIT).getOrNull().orEmpty()
+                .flatMap { it.toRows() }
+                .filter { it.kind == MusicRow.Kind.TRACK }
+            if (albumRows.isNotEmpty()) {
+                return Pair(albumTitle ?: row.title, albumRows)
+            }
+        }
+        val artist = row.artistHint().orEmpty()
+        val query = if (!albumTitle.isNullOrBlank()) "$albumTitle $artist".trim() else "${row.title} $artist".trim()
+        val searchResults = source.search(query, 30).getOrNull().orEmpty().flatMap { it.toRows() }
+        val matchingAlbum = searchResults.firstOrNull { it.kind == MusicRow.Kind.ALBUM }
+        if (matchingAlbum != null) {
+            val albumRows = source.collection(matchingAlbum.id, COLLECTION_TRACK_LIMIT).getOrNull().orEmpty()
+                .flatMap { it.toRows() }
+                .filter { it.kind == MusicRow.Kind.TRACK }
+            if (albumRows.isNotEmpty()) {
+                return Pair(matchingAlbum.title, albumRows)
+            }
+        }
+        val albums = searchResults.filter { it.kind == MusicRow.Kind.ALBUM }
+        return Pair(null, albums)
+    }
+
+    suspend fun loadArtist(row: MusicRow): Pair<MusicArtistDetails?, List<MusicRow>> {
+        val cleanName = row.artistHint().orEmpty()
+        val ctx = source.songContext(row.id).getOrNull()
+        val artistId = ctx?.artistBrowseId
+        if (!artistId.isNullOrBlank()) {
+            val details = source.artistDetails(artistId, cleanName).getOrNull()
+            val collection = source.collection(artistId, COLLECTION_TRACK_LIMIT).getOrNull().orEmpty()
+            val rows = collection.flatMap { it.toRows() }
+            if (rows.isNotEmpty() || details != null) {
+                return Pair(details ?: MusicArtistDetails(artistId, cleanName), rows)
+            }
+        }
+        val searchRows = explore(row, false)
+        val details = MusicArtistDetails(
+            id = "",
+            name = cleanName,
+            bio = null,
+            photoUrl = searchRows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl,
+        )
+        return Pair(details, searchRows)
     }
 
     suspend fun collectionRows(id: String): List<MusicRow> = source.collection(id, COLLECTION_TRACK_LIMIT)
