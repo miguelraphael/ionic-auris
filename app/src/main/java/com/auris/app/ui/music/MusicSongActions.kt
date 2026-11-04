@@ -141,13 +141,13 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
                             runAction {
                                 val (albumTitle, albumTracks) = music.goToAlbum(row)
                                 if (albumTitle != null && albumTracks.isNotEmpty()) {
-                                    open("collection:$albumTitle")
+                                    open("album:$albumTitle")
                                     rows = albumTracks
                                 } else if (albumTracks.isNotEmpty()) {
                                     open("Albums")
                                     rows = albumTracks
                                 } else {
-                                    message = "No album found for this song."
+                                    error("No album found for this song.")
                                 }
                             }
                         }
@@ -210,7 +210,7 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
                                     if (item.kind == MusicRow.Kind.TRACK) artistOptions = item
                                 }, onClick = {
                                     if (item.kind != MusicRow.Kind.TRACK) {
-                                        open("collection:${item.title}"); rows = emptyList(); runAction { rows = music.collectionRows(item.id) }
+                                        open("${if (item.kind == MusicRow.Kind.ALBUM) "album" else "collection"}:${item.title}"); rows = emptyList(); runAction { rows = music.collectionRows(item.id) }
                                     } else music.play(item)
                                 }).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     MediaArtwork(item.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
@@ -234,7 +234,13 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
         onBack = { back() },
         onPlay = { music.play(it) },
         onPlayAll = { runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) } },
-        onCollection = { item -> open("collection:${item.title}"); rows = emptyList(); runAction { rows = music.collectionRows(item.id) } },
+        onCollection = { item -> open("${if (item.kind == MusicRow.Kind.ALBUM) "album" else "collection"}:${item.title}"); rows = emptyList(); runAction { rows = music.collectionRows(item.id) } },
+        onOptions = { artistOptions = it },
+    )
+    if (page.startsWith("album:")) MusicAlbumPage(
+        title = page.substringAfter(":"), tracks = rows, loading = busy, message = message,
+        onBack = { back() }, onPlayAll = { runAction { music.playPlaylist(rows) } },
+        onPlay = { index -> runAction { music.playPlaylist(rows, index) } },
         onOptions = { artistOptions = it },
     )
     artistOptions?.let { song -> MusicSongActions(song, music) { artistOptions = null } }

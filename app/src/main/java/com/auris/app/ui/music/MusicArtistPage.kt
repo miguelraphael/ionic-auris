@@ -35,6 +35,7 @@ internal fun MusicArtistPage(
     onCollection: (MusicRow) -> Unit,
     onOptions: (MusicRow) -> Unit,
 ) {
+    var showAllSongs by remember(name) { mutableStateOf(false) }
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = AurisBackground) {
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
@@ -89,7 +90,7 @@ internal fun MusicArtistPage(
                 val songs = rows.filter { it.kind == MusicRow.Kind.TRACK }
                 if (songs.isNotEmpty()) {
                     item { Text("Songs", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp)) }
-                    items(songs, key = { it.id }) { song ->
+                    items(if (showAllSongs) songs else songs.take(5), key = { it.id }) { song ->
                         Row(Modifier.fillMaxWidth().combinedClickable(onClick = { onPlay(song) }, onLongClick = { onOptions(song) }).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             MediaArtwork(song.artworkUrl, null, Modifier.size(52.dp), shape = ArtworkShapeSmall)
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -97,6 +98,11 @@ internal fun MusicArtistPage(
                                 Text(song.subtitle.orEmpty(), color = AurisOnSurfaceVariant)
                             }
                             IconButton(onClick = { onOptions(song) }) { Icon(Icons.Filled.MoreVert, "Options for ${song.title}") }
+                        }
+                    }
+                    if (songs.size > 5) item {
+                        TextButton(onClick = { showAllSongs = !showAllSongs }, modifier = Modifier.padding(horizontal = 20.dp)) {
+                            Text(if (showAllSongs) "Show fewer songs" else "Show all ${songs.size} songs")
                         }
                     }
                 }

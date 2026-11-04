@@ -9,5 +9,5 @@
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/auris_icon_bg" />
+    <solid android:color="@color/auris_background" />
 </shape>

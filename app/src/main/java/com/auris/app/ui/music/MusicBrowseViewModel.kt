@@ -523,7 +523,7 @@ class MusicBrowseViewModel(
      *
      * @return true when the service accepted the queue.
      */
-    private suspend fun enqueue(tracks: List<PlayableTrack>): Boolean {
+    private suspend fun enqueue(tracks: List<PlayableTrack>, startIndex: Int = 0): Boolean {
         // Wait for the binding rather than failing the tap: on a cold start the service is still
         // connecting when the first card is tapped.
         val sessionController = controller ?: controllerReady.await()
@@ -545,7 +545,7 @@ class MusicBrowseViewModel(
             )
         }
 
-        sessionController.setMediaItems(items, /* startIndex = */ 0, /* startPositionMs = */ 0L)
+        sessionController.setMediaItems(items, startIndex, /* startPositionMs = */ 0L)
         sessionController.prepare()
         sessionController.play()
         homeRequested = false
@@ -553,9 +553,9 @@ class MusicBrowseViewModel(
         // Persist the first track so the library grid shows it and progress is restorable.
         runCatching {
             val existing = libraryRepository.findBySource(com.auris.app.core.model.MediaType.MUSIC,
-                tracks.first().track.videoId, MusicLibraryMapper.SOURCE_KEY)
+                tracks[startIndex].track.videoId, MusicLibraryMapper.SOURCE_KEY)
             libraryRepository.upsert(
-                MusicLibraryMapper.toEntry(tracks.first().track, isCurrent = true)
+                MusicLibraryMapper.toEntry(tracks[startIndex].track, isCurrent = true)
                     .copy(isFavorite = existing?.isFavorite ?: false),
             )
         }
@@ -652,15 +652,6 @@ class MusicBrowseViewModel(
         val artist = row.artistHint().orEmpty()
         val query = if (!albumTitle.isNullOrBlank()) "$albumTitle $artist".trim() else "${row.title} $artist".trim()
         val searchResults = source.search(query, 30).getOrNull().orEmpty().flatMap { it.toRows() }
-        val matchingAlbum = searchResults.firstOrNull { it.kind == MusicRow.Kind.ALBUM }
-        if (matchingAlbum != null) {
-            val albumRows = source.collection(matchingAlbum.id, COLLECTION_TRACK_LIMIT).getOrNull().orEmpty()
-                .flatMap { it.toRows() }
-                .filter { it.kind == MusicRow.Kind.TRACK }
-            if (albumRows.isNotEmpty()) {
-                return Pair(matchingAlbum.title, albumRows)
-            }
-        }
         val albums = searchResults.filter { it.kind == MusicRow.Kind.ALBUM }
         return Pair(null, albums)
     }
@@ -690,9 +681,11 @@ class MusicBrowseViewModel(
     suspend fun collectionRows(id: String): List<MusicRow> = source.collection(id, COLLECTION_TRACK_LIMIT)
         .getOrThrow().flatMap { it.toRows() }
 
-    suspend fun playPlaylist(rows: List<MusicRow>) {
+    suspend fun playPlaylist(rows: List<MusicRow>, startIndex: Int = 0) {
+        val selected = rows.getOrNull(startIndex) ?: error("No song selected")
         val playable = rows.mapNotNull { resolveTrack(it.id, it.title) }
-        check(playable.isNotEmpty() && enqueue(playable)) { "Could not play these songs. Try again." }
+        val resolvedIndex = playable.indexOfFirst { it.track.videoId == selected.id }
+        check(resolvedIndex >= 0 && enqueue(playable, resolvedIndex)) { "Could not play this song. Try again." }
     }
 
     /** Saves a track to the library without playing it. */
