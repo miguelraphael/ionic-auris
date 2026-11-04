@@ -167,7 +167,7 @@ fun MusicPlayerRoute(
 }
 
 @Composable
-private fun CustomSleepTimerDialog(onDismiss: () -> Unit, onStart: (Long) -> Unit) {
+internal fun CustomSleepTimerDialog(onDismiss: () -> Unit, onStart: (Long) -> Unit) {
     var hours by rememberSaveable { mutableStateOf("") }
     var minutes by rememberSaveable { mutableStateOf("") }
     var seconds by rememberSaveable { mutableStateOf("") }
@@ -217,7 +217,7 @@ private fun CustomSleepTimerDialog(onDismiss: () -> Unit, onStart: (Long) -> Uni
  * readable without closing it to look at the player.
  */
 @Composable
-private fun QueueSheet(
+internal fun QueueSheet(
     items: List<PlayerQueueItem>,
     state: PlayerUiState,
     onSelect: (PlayerQueueItem) -> Unit,

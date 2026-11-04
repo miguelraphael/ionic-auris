@@ -28,6 +28,10 @@ data class PlayerUiState(
     val sleepRemainingMs: Long = 0L,
     val queueSize: Int = 0,
     val queuePosition: Int = 0,
+    val eqFrequencies: List<Int> = emptyList(),
+    val eqLevels: List<Int> = emptyList(),
+    val eqMin: Int = -1500,
+    val eqMax: Int = 1500,
 
     /** A transient message from a control that could not act, e.g. an unavailable feature. */
     val message: String? = null,

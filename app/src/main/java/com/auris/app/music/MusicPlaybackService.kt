@@ -25,6 +25,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
@@ -60,10 +61,12 @@ class MusicPlaybackService : MediaSessionService() {
         onDeadlineChanged = { sleepDeadline = it; publishModes() },
         onExpire = { player?.pause() })
     private var smartJob: Job? = null
+    private var suggestionSeed: String? = null
     private var sleepDeadline = 0L
     private var smartShuffle = false
     private var player: ExoPlayer? = null
     private var session: MediaSession? = null
+    private var equalizer: android.media.audiofx.Equalizer? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -93,6 +96,7 @@ class MusicPlaybackService : MediaSessionService() {
                     if (controller.packageName == packageName) {
                         commands.add(SessionCommand(SET_SLEEP_TIMER, Bundle.EMPTY))
                         commands.add(SessionCommand(SET_SMART_SHUFFLE, Bundle.EMPTY))
+                        commands.add(SessionCommand(SET_EQUALIZER, Bundle.EMPTY))
                     }
                     return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                         .setAvailableSessionCommands(commands.build())
@@ -105,6 +109,18 @@ class MusicPlaybackService : MediaSessionService() {
                     when (command.customAction) {
                         SET_SLEEP_TIMER -> setSleepTimer(args.getLong(SLEEP_DURATION))
                         SET_SMART_SHUFFLE -> setSmartShuffle(args.getBoolean(SMART_ENABLED))
+                        SET_EQUALIZER -> {
+                            val eq = equalizer ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                            val band = args.getInt("band")
+                            if (band in 0 until eq.numberOfBands) {
+                                eq.setBandLevel(band.toShort(), args.getInt("level").coerceIn(
+                                    eq.bandLevelRange[0].toInt(), eq.bandLevelRange[1].toInt()).toShort())
+                                eq.enabled = true
+                                getSharedPreferences("music_equalizer", MODE_PRIVATE).edit()
+                                    .putInt("band:$band", eq.getBandLevel(band.toShort()).toInt()).apply()
+                                publishModes()
+                            }
+                        }
                         else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
                     }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -128,12 +144,39 @@ class MusicPlaybackService : MediaSessionService() {
 
         player = exo
         session = mediaSession
+        exo.addListener(object : Player.Listener {
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                equalizer?.release()
+                equalizer = runCatching {
+                    android.media.audiofx.Equalizer(0, audioSessionId).apply {
+                        val prefs = getSharedPreferences("music_equalizer", MODE_PRIVATE)
+                        for (band in 0 until numberOfBands) setBandLevel(band.toShort(),
+                            prefs.getInt("band:$band", 0).coerceIn(bandLevelRange[0].toInt(), bandLevelRange[1].toInt()).toShort())
+                        enabled = true
+                    }
+                }.getOrNull()
+                publishModes()
+            }
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
+                    events.contains(Player.EVENT_TIMELINE_CHANGED) ||
+                    events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) {
+                    loadSuggestions()
+                }
+            }
+        })
     }
 
     private fun publishModes() {
         session?.setSessionExtras(Bundle().apply {
             putLong(SLEEP_DEADLINE, sleepDeadline)
             putBoolean(SMART_ENABLED, smartShuffle)
+            equalizer?.let { eq ->
+                putIntArray("eqFrequencies", (0 until eq.numberOfBands).map { eq.getCenterFreq(it.toShort()) / 1000 }.toIntArray())
+                putIntArray("eqLevels", (0 until eq.numberOfBands).map { eq.getBandLevel(it.toShort()).toInt() }.toIntArray())
+                putInt("eqMin", eq.bandLevelRange[0].toInt())
+                putInt("eqMax", eq.bandLevelRange[1].toInt())
+            }
         })
     }
 
@@ -143,6 +186,7 @@ class MusicPlaybackService : MediaSessionService() {
 
     private fun setSmartShuffle(enabled: Boolean) {
         smartJob?.cancel()
+        suggestionSeed = null
         smartShuffle = enabled
         publishModes()
         val exo = player ?: return
@@ -153,10 +197,21 @@ class MusicPlaybackService : MediaSessionService() {
                     exo.removeMediaItem(index)
                 }
             }
+            loadSuggestions()
             return
         }
         exo.shuffleModeEnabled = true
+        loadSuggestions()
+    }
+
+    private fun loadSuggestions() {
+        val exo = player ?: return
         val seed = exo.currentMediaItem ?: return
+        // Continue at the end of a queue without changing the user's repeat or shuffle mode.
+        if (!smartShuffle && (exo.repeatMode != Player.REPEAT_MODE_OFF || exo.hasNextMediaItem())) return
+        if (smartJob?.isActive == true && suggestionSeed == seed.mediaId) return
+        smartJob?.cancel()
+        suggestionSeed = seed.mediaId
         val artist = seed.mediaMetadata.artist?.toString()
         smartJob = scope.launch {
             try {
@@ -172,7 +227,8 @@ class MusicPlaybackService : MediaSessionService() {
                         ?.takeIf { it.isPlayable() } ?: continue
                     currentCoroutineContext().ensureActive()
                     // A new selection replaces the queue while recommendations are resolving.
-                    if ((0 until exo.mediaItemCount).none { exo.getMediaItemAt(it).mediaId == seed.mediaId }) return@launch
+                    if (exo.currentMediaItem?.mediaId != seed.mediaId ||
+                        (!smartShuffle && exo.repeatMode != Player.REPEAT_MODE_OFF)) return@launch
                     if ((0 until exo.mediaItemCount).any { exo.getMediaItemAt(it).mediaId == track.videoId }) continue
                     val item = buildMediaItem(track.videoId, track.title, track.artist, track.album,
                         track.largeArtworkUrl ?: track.artworkUrl, stream.url, stream.mimeType)
@@ -182,7 +238,7 @@ class MusicPlaybackService : MediaSessionService() {
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (error: Exception) {
-                android.util.Log.w("AurisMusic", "Smart shuffle could not load suggestions", error)
+                android.util.Log.w("AurisMusic", "Could not load playback suggestions", error)
             }
         }
     }
@@ -200,6 +256,7 @@ class MusicPlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         scope.cancel()
+        equalizer?.release()
         session?.run {
             player.release()
             release()
@@ -229,6 +286,7 @@ class MusicPlaybackService : MediaSessionService() {
          * buttons would bind to a fresh session each time the app is opened.
          */
         const val SET_SLEEP_TIMER = "auris.SET_SLEEP_TIMER"
+        const val SET_EQUALIZER = "auris.SET_EQUALIZER"
         const val SLEEP_DURATION = "durationMs"
         const val SLEEP_DEADLINE = "sleepDeadline"
         const val SET_SMART_SHUFFLE = "auris.SET_SMART_SHUFFLE"

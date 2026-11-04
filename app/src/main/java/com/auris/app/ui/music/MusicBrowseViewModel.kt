@@ -550,11 +550,61 @@ class MusicBrowseViewModel(
 
         // Persist the first track so the library grid shows it and progress is restorable.
         runCatching {
+            val existing = libraryRepository.findBySource(com.auris.app.core.model.MediaType.MUSIC,
+                tracks.first().track.videoId, MusicLibraryMapper.SOURCE_KEY)
             libraryRepository.upsert(
-                MusicLibraryMapper.toEntry(tracks.first().track, isCurrent = true),
+                MusicLibraryMapper.toEntry(tracks.first().track, isCurrent = true)
+                    .copy(isFavorite = existing?.isFavorite ?: false),
             )
         }
         return true
+    }
+
+    suspend fun isFavorite(row: MusicRow): Boolean = libraryRepository.findBySource(
+        com.auris.app.core.model.MediaType.MUSIC, row.id, MusicLibraryMapper.SOURCE_KEY)?.isFavorite == true
+
+    suspend fun favorite(row: MusicRow, enabled: Boolean) {
+        val existing = libraryRepository.findBySource(com.auris.app.core.model.MediaType.MUSIC,
+            row.id, MusicLibraryMapper.SOURCE_KEY)
+        val entry = existing ?: MusicLibraryMapper.toEntry(MusicTrack(videoId = row.id,
+            title = row.title, artist = row.artistHint(), artworkUrl = row.artworkUrl,
+            album = null, durationMs = null, largeArtworkUrl = null, playlistId = null, trackIndex = null))
+        libraryRepository.upsert(entry.copy(isFavorite = enabled))
+    }
+
+    suspend fun addToQueue(row: MusicRow, next: Boolean) {
+        val track = resolveTrack(row.id, row.title) ?: error("Could not resolve this song. Try again.")
+        val session = controller ?: controllerReady.await() ?: error("Playback service unavailable")
+        val item = buildMediaItem(row.id, row.title, row.artistHint(), track.track.album,
+            row.artworkUrl, track.streamUrl, track.mimeType)
+        val empty = session.mediaItemCount == 0
+        val index = if (next && !empty) session.currentMediaItemIndex + 1 else session.mediaItemCount
+        session.addMediaItem(index, item)
+        if (empty) { session.prepare(); session.play() }
+    }
+
+    suspend fun radio(row: MusicRow) {
+        val tracks = MusicSuggestions.suggest(source, libraryRepository.observeLibrary().first(),
+            seedArtist = row.artistHint(), excludedIds = setOf(row.id), limit = 10)
+        val playable = listOfNotNull(resolveTrack(row.id, row.title)) + tracks.mapNotNull { resolveTrack(it) }
+        check(playable.isNotEmpty() && enqueue(playable)) { "Could not start radio. Try again." }
+    }
+
+    suspend fun explore(row: MusicRow, album: Boolean): List<MusicRow> {
+        val artist = row.artistHint().orEmpty()
+        val results = source.search(if (album) "${row.title} $artist" else artist, 40).getOrThrow()
+        return if (album) results.flatMap { it.toRows() }.filter { it.kind == MusicRow.Kind.ALBUM }
+        else results.flatMap { it.toRows() }.filter {
+            it.artistHint()?.contains(artist, ignoreCase = true) == true }
+            .sortedBy { it.resultType.searchPriority }.distinctBy { it.kind to it.id }
+    }
+
+    suspend fun collectionRows(id: String): List<MusicRow> = source.collection(id, COLLECTION_TRACK_LIMIT)
+        .getOrThrow().flatMap { it.toRows() }
+
+    suspend fun playPlaylist(rows: List<MusicRow>) {
+        val playable = rows.mapNotNull { resolveTrack(it.id, it.title) }
+        check(playable.isNotEmpty() && enqueue(playable)) { "Could not play these songs. Try again." }
     }
 
     /** Saves a track to the library without playing it. */
@@ -572,7 +622,11 @@ class MusicBrowseViewModel(
                 playlistId = null,
                 trackIndex = null,
             )
-            runCatching { libraryRepository.upsert(MusicLibraryMapper.toEntry(track)) }
+            runCatching {
+                val existing = libraryRepository.findBySource(com.auris.app.core.model.MediaType.MUSIC,
+                    track.videoId, MusicLibraryMapper.SOURCE_KEY)
+                if (existing == null) libraryRepository.upsert(MusicLibraryMapper.toEntry(track))
+            }
                 .onSuccess { _state.value = _state.value.copy(message = "Saved ${track.title}") }
                 .onFailure { _state.value = _state.value.copy(message = "Could not save") }
         }

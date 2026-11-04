@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -249,6 +252,9 @@ fun AurisNavHost(
             // launch would compete with the library sync for nothing.
             LaunchedEffect(Unit) { music.loadHome() }
 
+            var homeSongOptions by remember { mutableStateOf<com.auris.app.ui.music.MusicRow?>(null) }
+            homeSongOptions?.let { song -> com.auris.app.ui.music.MusicSongActions(song, music) { homeSongOptions = null } }
+
             MusicHomeScreen(
                 state = musicState,
                 savedMusic = library.filter { it.mediaType == MediaType.MUSIC },
@@ -260,6 +266,7 @@ fun AurisNavHost(
                 onPrevious = music::previous,
                 onNext = music::next,
                 onRetryHome = music::retryHome,
+                onOptions = { homeSongOptions = it },
             )
         }
 
@@ -414,6 +421,11 @@ fun AurisNavHost(
             }
             val musicState by music.state.collectAsStateWithLifecycle()
 
+            var optionsSong by remember { mutableStateOf<com.auris.app.ui.music.MusicRow?>(null) }
+            optionsSong?.let { song ->
+                com.auris.app.ui.music.MusicSongActions(song, music) { optionsSong = null }
+            }
+
             MusicBrowseScreen(
                 state = musicState,
                 onQueryChange = music::search,
@@ -421,7 +433,7 @@ fun AurisNavHost(
                 onTogglePlayPause = music::togglePlayPause,
                 onPrevious = music::previous,
                 onNext = music::next,
-                onSave = music::saveToLibrary,
+                onOptions = { optionsSong = it },
                 onOpenPlayer = { navController.navigate(Routes.PLAYER) },
             )
         }

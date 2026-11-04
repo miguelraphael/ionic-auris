@@ -1,8 +1,10 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 package com.auris.app.ui.music
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,6 +89,7 @@ fun MusicHomeScreen(
     onNext: () -> Unit = {},
     /** A failed home load is retryable; the ViewModel otherwise fetches it only once. */
     onRetryHome: () -> Unit = {},
+    onOptions: (MusicRow) -> Unit = {},
 ) {
     val heroArtwork = state.shelves.firstOrNull()?.rows?.firstOrNull()?.artworkUrl
     val palette = rememberArtworkPaletteValue(artworkKey = heroArtwork)
@@ -142,6 +145,7 @@ fun MusicHomeScreen(
                                     subtitle = entry.subtitle ?: entry.author,
                                     isNowPlaying = false,
                                     onClick = { onPlayEntry(entry) },
+                                    onLongClick = { onOptions(MusicRow(MusicRow.Kind.TRACK, entry.title, entry.author, entry.artworkUrl, entry.sourceId)) },
                                 )
                             }
                         }
@@ -161,6 +165,7 @@ fun MusicHomeScreen(
                                 subtitle = row.subtitle,
                                 isNowPlaying = row.id == state.nowPlayingId,
                                 onClick = { onPlay(row) },
+                                onLongClick = { if (row.kind == MusicRow.Kind.TRACK) onOptions(row) },
                             )
                         }
                     }
@@ -286,14 +291,16 @@ private fun MusicCard(
     subtitle: String?,
     isNowPlaying: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .width(CARD_WIDTH)
-            .clickable(
+            .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
+                onLongClick = onLongClick,
             ),
     ) {
         Box {

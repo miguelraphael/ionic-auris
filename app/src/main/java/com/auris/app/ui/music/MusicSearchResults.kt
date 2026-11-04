@@ -1,7 +1,9 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 package com.auris.app.ui.music
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -56,8 +58,8 @@ internal fun MusicSearchResults(
     filter: MusicSearchFilter,
     onFilter: (MusicSearchFilter) -> Unit,
     onPlay: (MusicRow) -> Unit,
-    onSave: (MusicRow) -> Unit,
     onOpenPlayer: () -> Unit,
+    onOptions: (MusicRow) -> Unit,
 ) {
     val sections = remember(state.results) { MusicSearchSections(state.results) }
     val songs = if (filter == MusicSearchFilter.TOP) sections.songs.take(5) else sections.songs
@@ -102,9 +104,11 @@ internal fun MusicSearchResults(
             item(key = "top-header", contentType = "header") { SearchSectionHeader("Top Results") }
             item(key = "top-result", contentType = "featured") {
                 Surface(shape = ArtworkShape, color = AurisSurface,
-                    modifier = Modifier.fillMaxWidth().clickable {
+                    modifier = Modifier.fillMaxWidth().combinedClickable(onLongClick = {
+                        if (top.kind == MusicRow.Kind.TRACK) onOptions(top)
+                    }, onClick = {
                         if (top.id == state.nowPlayingId) onOpenPlayer() else onPlay(top)
-                    }) {
+                    })) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         MediaArtwork(top.artworkUrl, null, Modifier.size(88.dp), shape = ArtworkShapeSmall)
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -136,7 +140,7 @@ internal fun MusicSearchResults(
             items(songs, key = { "song-${it.id}" }, contentType = { "song" }) { song ->
                 SearchSongRow(song, song.id == state.nowPlayingId,
                     onPlay = { if (song.id == state.nowPlayingId) onOpenPlayer() else onPlay(song) },
-                    onSave = { onSave(song) })
+                    onOptions = { onOptions(song) })
             }
         }
         listOf(Triple(MusicSearchFilter.ALBUMS, "Albums", sections.albums),
@@ -178,11 +182,10 @@ private fun SearchSectionHeader(title: String, onClick: (() -> Unit)? = null) {
 }
 
 @Composable
-private fun SearchSongRow(row: MusicRow, isCurrent: Boolean, onPlay: () -> Unit, onSave: () -> Unit) {
-    var showMenu by remember { mutableStateOf(false) }
+private fun SearchSongRow(row: MusicRow, isCurrent: Boolean, onPlay: () -> Unit, onOptions: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(ArtworkShapeSmall)
         .then(if (isCurrent) Modifier.background(AurisAccent.copy(alpha = 0.10f)) else Modifier)
-        .clickable(onClick = onPlay).padding(vertical = 8.dp, horizontal = 4.dp),
+        .combinedClickable(onClick = onPlay, onLongClick = onOptions).padding(vertical = 8.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         MediaArtwork(row.artworkUrl, null, Modifier.size(52.dp), shape = ArtworkShapeSmall)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -190,12 +193,6 @@ private fun SearchSongRow(row: MusicRow, isCurrent: Boolean, onPlay: () -> Unit,
             row.subtitle?.let { Text(it, color = AurisOnSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
-        Box {
-            IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, "Options for ${row.title}") }
-            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                DropdownMenuItem(text = { Text("Play") }, onClick = { showMenu = false; onPlay() })
-                DropdownMenuItem(text = { Text("Save to library") }, onClick = { showMenu = false; onSave() })
-            }
-        }
+        IconButton(onClick = onOptions) { Icon(Icons.Filled.MoreVert, "Options for ${row.title}") }
     }
 }

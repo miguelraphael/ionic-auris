@@ -128,6 +128,10 @@ class PlayerViewModel(context: Context) : ViewModel() {
             repeatMode = RepeatMode.fromExoPlayer(player.repeatMode),
             shuffleEnabled = player.shuffleModeEnabled,
             smartShuffleEnabled = player.sessionExtras.getBoolean(MusicPlaybackService.SMART_ENABLED),
+            eqFrequencies = player.sessionExtras.getIntArray("eqFrequencies")?.toList().orEmpty(),
+            eqLevels = player.sessionExtras.getIntArray("eqLevels")?.toList().orEmpty(),
+            eqMin = player.sessionExtras.getInt("eqMin", -1500),
+            eqMax = player.sessionExtras.getInt("eqMax", 1500),
             sleepRemainingMs = player.sessionExtras.getLong(MusicPlaybackService.SLEEP_DEADLINE)
                 .let { if (it == 0L) 0L else (it - SystemClock.elapsedRealtime()).coerceAtLeast(0L) },
             queueSize = player.mediaItemCount,
@@ -245,6 +249,11 @@ class PlayerViewModel(context: Context) : ViewModel() {
     }
 
     fun setSleepTimer(minutes: Int) = setSleepTimerDuration(minutes * 60_000L)
+
+    fun setEqualizerBand(band: Int, level: Int) {
+        controller?.sendCustomCommand(SessionCommand(MusicPlaybackService.SET_EQUALIZER, Bundle.EMPTY),
+            Bundle().apply { putInt("band", band); putInt("level", level) })
+    }
 
     fun setSleepTimerDuration(durationMs: Long) {
         controller?.sendCustomCommand(SessionCommand(MusicPlaybackService.SET_SLEEP_TIMER, Bundle.EMPTY),
