@@ -5,6 +5,18 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 /**
+ * Strips auto-generated YouTube channel markers such as "- Topic", "– Topic", ", Topic", etc.
+ * and trims whitespace, leaving the clean artist name.
+ */
+fun String.cleanArtist(): String {
+    val stripped = this
+        .replace(Regex("""(?i)\s*[-–—•,]\s*topic\b.*"""), "")
+        .replace(Regex("""(?i)\s+topic$"""), "")
+        .trim()
+    return if (stripped.isNotBlank()) stripped else this.trim()
+}
+
+/**
  * The YouTube Music content we consume, as domain models.
  *
  * ### Why the domain models are separate from the wire shape

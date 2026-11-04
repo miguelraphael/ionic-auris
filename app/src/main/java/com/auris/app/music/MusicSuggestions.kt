@@ -4,13 +4,14 @@ import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.data.remote.music.MusicTrack
+import com.auris.app.data.remote.music.cleanArtist
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 
 /** Local, explainable recommendations shared by Music home and Smart Shuffle. */
 internal object MusicSuggestions {
-    private fun normalized(value: String): String = value.removeSuffix(" - Topic")
+    private fun normalized(value: String): String = value.cleanArtist()
         .trim().lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ")
 
     private fun matches(artist: String?, name: String): Boolean = artist != null &&

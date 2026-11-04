@@ -98,7 +98,7 @@ class InnerTubeParser {
             )
             pageType == "MUSIC_PAGE_TYPE_ALBUM" || id.startsWith("MPRE") -> MusicCollectionItem(
                 kind = MusicCollectionItem.Kind.ALBUM,
-                album = MusicAlbum(id, title, metadata.firstOrNull(), renderer.thumbnailUrl(THUMB_LARGE), subtitle?.extractYear(), null),
+                album = MusicAlbum(id, title, metadata.firstOrNull()?.cleanArtist(), renderer.thumbnailUrl(THUMB_LARGE), subtitle?.extractYear(), null),
             )
             else -> MusicCollectionItem(MusicCollectionItem.Kind.UNKNOWN)
         }
@@ -155,7 +155,7 @@ class InnerTubeParser {
 
         val metadata = segments.filterIndexed { index, segment -> !segment.isNonMetadata(index) }
 
-        val labelledArtist = renderer.flexText("artist")?.let { it.substringBefore("•").trim() }
+        val labelledArtist = renderer.flexText("artist")?.let { it.substringBefore("•").trim().cleanArtist() }
         val labelledAlbum = renderer.flexText("album")?.let { it.substringBefore("•").trim() }
 
         return MusicCollectionItem(
@@ -164,7 +164,7 @@ class InnerTubeParser {
                 MusicTrack(
                     videoId = videoId,
                     title = (labelledTitle ?: positionalTitle ?: renderer.firstTitle()) ?: videoId,
-                    artist = labelledArtist ?: metadata.getOrNull(0),
+                    artist = (labelledArtist ?: metadata.getOrNull(0))?.cleanArtist(),
                     album = labelledAlbum ?: metadata.getOrNull(1),
                     durationMs = duration,
                     artworkUrl = renderer.thumbnailUrl(THUMB_MEDIUM)
@@ -295,7 +295,7 @@ class InnerTubeParser {
                 InnerTubePlayerResponse.VideoDetails(
                     videoId = it.string("videoId").orEmpty(),
                     title = it.string("title").orEmpty(),
-                    author = it.string("author"),
+                    author = it.string("author")?.cleanArtist(),
                     lengthSeconds = it.long("lengthSeconds"),
                     thumbnails = it.thumbnails(),
                 )

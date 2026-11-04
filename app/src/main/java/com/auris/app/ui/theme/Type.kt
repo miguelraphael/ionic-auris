@@ -2,71 +2,115 @@ package com.auris.app.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.auris.app.R
 
 /**
- * The reference player is set in a geometric grotesque with a tight display cut for the
- * track title. We approximate with the system default at heavy weight rather than bundling
- * a binary font that would grow the APK.
+ * Apple Music typography scale set in San Francisco (SF Pro Display / Text).
+ *
+ * Tightly-spaced large titles and crisp metadata weights replicate the
+ * reference Apple Music design language.
  */
-private val Display = FontFamily.SansSerif
+val SfProFontFamily = FontFamily(
+    Font(R.font.sf_pro_regular, FontWeight.Normal),
+    Font(R.font.sf_pro_medium, FontWeight.Medium),
+    Font(R.font.sf_pro_semibold, FontWeight.SemiBold),
+    Font(R.font.sf_pro_bold, FontWeight.Bold),
+)
 
 val AurisTypography = Typography(
     displayLarge = TextStyle(
-        fontFamily = Display,
+        fontFamily = SfProFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 40.sp,
-        lineHeight = 46.sp,
-        letterSpacing = (-1).sp,
+        fontSize = 38.sp,
+        lineHeight = 44.sp,
+        letterSpacing = (-1.0).sp,
+    ),
+    displayMedium = TextStyle(
+        fontFamily = SfProFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 30.sp,
+        lineHeight = 36.sp,
+        letterSpacing = (-0.7).sp,
+    ),
+    displaySmall = TextStyle(
+        fontFamily = SfProFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
+        letterSpacing = (-0.5).sp,
     ),
     headlineMedium = TextStyle(
-        fontFamily = Display,
+        fontFamily = SfProFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 26.sp,
-        lineHeight = 32.sp,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
         letterSpacing = (-0.4).sp,
     ),
-    titleLarge = TextStyle(
-        fontFamily = Display,
-        fontWeight = FontWeight.Bold,
-        fontSize = 21.sp,
-        lineHeight = 27.sp,
-        letterSpacing = (-0.2).sp,
+    headlineSmall = TextStyle(
+        fontFamily = SfProFontFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+        lineHeight = 26.sp,
+        letterSpacing = (-0.3).sp,
     ),
-    /** Grid thumbnail titles — two-line clamped, high contrast. */
+    titleLarge = TextStyle(
+        fontFamily = SfProFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 20.sp,
+        lineHeight = 26.sp,
+        letterSpacing = (-0.3).sp,
+    ),
     titleMedium = TextStyle(
-        fontFamily = Display,
+        fontFamily = SfProFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 15.sp,
         lineHeight = 20.sp,
+        letterSpacing = (-0.1).sp,
+    ),
+    titleSmall = TextStyle(
+        fontFamily = SfProFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 18.sp,
         letterSpacing = 0.sp,
     ),
     bodyLarge = TextStyle(
-        fontFamily = Display,
+        fontFamily = SfProFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 22.sp,
+        letterSpacing = (-0.2).sp,
     ),
-    /** Secondary metadata lines (artist, album, "continue watching" counts). */
     bodyMedium = TextStyle(
-        fontFamily = Display,
+        fontFamily = SfProFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 19.sp,
+        letterSpacing = (-0.1).sp,
     ),
     labelLarge = TextStyle(
-        fontFamily = Display,
+        fontFamily = SfProFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 13.sp,
-        letterSpacing = 0.2.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.1.sp,
     ),
-    /** Seek-bar timestamps: tabular feel, low emphasis. */
     labelMedium = TextStyle(
-        fontFamily = Display,
+        fontFamily = SfProFontFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
-        letterSpacing = 0.3.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.2.sp,
+    ),
+    labelSmall = TextStyle(
+        fontFamily = SfProFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 0.2.sp,
     ),
 )

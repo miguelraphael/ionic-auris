@@ -124,7 +124,8 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
                         SongAction("Equalizer", Icons.Filled.GraphicEq) { open("Equalizer") }
                         SongAction("Sleep Timer", Icons.Filled.Bedtime) { open("Sleep Timer") }
                         SongSection("Explore")
-                        SongAction("Go to Artist", Icons.Filled.Person, !busy && !row.subtitle.isNullOrBlank()) {
+                        val hasArtist = !row.artistHint().isNullOrBlank()
+                        SongAction("Go to Artist", Icons.Filled.Person, !busy && hasArtist) {
                             open("Artist"); rows = emptyList(); runAction { rows = music.explore(row, false) }
                         }
                         SongAction("Go to Album", Icons.Filled.Album, !busy) {
@@ -164,12 +165,13 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
                         }
                     }
                     else -> {
+                        val cleanArtist = row.artistHint().orEmpty()
                         if (rows.isNotEmpty() && (page.startsWith("playlist:") || page.startsWith("collection:"))) {
                             SongAction("Play all", Icons.Filled.PlayArrow, !busy) { runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) } }
                         }
                         if (page == "Artist") {
-                            MediaArtwork(rows.firstOrNull()?.artworkUrl ?: row.artworkUrl, null, Modifier.fillMaxWidth().height(220.dp))
-                            Text(row.subtitle?.substringBefore("•").orEmpty(), style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(vertical = 20.dp))
+                            MediaArtwork(rows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl, null, Modifier.fillMaxWidth().height(220.dp))
+                            Text(cleanArtist, style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(vertical = 20.dp))
                             Text("Artist songs and releases", color = AurisOnSurfaceVariant)
                             Button(enabled = !busy && rows.any { it.kind == MusicRow.Kind.TRACK }, onClick = {
                                 runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) }
@@ -203,7 +205,8 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
     }
     if (customTimer) CustomSleepTimerDialog({ customTimer = false }) { player.setSleepTimerDuration(it); customTimer = false }
     if (page == "Artist") MusicArtistPage(
-        name = row.subtitle?.substringBefore("•").orEmpty(), artwork = row.artworkUrl,
+        name = row.artistHint().orEmpty(),
+        artwork = rows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl,
         rows = rows.distinctBy { it.kind to it.id }, loading = busy, message = message,
         onBack = { back() }, onPlay = { music.play(it) },
         onPlayAll = { runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) } },

@@ -11,6 +11,7 @@ import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.data.remote.music.MusicResultType
 import com.auris.app.data.remote.music.MusicTrack
 import com.auris.app.data.remote.music.StreamRefusalInfo
+import com.auris.app.data.remote.music.cleanArtist
 import com.auris.app.data.remote.music.youtubeThumbnailUrl
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.music.MusicPlaybackService
@@ -48,6 +49,10 @@ data class MusicRow(
 ) {
     enum class Kind { TRACK, ALBUM, PLAYLIST }
 }
+
+/** Extracts the clean artist name from a row's subtitle or metadata. */
+internal fun MusicRow.artistHint(): String? =
+    subtitle?.substringBefore("•")?.cleanArtist()?.takeIf { it.isNotEmpty() }
 
 /**
  * One titled row on the music home screen.
@@ -407,6 +412,10 @@ class MusicBrowseViewModel(
         if (!_state.value.isResolving && player.hasNextMediaItem()) player.seekToNextMediaItem()
     }
 
+    fun consumeMessage() {
+        _state.value = _state.value.copy(message = null)
+    }
+
     /**
      * Resolves a catalogue track once, keeping the stream it returned.
      *
@@ -441,7 +450,7 @@ class MusicBrowseViewModel(
             track = MusicTrack(
                 videoId = videoId,
                 title = title,
-                artist = resolved.author,
+                artist = resolved.author?.cleanArtist(),
                 album = null,
                 durationMs = stream.durationMs ?: resolved.lengthMs,
                 artworkUrl = youtubeThumbnailUrl(videoId),
@@ -453,16 +462,6 @@ class MusicBrowseViewModel(
             mimeType = stream.mimeType,
         )
     }
-
-    /**
-     * The artist part of a row's subtitle, for the cover lookup.
-     *
-     * Rows are `"Artist • Album • Year"`; the resolver's own metadata is not available yet when
-     * the lookup is launched, which is the point — it runs in parallel with the stream resolve.
-     * A wrong hint only costs a miss, and a miss falls back to the thumbnail.
-     */
-    private fun MusicRow.artistHint(): String? =
-        subtitle?.substringBefore("•")?.trim()?.takeIf { it.isNotEmpty() }
 
     /** Best-effort official cover, bounded so a slow metadata server cannot stall playback. */
     private suspend fun officialArtwork(title: String, artist: String?): String? =
@@ -495,6 +494,7 @@ class MusicBrowseViewModel(
             // Collection tracks normally carry the album cover already. The thumbnail is only a
             // fallback for rows that came back without artwork.
             track = track.copy(
+                artist = track.artist?.cleanArtist(),
                 artworkUrl = track.artworkUrl ?: youtubeThumbnailUrl(track.videoId),
                 largeArtworkUrl = track.largeArtworkUrl ?: track.artworkUrl
                     ?: youtubeThumbnailUrl(track.videoId, large = true),
@@ -535,7 +535,7 @@ class MusicBrowseViewModel(
             buildMediaItem(
                 videoId = playable.track.videoId,
                 title = playable.track.title,
-                artist = playable.track.artist,
+                artist = playable.track.artist?.cleanArtist(),
                 album = playable.track.album,
                 artworkUrl = playable.track.largeArtworkUrl ?: playable.track.artworkUrl,
                 streamUrl = playable.streamUrl,
@@ -584,19 +584,55 @@ class MusicBrowseViewModel(
     }
 
     suspend fun radio(row: MusicRow) {
-        val tracks = MusicSuggestions.suggest(source, libraryRepository.observeLibrary().first(),
-            seedArtist = row.artistHint(), excludedIds = setOf(row.id), limit = 10)
-        val playable = listOfNotNull(resolveTrack(row.id, row.title)) + tracks.mapNotNull { resolveTrack(it) }
-        check(playable.isNotEmpty() && enqueue(playable)) { "Could not start radio. Try again." }
+        val cleanArtist = row.artistHint().orEmpty()
+        // 1. Immediately play the seed track so the user hears music without waiting
+        val seed = resolveTrack(row.id, row.title) ?: error("Could not start radio for this song.")
+        enqueue(listOf(seed))
+
+        // 2. Discover related radio suggestions asynchronously
+        val history = libraryRepository.observeLibrary().first()
+        val suggestions = MusicSuggestions.suggest(
+            source = source,
+            history = history,
+            seedArtist = cleanArtist.takeIf { it.isNotBlank() },
+            excludedIds = setOf(row.id),
+            limit = 10,
+        )
+
+        // 3. Queue the radio suggestions into ExoPlayer's session
+        val session = controller ?: controllerReady.await() ?: return
+        for (track in suggestions) {
+            val resolved = resolveTrack(track) ?: continue
+            val item = buildMediaItem(
+                videoId = resolved.track.videoId,
+                title = resolved.track.title,
+                artist = resolved.track.artist?.cleanArtist(),
+                album = resolved.track.album,
+                artworkUrl = resolved.track.largeArtworkUrl ?: resolved.track.artworkUrl,
+                streamUrl = resolved.streamUrl,
+                mimeType = resolved.mimeType,
+            )
+            session.addMediaItem(item)
+        }
     }
 
     suspend fun explore(row: MusicRow, album: Boolean): List<MusicRow> {
         val artist = row.artistHint().orEmpty()
-        val results = source.search(if (album) "${row.title} $artist" else artist, 40).getOrThrow()
-        return if (album) results.flatMap { it.toRows() }.filter { it.kind == MusicRow.Kind.ALBUM }
-        else results.flatMap { it.toRows() }.filter {
-            it.artistHint()?.contains(artist, ignoreCase = true) == true }
-            .sortedBy { it.resultType.searchPriority }.distinctBy { it.kind to it.id }
+        val query = if (album) "${row.title} $artist".trim() else artist
+        if (query.isBlank()) return emptyList()
+        val results = source.search(query, 40).getOrNull().orEmpty()
+        val rows = results.flatMap { it.toRows() }
+        return if (album) {
+            rows.filter { it.kind == MusicRow.Kind.ALBUM }
+        } else {
+            rows.filter { item ->
+                val itemArtist = item.artistHint().orEmpty()
+                item.kind == MusicRow.Kind.TRACK ||
+                    itemArtist.contains(artist, ignoreCase = true) ||
+                    artist.contains(itemArtist, ignoreCase = true) ||
+                    item.title.contains(artist, ignoreCase = true)
+            }.sortedBy { it.resultType.searchPriority }.distinctBy { it.kind to it.id }
+        }
     }
 
     suspend fun collectionRows(id: String): List<MusicRow> = source.collection(id, COLLECTION_TRACK_LIMIT)
@@ -614,7 +650,7 @@ class MusicBrowseViewModel(
             val track = MusicTrack(
                 videoId = row.id,
                 title = row.title,
-                artist = row.subtitle?.substringBefore("•")?.trim(),
+                artist = row.artistHint(),
                 album = row.subtitle?.substringAfter("•", "")?.trim()?.takeIf { it.isNotEmpty() },
                 durationMs = null,
                 artworkUrl = row.artworkUrl,
@@ -632,72 +668,26 @@ class MusicBrowseViewModel(
         }
     }
 
-    fun consumeMessage() {
-        _state.value = _state.value.copy(message = null)
-    }
-
-    override fun onCleared() {
-        // Released, not disconnected-and-forgotten: a leaked controller keeps a binder
-        // registration to a service that outlives the screen.
-        controller?.release()
-        controller = null
-        super.onCleared()
-    }
-
-    private class Factory(
-        private val source: MusicSource,
-        private val libraryRepository: LibraryRepository,
-        private val context: Context,
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            MusicBrowseViewModel(source, libraryRepository, context) as T
-    }
-
     companion object {
-        /**
-         * Debounce before searching.
-         *
-         * Long enough to avoid a request per keystroke, short enough that results feel
-         * responsive. The catalogue API has no documented rate limit, so this is the only rate
-         * control the client has.
-         */
-        const val SEARCH_DEBOUNCE_MS = 350L
-
-        private const val BROWSE_LIMIT = 40
-
-        /** Per shelf, so five shelves do not each load a full 40-row page. */
-        private const val SHELF_LIMIT = 20
-
-        /** Cards shown per shelf. Enough to scroll, few enough that five rows stay cheap. */
-        private const val SHELF_ROW_LIMIT = 15
-
-        /** Guard on a large playlist so one album cannot page forever. */
-        private const val COLLECTION_TRACK_LIMIT = 200
-
-        /**
-         * Caps the cover-art lookup.
-         *
-         * Runs in parallel with the stream resolve, so this is not normally added to playback
-         * latency. Four seconds is deliberately generous for a throttled mobile connection; the
-         * request itself is already bounded by the artwork client's own call timeout.
-         */
-        private const val ARTWORK_TIMEOUT_MS = 4_000L
+        private const val SEARCH_DEBOUNCE_MS = 250L
+        private const val ARTWORK_TIMEOUT_MS = 1_500L
+        private const val BROWSE_LIMIT = 25
+        private const val SHELF_LIMIT = 6
+        private const val SHELF_ROW_LIMIT = 10
+        private const val COLLECTION_TRACK_LIMIT = 50
 
         fun factory(
             source: MusicSource,
             libraryRepository: LibraryRepository,
             context: Context,
-        ): ViewModelProvider.Factory = Factory(source, libraryRepository, context)
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                MusicBrowseViewModel(source, libraryRepository, context.applicationContext) as T
+        }
     }
 }
 
-/**
- * A track plus the stream that will be enqueued for it.
- *
- * Keeping them together is what removes the second resolve: the stream returned by the tap's
- * resolve is the one the queue uses.
- */
 private data class PlayableTrack(
     val track: MusicTrack,
     val streamUrl: String,
@@ -705,18 +695,19 @@ private data class PlayableTrack(
 )
 
 /**
- * Flattens a catalogue answer into rows the UI can render.
+ * Maps a collection item into display rows.
  *
  * Top-level rather than a member so the home shelves and the search results share one mapping:
  * an album that renders one way in search cannot render another way on a shelf.
  */
 internal fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
     tracks.forEach { track ->
+        val artist = track.artist?.cleanArtist()
         add(
             MusicRow(
                 kind = MusicRow.Kind.TRACK,
                 title = track.title,
-                subtitle = listOfNotNull(track.artist, track.album).joinToString(" • ")
+                subtitle = listOfNotNull(artist, track.album).joinToString(" • ")
                     .takeIf { it.isNotBlank() },
                 artworkUrl = track.artworkUrl,
                 id = track.videoId,
@@ -729,7 +720,7 @@ internal fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
             MusicRow(
                 kind = MusicRow.Kind.ALBUM,
                 title = it.title,
-                subtitle = it.artist,
+                subtitle = it.artist?.cleanArtist(),
                 artworkUrl = it.artworkUrl,
                 id = it.browseId,
             ),
@@ -740,7 +731,7 @@ internal fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
             MusicRow(
                 kind = MusicRow.Kind.PLAYLIST,
                 title = it.title,
-                subtitle = it.subtitle,
+                subtitle = it.subtitle?.cleanArtist(),
                 artworkUrl = it.artworkUrl,
                 id = it.browseId,
             ),
