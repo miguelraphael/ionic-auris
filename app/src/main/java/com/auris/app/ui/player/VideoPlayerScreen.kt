@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -222,7 +223,7 @@ fun VideoPlayerScreen(
             visible = controlsVisible,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter),
+            modifier = Modifier.fillMaxSize(),
         ) {
             PlayerControls(
                 title = title,
@@ -262,7 +263,7 @@ fun VideoPlayerScreen(
             )
         }
 
-        if (controlsVisible) {
+        if (!controlsVisible) {
             PlayerWatermark(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -289,15 +290,14 @@ private fun PlayerControls(
     onToggleFullscreen: () -> Unit,
     headerActions: @Composable RowScope.() -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.72f))
-            .safeDrawingPadding()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Row(
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent)))
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             ControlButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBack)
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, color = AurisOnSurface,
@@ -307,47 +307,30 @@ private fun PlayerControls(
             }
             headerActions()
         }
-
-        Spacer(Modifier.height(14.dp))
-
-        // Scrubber. Draggable, with the fraction echoed back so the thumb follows the finger
-        // rather than only updating on release.
-        SeekBar(
-            positionMs = positionMs,
-            durationMs = durationMs,
-            scrubFraction = seekFraction,
-            onScrubFraction = onScrubFraction,
-            onSeekFraction = onSeekFraction,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(6.dp))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatTime(if (seekFraction >= 0f) (durationMs * seekFraction).toLong() else positionMs),
-                style = MaterialTheme.typography.labelMedium, color = AurisOnSurfaceVariant)
-            Text(formatTime(durationMs), style = MaterialTheme.typography.labelMedium,
-                color = AurisOnSurfaceVariant)
-        }
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+            modifier = Modifier.align(Alignment.Center),
+            horizontalArrangement = Arrangement.spacedBy(36.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Spacer(Modifier.size(44.dp))
-            ControlButton(Icons.Filled.Replay10, "Back 10 seconds", { onSeekBy(-10_000L) })
-            ControlButton(
-                icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                size = 56.dp,
-                onClick = onPlayPause,
-            )
-            ControlButton(Icons.Filled.Forward10, "Forward 10 seconds", { onSeekBy(10_000L) })
-            ControlButton(
-                icon = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                contentDescription = if (isFullscreen) "Exit fullscreen" else "Fullscreen",
-                onClick = onToggleFullscreen,
-            )
+            ControlButton(Icons.Filled.Replay10, "Back 10 seconds", { onSeekBy(-10_000L) }, size = 48.dp)
+            ControlButton(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                if (isPlaying) "Pause" else "Play", onPlayPause, size = 64.dp)
+            ControlButton(Icons.Filled.Forward10, "Forward 10 seconds", { onSeekBy(10_000L) }, size = 48.dp)
+        }
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))))
+            .padding(horizontal = 20.dp, vertical = 8.dp)) {
+            SeekBar(positionMs, durationMs, seekFraction, onScrubFraction, onSeekFraction,
+                modifier = Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(formatTime(if (seekFraction >= 0f) (durationMs * seekFraction).toLong() else positionMs),
+                    style = MaterialTheme.typography.labelMedium, color = AurisOnSurface)
+                Text(" / ${formatTime(durationMs)}", style = MaterialTheme.typography.labelMedium,
+                    color = AurisOnSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                ControlButton(if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                    if (isFullscreen) "Exit fullscreen" else "Fullscreen", onToggleFullscreen)
+            }
         }
     }
 }

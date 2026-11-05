@@ -46,6 +46,13 @@ class MusicBrowseRowsTest {
     }
 
     @Test
+    fun preservesExactAlbumCoverForPlayback() {
+        val rows = MusicCollectionItem(MusicCollectionItem.Kind.TRACK,
+            tracks = listOf(track().copy(albumArtworkUrl = "https://art/album.jpg"))).toRows()
+        assertEquals("https://art/album.jpg", rows.single().albumArtworkUrl)
+    }
+
+    @Test
     fun mapsTrackWithArtistAndAlbum() {
         val rows = MusicCollectionItem(
             kind = MusicCollectionItem.Kind.TRACK,
@@ -56,7 +63,7 @@ class MusicBrowseRowsTest {
         assertEquals(MusicRow.Kind.TRACK, rows.single().kind)
         assertEquals("A Song", rows.single().title)
         assertEquals("An Artist • An Album", rows.single().subtitle)
-        assertEquals("https://img/vid1-small.jpg", rows.single().artworkUrl)
+        assertEquals("https://img/vid1-large.jpg", rows.single().artworkUrl)
         assertEquals("vid1", rows.single().id)
     }
 

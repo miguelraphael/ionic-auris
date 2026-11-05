@@ -39,8 +39,8 @@ internal fun MusicArtistPage(
     miniPlayer: @Composable () -> Unit = {},
 ) {
     var showAllSongs by remember(name) { mutableStateOf(false) }
-    Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = AurisBackground) {
+    Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = AurisBackground) {
             Column(Modifier.fillMaxSize()) {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 32.dp)) {
                     item {

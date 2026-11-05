@@ -567,6 +567,9 @@ fun AurisNavHost(
 
             MediaDetailScreen(
                 state = state,
+                onSeasonClick = { season -> viewModel.openSeason(season) { id ->
+                    navController.navigate(Routes.animeDetail(id))
+                } },
                 onUnitClick = { unit ->
                     viewModel.onUnitClick(
                         unit = unit,

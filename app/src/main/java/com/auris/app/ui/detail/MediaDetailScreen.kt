@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -49,6 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.auris.app.core.model.MediaType
+import com.auris.app.source.SourceSeason
+import androidx.compose.foundation.lazy.LazyRow
 import com.auris.app.source.SourceUnit
 import com.auris.app.ui.components.SkeletonUnitRows
 import com.auris.app.ui.components.SlowNetworkHint
@@ -77,6 +81,8 @@ import com.auris.app.ui.theme.rememberArtworkPaletteValue
  * is slower.
  */
 data class MediaDetailUiState(
+    val seasons: List<SourceSeason> = emptyList(),
+    val seasonsError: String? = null,
     val mediaType: MediaType = MediaType.ANIME,
     val title: String = "",
     val originalTitle: String? = null,
@@ -132,6 +138,7 @@ fun MediaDetailScreen(
     bottomPadding: androidx.compose.ui.unit.Dp = 32.dp,
     /** Returns to wherever this title was opened from; no nav pill is drawn here. */
     onBack: () -> Unit = {},
+    onSeasonClick: (SourceSeason) -> Unit = {},
 ) {
     val palette = rememberArtworkPaletteValue(artworkKey = state.gradientArtworkUrl)
 
@@ -155,6 +162,24 @@ fun MediaDetailScreen(
                     onBack = onBack,
                 )
             }
+
+            if (state.seasons.isNotEmpty()) item(key = "seasons") {
+                Text("Seasons & films", style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(state.seasons, key = { it.item.url }) { season ->
+                        androidx.compose.material3.FilterChip(selected = season.isCurrent,
+                            onClick = { onSeasonClick(season) }, label = { Text(season.label) })
+                    }
+                }
+            }
+            state.seasonsError?.let { message -> item(key = "seasons-error") {
+                Column(Modifier.padding(horizontal = 20.dp)) {
+                    Text(message, color = AurisOnSurfaceVariant)
+                    com.auris.app.ui.components.StateActionButton("Retry", onRetry, filled = false)
+                }
+            } }
 
             item(key = "units-header") {
                 UnitListHeader(state)
@@ -190,6 +215,7 @@ fun MediaDetailScreen(
                     // tap would launch a second resolution and the first stream would be
                     // orphaned once the second completed.
                     enabled = !state.isResolvingStream,
+                    posterUrl = state.posterUrl,
                     onClick = { onUnitClick(unit) },
                 )
             }
@@ -209,7 +235,7 @@ private fun DetailHero(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(WIDE_ASPECT),
+                .then(if (state.coverUrl == null) Modifier.height(100.dp) else Modifier.aspectRatio(WIDE_ASPECT)),
         ) {
             // The wide cover is the composition the artwork was designed for, so it is shown at
             // full bleed here rather than as a poster-shaped card.
@@ -252,7 +278,8 @@ private fun DetailHero(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 20.dp, top = 56.dp)
+                    .statusBarsPadding()
+                    .padding(start = 20.dp, top = 12.dp)
                     .size(44.dp)
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.45f))
@@ -273,6 +300,13 @@ private fun DetailHero(
         }
 
         Column(Modifier.padding(horizontal = 20.dp)) {
+            if (state.posterUrl != null) {
+                AsyncImage(state.posterUrl, "Poster for ${state.title}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.width(112.dp).height(160.dp)
+                        .clip(RoundedCornerShape(AurisRadii.artworkSmall)))
+                Spacer(Modifier.height(16.dp))
+            }
             Text(
                 text = state.title,
                 style = MaterialTheme.typography.displaySmall,
@@ -478,6 +512,7 @@ private fun UnitRow(
     isWatched: Boolean,
     isCurrent: Boolean,
     enabled: Boolean,
+    posterUrl: String?,
     onClick: () -> Unit,
 ) {
     Row(
@@ -486,29 +521,25 @@ private fun UnitRow(
             .padding(horizontal = 20.dp, vertical = 5.dp)
             .clip(RoundedCornerShape(AurisRadii.artworkSmall))
             .background(if (isCurrent) AurisAccent.copy(alpha = 0.10f) else AurisSurface)
-            .border(
-                width = 1.dp,
-                color = if (isCurrent) AurisAccent.copy(alpha = 0.5f) else AurisOutline,
-                shape = RoundedCornerShape(AurisRadii.artworkSmall),
-            )
+
             .clickable(
                 enabled = enabled,
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick,
             )
-            .padding(10.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Thumbnail is optional: many sources provide no episode art, so the row must not
         // reserve an empty box when the URL is absent.
-        if (unit.thumbnailUrl != null) {
+        if (unit.thumbnailUrl != null || posterUrl != null) {
             AsyncImage(
-                model = unit.thumbnailUrl,
+                model = unit.thumbnailUrl ?: posterUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(width = 56.dp, height = 76.dp)
                     .clip(RoundedCornerShape(AurisRadii.artworkSmall))
                     .background(AurisTrack),
             )
@@ -541,6 +572,10 @@ private fun UnitRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (isCurrent || isWatched) {
+                Text(if (isWatched) "Watched" else "Continue watching",
+                    style = MaterialTheme.typography.labelMedium, color = AurisAccent)
+            }
             if (unit.uploadTimestamp > 0L) {
                 Text(
                     text = formatTimestamp(unit.uploadTimestamp),
@@ -552,6 +587,10 @@ private fun UnitRow(
 
         Spacer(Modifier.width(10.dp))
 
+        if (!isWatched) {
+            Icon(Icons.Filled.PlayArrow, "Play episode", tint = AurisAccent,
+                modifier = Modifier.size(24.dp))
+        }
         if (isWatched) {
             Icon(
                 imageVector = Icons.Filled.Check,

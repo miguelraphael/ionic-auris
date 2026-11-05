@@ -47,6 +47,8 @@ data class MusicTrack(
     val trackIndex: Int?,
     /** Catalogue provenance, used to rank releases ahead of video uploads in search. */
     val resultType: MusicResultType = MusicResultType.UNKNOWN,
+    /** Cover supplied by this track's exact album browse response. */
+    val albumArtworkUrl: String? = null,
 ) {
     /**
      * `videoId` as a Room `sourceId`.

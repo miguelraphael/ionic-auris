@@ -41,6 +41,23 @@ class InnerTubeParser {
     /** Parses a `browse` response into tracks, albums and playlists. */
     fun parseBrowse(root: JsonObject): List<MusicCollectionItem> = root.collectRenderers()
 
+    /** Only collection header renderers can supply an album cover, never a video row. */
+    fun albumArtwork(root: JsonObject): String? {
+        fun find(element: JsonElement, depth: Int = 0): String? {
+            if (depth > MAX_DEPTH) return null
+            return when (element) {
+                is JsonObject -> {
+                    listOf("musicResponsiveHeaderRenderer", "musicDetailHeaderRenderer")
+                        .firstNotNullOfOrNull { key -> element[key]?.asObject()?.thumbnailUrl(1200) }
+                        ?: element.values.firstNotNullOfOrNull { find(it, depth + 1) }
+                }
+                is JsonArray -> element.firstNotNullOfOrNull { find(it, depth + 1) }
+                else -> null
+            }
+        }
+        return find(root)
+    }
+
     /**
      * Walks the tree collecting every recognised renderer.
      *

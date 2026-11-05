@@ -156,7 +156,12 @@ class InnerTubeClient(
             pages++
         }
 
-        items.take(maxTracks.coerceAtLeast(0))
+        val albumCover = if (browseId.startsWith("MPRE")) parser.albumArtwork(root) else null
+        items.take(maxTracks.coerceAtLeast(0)).map { item ->
+            if (albumCover == null) item else item.copy(tracks = item.tracks.map { track ->
+                track.copy(artworkUrl = albumCover, largeArtworkUrl = albumCover, albumArtworkUrl = albumCover)
+            })
+        }
     }
 
     /** Follows a `continuation` token from a previous response. */

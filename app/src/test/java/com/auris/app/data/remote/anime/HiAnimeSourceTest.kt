@@ -30,6 +30,27 @@ class HiAnimeSourceTest {
         put("status", true); put("html", html)
     }.toString()
 
+    @Test fun parsesOnlySourceProvidedSeasonsAndKeepsMovieLabels() = runBlocking {
+        respond("""<section class="block_area-seasons">
+            <a class="os-item active" href="/test-show-1335" title="Test Show"><div class="title">Season 1</div></a>
+            <a class="os-item" href="/test-movie-2000" title="Test Movie"><div class="title">The Movie</div>
+                <div class="season-poster" style="background-image: url(/movie.webp)"></div></a>
+            <a class="os-item" href="https://unrelated.example/title-3000" title="Unrelated">Season 2</a>
+            </section><a class="os-item" href="/recommendation-4000">Not a season</a>""")
+        val seasons = source.seasons(entry)
+        assertEquals(listOf("Season 1", "The Movie"), seasons.map { it.label })
+        assertTrue(seasons.first().isCurrent)
+        assertFalse(seasons.last().isCurrent)
+        assertEquals("test-movie-2000", seasons.last().item.url)
+        assertEquals(server.url("/movie.webp").toString(), seasons.last().item.thumbnailUrl)
+        assertEquals("/test-show-1335", server.takeRequest().path)
+    }
+
+    @Test fun doesNotInventSeasonsWhenSourceListsNone() = runBlocking {
+        respond("<html><body><h1>Standalone title</h1></body></html>")
+        assertTrue(source.seasons(entry).isEmpty())
+    }
+
     @Test fun catalogueMapsCardsAndPaginationAndEncodesSearch() = runBlocking {
         respond("""<div class="film_list-wrap"><div class="flw-item"><img class="film-poster-img" data-src="/poster.jpg"><h3 class="film-name"><a href="/test-show-1335" title="Test &amp; Show">Test</a></h3></div></div><ul class="pagination"><li><a href="/search?page=3">Next</a></li></ul>""")
         val page = source.search(2, "A & B?", FilterList())

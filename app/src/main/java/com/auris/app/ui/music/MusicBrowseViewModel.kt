@@ -48,6 +48,7 @@ data class MusicRow(
     /** Video id for tracks; browse id for albums and playlists. */
     val id: String,
     val resultType: MusicResultType = MusicResultType.UNKNOWN,
+    val albumArtworkUrl: String? = null,
 ) {
     enum class Kind { TRACK, ALBUM, PLAYLIST }
 }
@@ -694,7 +695,7 @@ class MusicBrowseViewModel(
         playbackJob = viewModelScope.launch {
             try {
                 startProgressivePlaylist(rows, startIndex,
-                    resolve = { resolveTrack(it.id, it.title) },
+                    resolve = { resolveTrack(it.id, it.title)?.withArtwork(it.albumArtworkUrl) },
                     start = { first ->
                         check(enqueue(listOf(first))) { "Could not reach the playback service" }
                         _state.value = _state.value.copy(isResolving = false)
@@ -786,7 +787,8 @@ internal fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
                 title = track.title,
                 subtitle = listOfNotNull(artist, track.album).joinToString(" • ")
                     .takeIf { it.isNotBlank() },
-                artworkUrl = track.artworkUrl,
+                artworkUrl = track.largeArtworkUrl ?: track.artworkUrl,
+                albumArtworkUrl = track.albumArtworkUrl,
                 id = track.videoId,
                 resultType = track.resultType,
             ),

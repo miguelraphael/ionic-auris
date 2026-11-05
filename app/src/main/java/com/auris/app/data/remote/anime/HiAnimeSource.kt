@@ -19,7 +19,7 @@ import kotlin.coroutines.coroutineContext
 class HiAnimeSource(
     private val client: OkHttpClient = OkHttpClient.Builder().callTimeout(25, java.util.concurrent.TimeUnit.SECONDS).build(),
     private val site: HttpUrl = "https://hianime.at/".toHttpUrl(),
-) : MediaSource {
+) : MediaSource, AnimeSeasonSource {
     override val id = ID
     override val name = "HiAnime"
     override val mediaType = MediaType.ANIME
@@ -55,6 +55,23 @@ class HiAnimeSource(
             (link.absUrl("href").toHttpUrlOrNull()?.queryParameter("page")?.toIntOrNull() ?: 0) > page
         }
         return SourcePage(items, hasNext)
+    }
+
+    override suspend fun seasons(entry: SourceItem): List<SourceSeason> {
+        val doc = Jsoup.parse(get(site.newBuilder().addPathSegment(entry.url).build()), site.toString())
+        return doc.select(".block_area-seasons a.os-item[href]").mapNotNull { link ->
+            val url = link.absUrl("href").toHttpUrlOrNull() ?: return@mapNotNull null
+            if (url.host != site.host) return@mapNotNull null
+            val slug = url.pathSegments.lastOrNull()
+                ?.takeIf { it.matches(Regex("[a-zA-Z0-9-]+-\\d+")) } ?: return@mapNotNull null
+            val label = link.selectFirst(".title")?.text().orEmpty()
+            val title = link.attr("title").ifBlank { label }
+            if (title.isBlank()) return@mapNotNull null
+            val image = link.selectFirst(".season-poster")?.attr("style")
+                ?.substringAfter("url(", "")?.substringBefore(')')?.trim(' ', '\'', '"')
+                ?.takeIf { it.isNotBlank() }?.let { site.resolve(it)?.toString() }
+            SourceSeason(SourceItem(slug, title, image), label.ifBlank { title }, slug == entry.url)
+        }.distinctBy { it.item.url }
     }
 
     override suspend fun units(entry: SourceItem): List<SourceUnit> {

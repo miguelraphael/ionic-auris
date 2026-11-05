@@ -9,6 +9,10 @@ import com.auris.app.data.local.entity.LibraryUnitEntity
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
+import com.auris.app.source.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.auris.app.source.SourceUnit
 import com.auris.app.source.StreamTarget
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,8 +93,43 @@ class MediaDetailViewModel(
                     if (!unitsStarted) {
                         unitsStarted = true
                         refreshUnits()
+                        loadSeasons(entry)
                     }
                 }
+        }
+    }
+
+    private fun loadSeasons(entry: LibraryEntryEntity) {
+        val source = contentRepository.resolveSource(entry) as? AnimeSeasonSource ?: return
+        viewModelScope.launch {
+            try {
+                val seasons = withContext(Dispatchers.IO) {
+                    source.seasons(SourceItem(entry.sourceKey, entry.title, entry.artworkUrl))
+                }
+                _state.value = _state.value.copy(seasons = seasons, seasonsError = null)
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(seasonsError = "Other seasons could not load. Tap Retry to try again.")
+            }
+        }
+    }
+
+    fun openSeason(season: SourceSeason, onOpen: (String) -> Unit) {
+        if (season.isCurrent) return
+        val current = currentEntry ?: return
+        viewModelScope.launch {
+            try {
+                val existing = libraryRepository.findBySource(current.mediaType, current.sourceId, season.item.url)
+                val entry = existing ?: libraryRepository.upsert(LibraryEntryEntity(
+                    mediaType = current.mediaType, sourceId = current.sourceId,
+                    sourceKey = season.item.url, remoteMediaId = season.item.url,
+                    title = season.item.title, artworkUrl = season.item.thumbnailUrl,
+                ))
+                onOpen(entry.id)
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(error = "Could not open this season. Please retry.")
+            }
         }
     }
 
@@ -193,6 +232,7 @@ class MediaDetailViewModel(
     /** User-triggered retry for both Kitsu and the extension. */
     fun retry() {
         currentEntry?.let { entry ->
+            loadSeasons(entry)
             if (entry.kitsuId == null && entry.mediaType != MediaType.MUSIC) {
                 identifyIfNeeded(entry)
             }
@@ -244,7 +284,7 @@ class MediaDetailViewModel(
         index = unitIndex,
         title = title,
         thumbnailUrl = thumbnailUrl,
-        uploadTimestamp = updatedAt,
+        uploadTimestamp = 0L,
     )
 
     private fun Throwable.toUserMessage(): String =

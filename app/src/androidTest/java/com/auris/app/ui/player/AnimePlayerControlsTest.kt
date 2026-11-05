@@ -86,6 +86,8 @@ class AnimePlayerControlsTest {
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
+                    activity.setShowWhenLocked(true)
+                    activity.setTurnScreenOn(true)
                     originalOrientation = activity.requestedOrientation
                     activity.setContent {
                         AurisTheme {
@@ -94,6 +96,7 @@ class AnimePlayerControlsTest {
                         }
                     }
                 }
+                instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_WAKEUP").close()
                 await("Player did not prepare") { main { playback.player.value?.playbackState == androidx.media3.common.Player.STATE_READY } }
                 main { playback.player.value!!.pause(); playback.player.value!!.seekTo(30_000) }
                 await("Paused position was not displayed") { node("0:30") != null }
@@ -164,7 +167,11 @@ class AnimePlayerControlsTest {
 
     private fun node(label: String): AccessibilityNodeInfo? {
         fun find(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-            if (root.text?.toString() == label || root.contentDescription?.toString() == label) return root
+            // Accessibility may merge the elapsed and total time into one line.
+            val matchesText = root.text?.toString()?.lineSequence()?.any {
+                it.trim() == label || it.trim().startsWith("$label /")
+            } == true
+            if (matchesText || root.contentDescription?.toString() == label) return root
             for (index in 0 until root.childCount) root.getChild(index)?.let { find(it)?.let { match -> return match } }
             return null
         }

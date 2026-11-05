@@ -166,7 +166,8 @@ fun EpisodePlayerRoute(
                         FilledTonalButton(onClick = { menuOpen = true },
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = AurisSurface, contentColor = AurisOnSurface),
-                            modifier = Modifier.widthIn(max = 160.dp)) {
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            modifier = Modifier.height(36.dp).widthIn(max = 140.dp)) {
                             Text(targets.getOrNull(selected)?.label ?: "Source", maxLines = 1,
                                 overflow = TextOverflow.Ellipsis)
                         }
@@ -184,7 +185,9 @@ fun EpisodePlayerRoute(
                     }
                     if (targets.getOrNull(selected)?.subtitles?.isNotEmpty() == true) {
                         FilledTonalButton(colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = AurisSurface, contentColor = AurisOnSurface), onClick = {
+                            containerColor = AurisSurface, contentColor = AurisOnSurface),
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            modifier = Modifier.height(36.dp), onClick = {
                             subtitlesEnabled = !subtitlesEnabled
                             player?.let { exo -> exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
                                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled).build() }
