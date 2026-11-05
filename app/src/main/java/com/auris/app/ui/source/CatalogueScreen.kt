@@ -88,6 +88,7 @@ fun CatalogueScreen(
     /** Returns to the extensions list; this screen draws no nav pill. */
     onBack: () -> Unit = {},
     onLoadMore: () -> Unit = {},
+    onSourceChange: (String) -> Unit = {},
 ) {
     val palette = rememberArtworkPaletteValue(artworkKey = state.items.firstOrNull()?.thumbnailUrl)
 
@@ -98,9 +99,9 @@ fun CatalogueScreen(
         modifier = modifier,
     ) {
         Column(Modifier.fillMaxSize()) {
-            CatalogueHeader(state, onBack)
+            CatalogueHeader(state, onBack, onSourceChange)
 
-            ModeTabs(selected = state.mode, onSelect = onModeChange)
+            ModeTabs(selected = state.mode, onSelect = onModeChange, popularLabel = state.popularLabel)
 
             CatalogueSearchField(
                 query = state.query,
@@ -128,10 +129,27 @@ fun CatalogueScreen(
 // ---- Header ------------------------------------------------------------------
 
 @Composable
-private fun CatalogueHeader(state: CatalogueUiState, onBack: () -> Unit) {
+private fun CatalogueHeader(state: CatalogueUiState, onBack: () -> Unit, onSourceChange: (String) -> Unit) {
+    var sourceMenu by remember { mutableStateOf(false) }
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 56.dp)) {
-        androidx.compose.material3.FilledTonalIconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = AurisOnSurface)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.FilledTonalIconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = AurisOnSurface)
+            }
+            if (state.sources.size > 1) Box {
+                androidx.compose.material3.FilledTonalButton(onClick = { sourceMenu = true }) {
+                    Text("Change source")
+                }
+                androidx.compose.material3.DropdownMenu(expanded = sourceMenu,
+                    onDismissRequest = { sourceMenu = false }) {
+                    state.sources.forEach { source ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(source.name + if (source.key == state.sourceKey) " · Selected" else "") },
+                            onClick = { sourceMenu = false; onSourceChange(source.key) })
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
         Text(
@@ -155,9 +173,10 @@ private fun CatalogueHeader(state: CatalogueUiState, onBack: () -> Unit) {
 private fun ModeTabs(
     selected: CatalogueUiState.Mode,
     onSelect: (CatalogueUiState.Mode) -> Unit,
+    popularLabel: String,
 ) {
     val modes = listOf(
-        CatalogueUiState.Mode.POPULAR to "Popular",
+        CatalogueUiState.Mode.POPULAR to popularLabel,
         CatalogueUiState.Mode.LATEST to "Latest",
     )
 

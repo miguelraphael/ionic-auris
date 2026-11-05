@@ -2,7 +2,7 @@ package com.auris.app.ui.source
 
 import com.auris.app.core.model.MediaType
 import com.auris.app.source.AnimeSourceAdapter
-import com.auris.app.source.ExtensionLoader
+import com.auris.app.source.ExtensionSourceRegistry
 import com.auris.app.source.LoadedSource
 import com.auris.app.source.MediaSource
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
@@ -42,7 +42,7 @@ object SourceResolver {
         "${loaded.packageName}::${loaded.source.id}"
 
     /** Every currently-loaded source, in a stable order for the UI to list. */
-    fun browsable(loader: ExtensionLoader): List<BrowsableSource> =
+    fun browsable(loader: ExtensionSourceRegistry): List<BrowsableSource> =
         loader.sources.map { loaded ->
             BrowsableSource(
                 key = keyOf(loaded),
@@ -67,7 +67,7 @@ object SourceResolver {
      * A null return is a normal state, not an error: the source may be disabled, uninstalled, or
      * the process may have restarted before the loader ran.
      */
-    fun resolve(loader: ExtensionLoader, key: String): MediaSource? {
+    fun resolve(loader: ExtensionSourceRegistry, key: String): MediaSource? {
         val (packageName, id) = key.split("::", limit = 2).takeIf { it.size == 2 }
             ?: return null
         val sourceId = id.toLongOrNull() ?: return null
@@ -87,7 +87,7 @@ object SourceResolver {
      * Resolves a key to the underlying [LoadedSource] for cases where the source's
      * identity (package name, Aniyomi ID) is needed.
      */
-    fun resolveLoaded(loader: ExtensionLoader, key: String): LoadedSource? {
+    fun resolveLoaded(loader: ExtensionSourceRegistry, key: String): LoadedSource? {
         val (packageName, id) = key.split("::", limit = 2).takeIf { it.size == 2 }
             ?: return null
         val sourceId = id.toLongOrNull() ?: return null
@@ -98,7 +98,7 @@ object SourceResolver {
     }
 
     /** The display name for [key], for the screen title before the first load completes. */
-    fun nameOf(loader: ExtensionLoader, key: String): String? =
+    fun nameOf(loader: ExtensionSourceRegistry, key: String): String? =
         loader.sources
             .firstOrNull { keyOf(it) == key }
             ?.sourceName
@@ -107,8 +107,10 @@ object SourceResolver {
 /** What the catalogue screen renders. */
 data class CatalogueUiState(
     val sourceKey: String = "",
+    val sources: List<BrowsableSource> = emptyList(),
     val sourceName: String = "",
     val sourceLanguage: String = "",
+    val popularLabel: String = "Popular",
     val isSourceAvailable: Boolean = true,
     val mode: Mode = Mode.POPULAR,
     val query: String = "",

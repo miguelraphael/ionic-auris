@@ -129,6 +129,9 @@ fun MangaReaderScreen(
                     SubcomposeAsyncImage(
                         model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
                             .data(state.pages[pageIndex].imageUrl ?: state.pages[pageIndex].url)
+                            .headers(okhttp3.Headers.Builder().apply {
+                                state.pages[pageIndex].headers.forEach { (name, value) -> set(name, value) }
+                            }.build())
                             // Manga pages are tall; Fit keeps the whole page visible rather than
                             // filling the width and cropping the panels.
                             .crossfade(120)

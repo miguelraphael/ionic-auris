@@ -176,7 +176,8 @@ class AnimeSourceAdapter(
 }
 
 /** One image in a chapter. */
-data class Page(val index: Int, val url: String, val imageUrl: String? = null)
+data class Page(val index: Int, val url: String, val imageUrl: String? = null,
+    val headers: Map<String, String> = emptyMap())
 
 // ---- Mapping ----------------------------------------------------------------
 

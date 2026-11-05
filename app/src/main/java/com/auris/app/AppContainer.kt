@@ -298,6 +298,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             builtInSources = listOf(
                 com.auris.app.data.remote.manga.MangaDexSource(httpClient),
                 com.auris.app.data.remote.anime.HiAnimeSource(),
+                com.auris.app.data.remote.anime.AnimeKhorSource(),
+                com.auris.app.data.remote.manga.MangaPillSource(),
             ),
             storedUnits = { libraryRepository.observeUnits(it).first() },
         )

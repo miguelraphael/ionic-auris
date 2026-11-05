@@ -19,7 +19,7 @@ import com.auris.app.data.sync.SyncScheduler
  * extension tests need the app to boot without a background scheduler; with on-demand
  * initialisation, the first `WorkManager.getInstance` call configures it.
  */
-class AurisApplication : Application(), Configuration.Provider {
+class AurisApplication : Application(), Configuration.Provider, coil.ImageLoaderFactory {
 
     lateinit var container: AppContainer
         private set
@@ -28,6 +28,20 @@ class AurisApplication : Application(), Configuration.Provider {
         get() = Configuration.Builder()
             .setMinimumLoggingLevel(android.util.Log.INFO)
             .build()
+
+    override fun newImageLoader(): coil.ImageLoader = coil.ImageLoader.Builder(this)
+        .okHttpClient {
+            okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+                val request = chain.request()
+                // MangaPill's public image CDN requires its page's Referer, including covers
+                // rendered from saved library entries outside the manga reader.
+                val imageRequest = if (request.url.host == "cdn.readdetectiveconan.com") {
+                    request.newBuilder().header("Referer", "https://mangapill.com/")
+                        .header("User-Agent", "Mozilla/5.0").build()
+                } else request
+                chain.proceed(imageRequest)
+            }.build()
+        }.build()
 
     override fun onCreate() {
         super.onCreate()

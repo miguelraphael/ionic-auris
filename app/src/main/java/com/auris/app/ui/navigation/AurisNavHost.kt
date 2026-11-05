@@ -122,6 +122,14 @@ fun AurisNavHost(
     invidiousInstanceStore: com.auris.app.data.repository.InvidiousInstanceStore,
     modifier: Modifier = Modifier,
 ) {
+    val sourcePreferences = remember {
+        navController.context.applicationContext.getSharedPreferences("catalogue_sources", android.content.Context.MODE_PRIVATE)
+    }
+    fun selectedSource(type: MediaType, default: String): String =
+        sourcePreferences.getString(type.name, default)?.takeIf { key ->
+            extensionContentRepository.builtInSources.any { it.mediaType == type && "builtin-${it.id}" == key }
+        } ?: default
+
     // One ViewModel for both the Music home and the browse/search screen, hosted by the
     // Activity rather than either destination. Two instances would mean two controllers, two
     // copies of the queue, and a home screen that could not see what browse was playing.
@@ -207,7 +215,7 @@ fun AurisNavHost(
                 key = "anime-catalogue",
                 factory = CatalogueViewModel.factory(
                     extensionLoader = extensionLoader,
-                    sourceKey = com.auris.app.data.remote.anime.HiAnimeSource.KEY,
+                    sourceKey = selectedSource(MediaType.ANIME, com.auris.app.data.remote.anime.HiAnimeSource.KEY),
                     mediaType = MediaType.ANIME,
                     extensionContentRepository = extensionContentRepository,
                     libraryRepository = libraryRepository,
@@ -223,6 +231,10 @@ fun AurisNavHost(
                 onModeChange = animeCatalogue::selectMode,
                 onQueryChange = animeCatalogue::onQueryChange,
                 onRetry = animeCatalogue::retry,
+                onSourceChange = { key ->
+                    animeCatalogue.selectSource(key)
+                    sourcePreferences.edit().putString(MediaType.ANIME.name, key).apply()
+                },
                 onLoadMore = animeCatalogue::loadMore,
                 onBack = { navController.navigate(TopLevelDestination.HOME.route) },
             )
@@ -233,7 +245,7 @@ fun AurisNavHost(
                 key = "manga-catalogue",
                 factory = CatalogueViewModel.factory(
                     extensionLoader = extensionLoader,
-                    sourceKey = com.auris.app.data.remote.manga.MangaDexSource.KEY,
+                    sourceKey = selectedSource(MediaType.MANGA, com.auris.app.data.remote.manga.MangaDexSource.KEY),
                     mediaType = MediaType.MANGA,
                     extensionContentRepository = extensionContentRepository,
                     libraryRepository = libraryRepository,
@@ -249,6 +261,10 @@ fun AurisNavHost(
                 onModeChange = mangaCatalogue::selectMode,
                 onQueryChange = mangaCatalogue::onQueryChange,
                 onRetry = mangaCatalogue::retry,
+                onSourceChange = { key ->
+                    mangaCatalogue.selectSource(key)
+                    sourcePreferences.edit().putString(MediaType.MANGA.name, key).apply()
+                },
                 onLoadMore = mangaCatalogue::loadMore,
                 onBack = { navController.navigate(TopLevelDestination.HOME.route) },
             )
@@ -524,6 +540,7 @@ fun AurisNavHost(
                 onModeChange = catalogueViewModel::selectMode,
                 onQueryChange = catalogueViewModel::onQueryChange,
                 onRetry = catalogueViewModel::retry,
+                onSourceChange = catalogueViewModel::selectSource,
                 onLoadMore = catalogueViewModel::loadMore,
                 modifier = Modifier,
                 onBack = { navController.popBackStack() },

@@ -7,6 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.core.model.MediaType
+import com.auris.app.source.ExtensionSourceRegistry
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import com.auris.app.source.ExtensionLoader
 import com.auris.app.source.MediaSource
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -32,15 +35,18 @@ import kotlinx.coroutines.launch
  * uninstalled) is reported as unavailable rather than throwing from a rendering frame.
  */
 class CatalogueViewModel(
-    private val extensionLoader: ExtensionLoader,
-    private val sourceKey: String,
+    private val extensionLoader: ExtensionSourceRegistry,
+    private var sourceKey: String,
     private val mediaType: MediaType,
     private val extensionContentRepository: ExtensionContentRepository,
     private val libraryRepository: LibraryRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
-        CatalogueUiState(sourceKey = sourceKey, sourceLanguage = ""),
+        CatalogueUiState(sourceKey = sourceKey, sourceLanguage = "",
+            sources = extensionContentRepository.builtInSources.filter { it.mediaType == mediaType }.map {
+                BrowsableSource("builtin-${it.id}", it.name, "", "builtin", it.mediaType)
+            }),
     )
     val state: StateFlow<CatalogueUiState> = _state.asStateFlow()
 
@@ -69,15 +75,29 @@ class CatalogueViewModel(
             _state.value = _state.value.copy(
                 isSourceAvailable = true,
                 sourceName = resolved.name,
+                popularLabel = if (resolved.id == "mangapill") "Trending" else "Popular",
                 sourceLanguage = when (resolved.id) {
                     MangaDexSource.ID -> "English chapters · MangaDex"
                     com.auris.app.data.remote.anime.HiAnimeSource.ID -> "Sub / Dub where available · HiAnime"
+                    "mangapill" -> "English manga · MangaPill"
+                    "animekhor" -> "Chinese animation · English subtitles · OK.ru servers"
                     else -> ""
                 },
                 error = null,
             )
-            show(CatalogueUiState.Mode.POPULAR)
+            show(if (_state.value.query.isBlank()) CatalogueUiState.Mode.POPULAR else CatalogueUiState.Mode.SEARCH)
         }
+    }
+
+    fun selectSource(key: String) {
+        if (key == sourceKey || _state.value.sources.none { it.key == key }) return
+        loadJob?.cancel()
+        sourceKey = key
+        source = null
+        currentPage = 1
+        _state.value = _state.value.copy(sourceKey = key, items = emptyList(),
+            hasNextPage = false, isLoading = true, error = null)
+        resolveAndLoad()
     }
 
     /** Switches between Popular and Latest. */
@@ -132,6 +152,7 @@ class CatalogueViewModel(
                 }
             }
 
+            currentCoroutineContext().ensureActive()
             result
                 .onSuccess { page ->
                     currentPage = pageNumber
