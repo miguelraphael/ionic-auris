@@ -134,13 +134,13 @@ class MediaDetailViewModel(
     }
 
     /**
-     * Fetches Kitsu metadata for an entry that has never been identified.
+     * Fetches Kitsu metadata for an unidentified entry or one missing its description.
      *
-     * Skipped for music, which Kitsu does not catalogue, and for entries already carrying a
-     * `kitsuId` — otherwise every screen open would re-search.
+     * Previously identified entries are fetched by their stored Kitsu id. Music is skipped
+     * because Kitsu does not catalogue it.
      */
     private fun identifyIfNeeded(entry: LibraryEntryEntity) {
-        if (entry.kitsuId != null) {
+        if (entry.kitsuId != null && !entry.description.isNullOrBlank()) {
             identificationDone = true
             _state.value = _state.value.copy(isMetadataLoading = false)
             return

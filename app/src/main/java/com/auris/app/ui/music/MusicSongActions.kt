@@ -36,7 +36,8 @@ import kotlinx.coroutines.launch
 /** Song actions and their subpages share a sheet so Back always returns to the selected song. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDismiss: () -> Unit) {
+internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit: (() -> Unit)? = null, onDismiss: () -> Unit) {
+    val closePages = onExit ?: onDismiss
     val context = LocalContext.current
     val player: PlayerViewModel = viewModel(key = "search-song-player", factory = PlayerViewModel.factory(context))
     val playback by player.state.collectAsStateWithLifecycle()
@@ -79,7 +80,7 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
     LaunchedEffect(browse.message) {
         browse.message?.let { message = it; music.consumeMessage() }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss,
+    if (page != "Artist" && !page.startsWith("album:")) ModalBottomSheet(onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = AurisBackground) {
         BackHandler(pages.size > 1) { back() }
@@ -95,10 +96,10 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
             } else Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
                 when (page) {
                     "Song options" -> {
-                        Row(Modifier.padding(bottom = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                            MediaArtwork(row.artworkUrl, null, Modifier.size(80.dp), shape = ArtworkShapeSmall)
+                        Row(Modifier.padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            MediaArtwork(row.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
                             Column(Modifier.padding(start = 16.dp)) {
-                                Text(row.title, style = MaterialTheme.typography.titleLarge)
+                                Text(row.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 row.subtitle?.let { Text(it, color = AurisOnSurfaceVariant) }
                             }
                         }
@@ -109,8 +110,8 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
                                 }, "Share song"))
                             }), Triple("Queue", Icons.AutoMirrored.Filled.QueueMusic, { open("Queue") }),
                                 Triple("Playlist", Icons.Filled.PlaylistAdd, { open("Playlists") })).forEach { (label, icon, action) ->
-                                Surface(onClick = action, shape = ArtworkShape, color = AurisSurface, modifier = Modifier.weight(1f)) {
-                                    Column(Modifier.padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Surface(onClick = action, shape = ArtworkShapeSmall, color = AurisSurfaceOpaque, modifier = Modifier.weight(1f)) {
+                                    Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(icon, null); Spacer(Modifier.height(8.dp)); Text(label)
                                     }
                                 }
@@ -191,7 +192,7 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
                         }
                         if (page == "Artist") {
                             MediaArtwork(rows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl, null, Modifier.fillMaxWidth().height(220.dp))
-                            Text(cleanArtist, style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(vertical = 20.dp))
+                            Text(cleanArtist, style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(vertical = 12.dp))
                             Text("Artist songs and releases", color = AurisOnSurfaceVariant)
                             Button(enabled = !busy && rows.any { it.kind == MusicRow.Kind.TRACK }, onClick = {
                                 runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) }
@@ -229,13 +230,26 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
             title = browse.nowPlayingTitle ?: "Now playing", artist = browse.nowPlayingArtist,
             artworkUrl = browse.nowPlayingArtworkUrl, isPlaying = browse.isPlaying,
             isLoading = browse.isResolving || browse.isBuffering,
-            onClick = { if (!browse.isResolving) { onDismiss(); music.openPlayer() } },
+            onClick = { if (!browse.isResolving) { closePages(); music.openPlayer() } },
             onTogglePlayPause = music::togglePlayPause,
             onPrevious = music::previous, onNext = music::next,
             canGoPrevious = !browse.isResolving && browse.canGoPrevious,
             canGoNext = !browse.isResolving && browse.canGoNext,
             modifier = Modifier.padding(bottom = 12.dp),
         )
+    }
+    val navigate = com.auris.app.ui.components.LocalTopLevelNavigate.current
+    val pageBottomBar: @Composable () -> Unit = {
+        Surface(color = AurisBackground) {
+            Column {
+                Box(Modifier.padding(horizontal = 16.dp)) { pageMiniPlayer() }
+                com.auris.app.ui.components.FloatingNavigationBar(
+                    destinations = com.auris.app.ui.navigation.TopLevelDestination.entries.toList(),
+                    currentRoute = com.auris.app.ui.navigation.TopLevelDestination.MUSIC.route,
+                    onNavigate = { destination -> closePages(); navigate(destination) },
+                )
+            }
+        }
     }
     if (page == "Artist") MusicArtistPage(
         name = currentArtistDetails?.name ?: row.artistHint().orEmpty(),
@@ -246,30 +260,30 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
         message = message,
         onBack = { back() },
         onPlay = { music.play(it) },
-        miniPlayer = pageMiniPlayer,
+        bottomBar = pageBottomBar,
         onPlayAll = { runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) } },
         onCollection = { item -> open("${if (item.kind == MusicRow.Kind.ALBUM) "album" else "collection"}:${item.title}"); rows = emptyList(); runAction { rows = music.collectionRows(item.id) } },
         onOptions = { artistOptions = it },
     )
     if (page.startsWith("album:")) MusicAlbumPage(
         title = page.substringAfter(":"), tracks = rows, loading = busy, message = message,
-        miniPlayer = pageMiniPlayer,
+        bottomBar = pageBottomBar,
         onBack = { back() }, onPlayAll = { runAction { music.playPlaylist(rows) } },
         onPlay = { index -> runAction { music.playPlaylist(rows, index) } },
         onOptions = { artistOptions = it },
     )
-    artistOptions?.let { song -> MusicSongActions(song, music) { artistOptions = null } }
+    artistOptions?.let { song -> MusicSongActions(song, music, onExit = closePages) { artistOptions = null } }
 }
 
 @Composable
 private fun SongAction(title: String, icon: ImageVector, enabled: Boolean = true, action: () -> Unit) {
     ListItem(headlineContent = { Text(title) }, leadingContent = { Icon(icon, null) },
-        colors = ListItemDefaults.colors(containerColor = AurisBackground),
-        modifier = Modifier.clickable(enabled = enabled, onClick = action).padding(vertical = 8.dp))
+        colors = ListItemDefaults.colors(containerColor = AurisSurfaceOpaque),
+        modifier = Modifier.clickable(enabled = enabled, onClick = action).padding(vertical = 1.dp))
 }
 
 @Composable
 private fun SongSection(title: String) {
     HorizontalDivider(Modifier.padding(vertical = 16.dp))
-    Text(title, style = MaterialTheme.typography.titleLarge)
+    Text(title, style = MaterialTheme.typography.titleSmall, color = AurisOnSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
 }

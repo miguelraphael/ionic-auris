@@ -49,6 +49,8 @@ import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisSurfaceOpaque
 import com.auris.app.ui.theme.NavPillShape
 
+val LocalTopLevelNavigate = androidx.compose.runtime.staticCompositionLocalOf<(TopLevelDestination) -> Unit> { {} }
+
 /** Geometry shared with the mini-player above the navigation bar. */
 object FloatingNavigationLayout {
     val height = 64.dp

@@ -185,8 +185,7 @@ class KitsuIdentifier(
      * ### What is deliberately *not* written
      * - **title** — the extension's title is what the user saw when they added the entry.
      *   Overwriting it with Kitsu's would silently rename their library.
-     * - **description** — Kitsu's synopsis is better than a scraped one, but changing an
-     *   already-populated field is a visible edit and belongs to an explicit refresh action.
+     * - **description** — an existing description is preserved; Kitsu fills a missing one.
      *
      * **`artworkUrl` is the one field that *is* replaced.** Extension artwork is frequently a
      * dead CDN link or a low-resolution thumbnail, and a 3:4 poster from Kitsu is a strict
@@ -200,6 +199,7 @@ class KitsuIdentifier(
      */
     private fun apply(entry: LibraryEntryEntity, metadata: KitsuMetadata): LibraryEntryEntity =
         entry.copy(
+            description = entry.description?.takeIf { it.isNotBlank() } ?: metadata.synopsis,
             kitsuId = metadata.kitsuId.toString(),
             kitsuCoverUrl = metadata.coverUrl ?: entry.kitsuCoverUrl,
             kitsuOriginalTitle = metadata.originalTitle ?: entry.kitsuOriginalTitle,

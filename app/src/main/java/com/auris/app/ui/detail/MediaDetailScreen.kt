@@ -52,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.auris.app.core.model.MediaType
 import com.auris.app.source.SourceSeason
-import androidx.compose.foundation.lazy.LazyRow
 import com.auris.app.source.SourceUnit
 import com.auris.app.ui.components.SkeletonUnitRows
 import com.auris.app.ui.components.SlowNetworkHint
@@ -166,11 +165,33 @@ fun MediaDetailScreen(
             if (state.seasons.isNotEmpty()) item(key = "seasons") {
                 Text("Seasons & films", style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(state.seasons, key = { it.item.url }) { season ->
-                        androidx.compose.material3.FilterChip(selected = season.isCurrent,
-                            onClick = { onSeasonClick(season) }, label = { Text(season.label) })
+                var choosingSeason by remember { mutableStateOf(false) }
+                Box(Modifier.padding(horizontal = 20.dp)) {
+                    Surface(
+                        onClick = { choosingSeason = true },
+                        shape = RoundedCornerShape(AurisRadii.artworkSmall),
+                        color = AurisTrack,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(state.seasons.firstOrNull { it.isCurrent }?.label ?: "Choose season or film",
+                                modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                            Icon(Icons.Filled.ExpandMore, "Choose season or film", tint = AurisAccent)
+                        }
+                    }
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = choosingSeason,
+                        onDismissRequest = { choosingSeason = false },
+                    ) {
+                        state.seasons.forEach { season ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(season.label) },
+                                trailingIcon = {
+                                    if (season.isCurrent) Icon(Icons.Filled.Check, "Selected", tint = AurisAccent)
+                                },
+                                onClick = { choosingSeason = false; onSeasonClick(season) },
+                            )
+                        }
                     }
                 }
             }
@@ -331,9 +352,18 @@ private fun DetailHero(
             Spacer(Modifier.height(12.dp))
             MetadataChips(state)
 
-            if (!state.synopsis.isNullOrBlank()) {
-                Spacer(Modifier.height(16.dp))
-                Synopsis(state.synopsis)
+            Spacer(Modifier.height(16.dp))
+            Surface(shape = RoundedCornerShape(AurisRadii.artworkSmall), color = AurisSurface) {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text("About", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    if (!state.synopsis.isNullOrBlank()) {
+                        Synopsis(state.synopsis)
+                    } else {
+                        Text(if (state.isMetadataLoading) "Loading description…" else "No description available for this title.",
+                            style = MaterialTheme.typography.bodyMedium, color = AurisOnSurfaceVariant)
+                    }
+                }
             }
 
             if (state.metadataUnavailable) {

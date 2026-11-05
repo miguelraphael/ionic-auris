@@ -99,6 +99,7 @@ class KitsuIdentifierTest {
         identifier.identifyAndPersist(entry(title = "Frieren"))
 
         val saved = lastUpsert!!
+        assertEquals("A synopsis.", saved.description)
         assertEquals("https://img.test/poster.jpeg", saved.artworkUrl)
         assertEquals("https://img.test/cover.jpeg", saved.kitsuCoverUrl)
         assertEquals("葬送のフリーレン", saved.kitsuOriginalTitle)
@@ -114,6 +115,16 @@ class KitsuIdentifierTest {
         // The user added this entry under the extension's title; renaming their library
         // silently would be worse than never matching Kitsu at all.
         assertEquals("My Frieren", lastUpsert!!.title)
+    }
+
+    @Test
+    fun fillsBlankSynopsisForPreviouslyIdentifiedEntry() = runBlocking {
+        client.byIdAnime[46474L] = animeAttributes()
+
+        identifier.identifyAndPersist(entry(kitsuId = "46474", description = "  "))
+
+        assertEquals("A synopsis.", lastUpsert!!.description)
+        assertTrue(client.animeQueries.isEmpty())
     }
 
     @Test
@@ -156,6 +167,7 @@ class KitsuIdentifierTest {
         assertEquals(1, client.mangaQueries.size)
         assertEquals(0, client.animeQueries.size)
         assertEquals("8", lastUpsert!!.kitsuId)
+        assertEquals("A manga synopsis.", lastUpsert!!.description)
     }
 
     @Test
@@ -474,6 +486,7 @@ class KitsuIdentifierTest {
                 8L,
                 KitsuMangaAttributes(
                     canonicalTitle = "Berserk",
+                    synopsis = "A manga synopsis.",
                     titles = KitsuTitles(en = "Berserk", jaJp = "ベルセルク"),
                     status = "on_hold",
                     chapterCount = 374,

@@ -178,7 +178,16 @@ fun AurisApp(
     val navigationRoute = if (currentRoute == Routes.MUSIC_BROWSE) TopLevelDestination.MUSIC.route else currentRoute
     val showNavBar = TopLevelDestination.entries.any { it.route == navigationRoute }
 
-    CompositionLocalProvider(LocalIsOnline provides isOnline) {
+    CompositionLocalProvider(
+        LocalIsOnline provides isOnline,
+        com.auris.app.ui.components.LocalTopLevelNavigate provides { destination ->
+            navController.navigate(destination.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        },
+    ) {
         Box(Modifier.fillMaxSize()) {
             AurisBackdrop(modifier = Modifier.fillMaxSize()) {
                 AurisNavHost(

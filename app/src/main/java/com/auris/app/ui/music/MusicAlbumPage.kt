@@ -6,8 +6,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,24 +25,24 @@ import com.auris.app.ui.theme.*
 @Composable
 internal fun MusicAlbumPage(title: String, tracks: List<MusicRow>, loading: Boolean,
     message: String?, onBack: () -> Unit, onPlayAll: () -> Unit,
-    onPlay: (Int) -> Unit, onOptions: (MusicRow) -> Unit, miniPlayer: @Composable () -> Unit = {}) {
+    onPlay: (Int) -> Unit, onOptions: (MusicRow) -> Unit, bottomBar: @Composable () -> Unit = {}) {
     val albumArt = tracks.firstNotNullOfOrNull { it.albumArtworkUrl }
         ?: tracks.firstOrNull()?.artworkUrl
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = AurisBackground) {
+        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)), color = AurisBackground) {
             Column(Modifier.fillMaxSize()) {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 40.dp)) {
                     item {
-                        IconButton(onClick = onBack, modifier = Modifier.statusBarsPadding().padding(12.dp)) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        IconButton(onClick = onBack, modifier = Modifier.padding(12.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back")
                         }
                         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             MediaArtwork(nowPlayingArtworkUrl(albumArt), "Cover for $title",
-                                Modifier.widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f),
+                                Modifier.widthIn(max = 240.dp).fillMaxWidth().aspectRatio(1f),
                                 fallbackImageUrl = albumArt)
-                            Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 20.dp))
+                            Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 20.dp))
                             Text("Album · ${tracks.size} songs", color = AurisOnSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
-                            Button(onClick = onPlayAll, enabled = !loading && tracks.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Play album") }
+                            Button(onClick = onPlayAll, enabled = !loading && tracks.isNotEmpty(), shape = ArtworkShapeSmall, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp).height(48.dp)) { Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Play album") }
                         }
                         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 16.dp))
                         message?.let { Text(it, Modifier.padding(20.dp)) }
@@ -62,7 +63,7 @@ internal fun MusicAlbumPage(title: String, tracks: List<MusicRow>, loading: Bool
                             MediaArtwork(albumArt, null, Modifier.size(48.dp), shape = ArtworkShapeSmall)
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text(track.title, style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 track.artistHint()?.takeIf { it.isNotBlank() }?.let { artist ->
                                     Text(artist, style = MaterialTheme.typography.bodySmall,
                                         color = AurisOnSurfaceVariant, maxLines = 1,
@@ -70,12 +71,12 @@ internal fun MusicAlbumPage(title: String, tracks: List<MusicRow>, loading: Bool
                                 }
                             }
                             IconButton(onClick = { onOptions(track) }) {
-                                Icon(Icons.Filled.MoreVert, "Options for ${track.title}")
+                                Icon(Icons.Filled.MoreHoriz, "Options for ${track.title}")
                             }
                         }
                     }
                 }
-                Box(Modifier.navigationBarsPadding().padding(horizontal = 16.dp)) { miniPlayer() }
+                bottomBar()
             }
         }
     }

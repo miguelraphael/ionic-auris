@@ -10,8 +10,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -36,22 +36,22 @@ internal fun MusicArtistPage(
     onPlayAll: () -> Unit,
     onCollection: (MusicRow) -> Unit,
     onOptions: (MusicRow) -> Unit,
-    miniPlayer: @Composable () -> Unit = {},
+    bottomBar: @Composable () -> Unit = {},
 ) {
     var showAllSongs by remember(name) { mutableStateOf(false) }
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = AurisBackground) {
+        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)), color = AurisBackground) {
             Column(Modifier.fillMaxSize()) {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 32.dp)) {
                     item {
                         Box {
-                            MediaArtwork(artwork, null, Modifier.fillMaxWidth().height(280.dp))
-                            FilledIconButton(onClick = onBack, modifier = Modifier.statusBarsPadding().padding(16.dp)) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            MediaArtwork(artwork, null, Modifier.fillMaxWidth().height(220.dp))
+                            FilledTonalIconButton(onClick = onBack, modifier = Modifier.padding(16.dp)) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back")
                             }
                         }
                         Column(Modifier.padding(20.dp)) {
-                            Text(name, style = MaterialTheme.typography.displaySmall)
+                            Text(name, style = MaterialTheme.typography.headlineLarge)
                             Text("Artist", color = AurisOnSurfaceVariant)
                             if (!bio.isNullOrBlank()) {
                                 var expanded by remember { mutableStateOf(false) }
@@ -86,7 +86,7 @@ internal fun MusicArtistPage(
                                     }
                                 }
                             }
-                            Button(onClick = onPlayAll, enabled = !loading && rows.any { it.kind == MusicRow.Kind.TRACK }, modifier = Modifier.padding(top = 16.dp)) { Text("Play songs") }
+                            Button(onClick = onPlayAll, enabled = !loading && rows.any { it.kind == MusicRow.Kind.TRACK }, shape = ArtworkShapeSmall, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(48.dp)) { Text("Play songs") }
                         }
                         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                         message?.let { Text(it, Modifier.padding(20.dp)) }
@@ -98,10 +98,10 @@ internal fun MusicArtistPage(
                             Row(Modifier.fillMaxWidth().combinedClickable(onClick = { onPlay(song) }, onLongClick = { onOptions(song) }).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 MediaArtwork(song.artworkUrl, null, Modifier.size(52.dp), shape = ArtworkShapeSmall)
                                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                    Text(song.title, style = MaterialTheme.typography.titleMedium)
-                                    Text(song.subtitle.orEmpty(), color = AurisOnSurfaceVariant)
+                                    Text(song.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(song.subtitle.orEmpty(), style = MaterialTheme.typography.bodySmall, color = AurisOnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                IconButton(onClick = { onOptions(song) }) { Icon(Icons.Filled.MoreVert, "Options for ${song.title}") }
+                                IconButton(onClick = { onOptions(song) }) { Icon(Icons.Filled.MoreHoriz, "Options for ${song.title}") }
                             }
                         }
                         if (songs.size > 5) item {
@@ -117,8 +117,8 @@ internal fun MusicArtistPage(
                             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 items(collections, key = { it.id }) { collection ->
                                     Column(Modifier.width(152.dp).combinedClickable(onClick = { onCollection(collection) })) {
-                                        MediaArtwork(collection.artworkUrl, null, Modifier.size(152.dp))
-                                        Text(collection.title, maxLines = 2, modifier = Modifier.padding(top = 8.dp))
+                                        MediaArtwork(collection.artworkUrl, null, Modifier.size(152.dp), shape = ArtworkShapeSmall)
+                                        Text(collection.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
                                     }
                                 }
                             }
@@ -126,7 +126,7 @@ internal fun MusicArtistPage(
                     }
                     if (!loading && rows.isEmpty()) item { Text("No artist releases found. Try searching for the artist directly.", Modifier.padding(20.dp)) }
                 }
-                Box(Modifier.navigationBarsPadding().padding(horizontal = 16.dp)) { miniPlayer() }
+                bottomBar()
             }
         }
     }
