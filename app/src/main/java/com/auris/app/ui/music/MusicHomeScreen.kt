@@ -46,6 +46,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.navigationBarsPadding
+import com.auris.app.ui.components.FloatingNavigationLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -112,7 +114,7 @@ fun MusicHomeScreen(
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().navigationBarsPadding(),
                 contentPadding = PaddingValues(
                     // Clear the mini player above the navigation pill when it is showing.
                     bottom = if (showNowPlaying) 196.dp else 140.dp,
@@ -228,7 +230,9 @@ fun MusicHomeScreen(
                 exit = fadeOut(tween(AurisMotion.Quick)) +
                     slideOutVertically(tween(AurisMotion.Quick)) { it / 2 },
                 modifier = Modifier.align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp, vertical = 104.dp),
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = FloatingNavigationLayout.playerBottom),
             ) {
                 NowPlayingStrip(
                     title = state.nowPlayingTitle ?: "Now playing",

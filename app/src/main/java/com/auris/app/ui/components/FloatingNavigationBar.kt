@@ -49,6 +49,14 @@ import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisSurfaceOpaque
 import com.auris.app.ui.theme.NavPillShape
 
+/** Geometry shared with the mini-player above the navigation bar. */
+object FloatingNavigationLayout {
+    val height = 64.dp
+    val bottomMargin = 28.dp
+    val playerGap = 12.dp
+    val playerBottom = height + bottomMargin + playerGap
+}
+
 /**
  * Floating, pill-shaped bottom navigation.
  *
@@ -79,9 +87,9 @@ fun FloatingNavigationBar(
         Row(
             modifier = Modifier
                 .padding(horizontal = 45.dp)
-                .padding(bottom = 28.dp)
+                .padding(bottom = FloatingNavigationLayout.bottomMargin)
                 .widthIn(max = maxWidth)
-                .height(64.dp)
+                .height(FloatingNavigationLayout.height)
                 // Opaque, not glass. The pill floats over album art and shelf cards, and the
                 // translucent fill let bright covers through until the icons disappeared.
                 .clip(NavPillShape)
@@ -130,7 +138,7 @@ private fun FloatingNavItem(
     Box(
         modifier = modifier.pressFeedback(interactionSource)
             .fillMaxWidth()
-            .height(64.dp)
+            .height(FloatingNavigationLayout.height)
             .selectable(
                 selected = selected,
                 onClick = onClick,

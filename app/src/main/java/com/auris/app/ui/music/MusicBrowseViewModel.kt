@@ -681,6 +681,8 @@ class MusicBrowseViewModel(
     suspend fun collectionRows(id: String): List<MusicRow> = source.collection(id, COLLECTION_TRACK_LIMIT)
         .getOrThrow().flatMap { it.toRows() }
 
+    fun openPlayer() { _playerOpenRequests.tryEmit(Unit) }
+
     suspend fun playPlaylist(rows: List<MusicRow>, startIndex: Int = 0) {
         val selected = rows.getOrNull(startIndex) ?: error("No song selected")
         val request = ++playbackRequest

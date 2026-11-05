@@ -224,6 +224,19 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
         }
     }
     if (customTimer) CustomSleepTimerDialog({ customTimer = false }) { player.setSleepTimerDuration(it); customTimer = false }
+    val pageMiniPlayer: @Composable () -> Unit = {
+        if (browse.nowPlayingId != null) NowPlayingStrip(
+            title = browse.nowPlayingTitle ?: "Now playing", artist = browse.nowPlayingArtist,
+            artworkUrl = browse.nowPlayingArtworkUrl, isPlaying = browse.isPlaying,
+            isLoading = browse.isResolving || browse.isBuffering,
+            onClick = { if (!browse.isResolving) { onDismiss(); music.openPlayer() } },
+            onTogglePlayPause = music::togglePlayPause,
+            onPrevious = music::previous, onNext = music::next,
+            canGoPrevious = !browse.isResolving && browse.canGoPrevious,
+            canGoNext = !browse.isResolving && browse.canGoNext,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+    }
     if (page == "Artist") MusicArtistPage(
         name = currentArtistDetails?.name ?: row.artistHint().orEmpty(),
         artwork = currentArtistDetails?.photoUrl ?: rows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl,
@@ -233,12 +246,14 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onDism
         message = message,
         onBack = { back() },
         onPlay = { music.play(it) },
+        miniPlayer = pageMiniPlayer,
         onPlayAll = { runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) } },
         onCollection = { item -> open("${if (item.kind == MusicRow.Kind.ALBUM) "album" else "collection"}:${item.title}"); rows = emptyList(); runAction { rows = music.collectionRows(item.id) } },
         onOptions = { artistOptions = it },
     )
     if (page.startsWith("album:")) MusicAlbumPage(
         title = page.substringAfter(":"), tracks = rows, loading = busy, message = message,
+        miniPlayer = pageMiniPlayer,
         onBack = { back() }, onPlayAll = { runAction { music.playPlaylist(rows) } },
         onPlay = { index -> runAction { music.playPlaylist(rows, index) } },
         onOptions = { artistOptions = it },

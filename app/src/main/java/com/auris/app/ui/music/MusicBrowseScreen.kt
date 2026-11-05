@@ -30,6 +30,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.navigationBarsPadding
+import com.auris.app.ui.components.FloatingNavigationLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -131,7 +133,7 @@ fun MusicBrowseScreen(
                 when {
                     // Blank query: the category landing. Checked before `isEmpty`, because an empty
                     // result set is exactly what a blank query produces and it is not an error.
-                    state.isBrowsingCategories -> CategoryGrid(onCategory = { onQueryChange(it.query) })
+                    state.isBrowsingCategories -> CategoryGrid(onCategory = { onQueryChange(it.query) }, hasMiniPlayer = state.nowPlayingId != null)
                     state.isEmpty -> EmptyMusic(
                         query = state.query,
                         onClear = { onQueryChange("") },
@@ -158,7 +160,9 @@ fun MusicBrowseScreen(
                     canGoPrevious = !state.isResolving && state.canGoPrevious,
                     canGoNext = !state.isResolving && state.canGoNext,
                     modifier = Modifier.align(Alignment.BottomCenter)
-                        .padding(horizontal = 16.dp, vertical = 104.dp),
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = FloatingNavigationLayout.playerBottom),
                 )
             }
         }
@@ -168,10 +172,11 @@ fun MusicBrowseScreen(
 // ---- Category landing --------------------------------------------------------
 
 @Composable
-private fun CategoryGrid(onCategory: (MusicCategory) -> Unit) {
+private fun CategoryGrid(onCategory: (MusicCategory) -> Unit, hasMiniPlayer: Boolean) {
     LazyVerticalGrid(
+        modifier = Modifier.navigationBarsPadding(),
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = if (hasMiniPlayer) 210.dp else 140.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

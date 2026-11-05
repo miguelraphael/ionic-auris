@@ -71,6 +71,7 @@ internal fun MusicSearchResults(
     }
     if (filter == MusicSearchFilter.PLAYLISTS && !empty) {
         LazyVerticalGrid(
+            modifier = Modifier.navigationBarsPadding(),
             columns = GridCells.Adaptive(140.dp),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
                 bottom = if (state.nowPlayingId != null) 210.dp else 140.dp),
@@ -85,6 +86,7 @@ internal fun MusicSearchResults(
         return
     }
     LazyColumn(
+        modifier = Modifier.navigationBarsPadding(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp,
             bottom = if (state.nowPlayingId != null) 210.dp else 140.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),

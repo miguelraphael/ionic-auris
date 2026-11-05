@@ -36,93 +36,97 @@ internal fun MusicArtistPage(
     onPlayAll: () -> Unit,
     onCollection: (MusicRow) -> Unit,
     onOptions: (MusicRow) -> Unit,
+    miniPlayer: @Composable () -> Unit = {},
 ) {
     var showAllSongs by remember(name) { mutableStateOf(false) }
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = AurisBackground) {
-            LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                item {
-                    Box {
-                        MediaArtwork(artwork, null, Modifier.fillMaxWidth().height(280.dp))
-                        FilledIconButton(onClick = onBack, modifier = Modifier.statusBarsPadding().padding(16.dp)) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+            Column(Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 32.dp)) {
+                    item {
+                        Box {
+                            MediaArtwork(artwork, null, Modifier.fillMaxWidth().height(280.dp))
+                            FilledIconButton(onClick = onBack, modifier = Modifier.statusBarsPadding().padding(16.dp)) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            }
+                        }
+                        Column(Modifier.padding(20.dp)) {
+                            Text(name, style = MaterialTheme.typography.displaySmall)
+                            Text("Artist", color = AurisOnSurfaceVariant)
+                            if (!bio.isNullOrBlank()) {
+                                var expanded by remember { mutableStateOf(false) }
+                                Surface(
+                                    shape = ArtworkShapeSmall,
+                                    color = AurisSurface,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 12.dp)
+                                        .clickable { expanded = !expanded }
+                                ) {
+                                    Column(Modifier.animateContentSize(tween(AurisMotion.Standard, easing = AurisMotion.Ease)).padding(14.dp)) {
+                                        Text(
+                                            text = "About",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = AurisOnSurface,
+                                            modifier = Modifier.padding(bottom = 6.dp),
+                                        )
+                                        Text(
+                                            text = bio,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = AurisOnSurfaceVariant,
+                                            maxLines = if (expanded) Int.MAX_VALUE else 3,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = if (expanded) "Show less" else "Read more",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = AurisAccent,
+                                            modifier = Modifier.padding(top = 8.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            Button(onClick = onPlayAll, enabled = !loading && rows.any { it.kind == MusicRow.Kind.TRACK }, modifier = Modifier.padding(top = 16.dp)) { Text("Play songs") }
+                        }
+                        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        message?.let { Text(it, Modifier.padding(20.dp)) }
+                    }
+                    val songs = rows.filter { it.kind == MusicRow.Kind.TRACK }
+                    if (songs.isNotEmpty()) {
+                        item { Text("Songs", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp)) }
+                        items(if (showAllSongs) songs else songs.take(5), key = { it.id }) { song ->
+                            Row(Modifier.fillMaxWidth().combinedClickable(onClick = { onPlay(song) }, onLongClick = { onOptions(song) }).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                MediaArtwork(song.artworkUrl, null, Modifier.size(52.dp), shape = ArtworkShapeSmall)
+                                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                    Text(song.title, style = MaterialTheme.typography.titleMedium)
+                                    Text(song.subtitle.orEmpty(), color = AurisOnSurfaceVariant)
+                                }
+                                IconButton(onClick = { onOptions(song) }) { Icon(Icons.Filled.MoreVert, "Options for ${song.title}") }
+                            }
+                        }
+                        if (songs.size > 5) item {
+                            TextButton(onClick = { showAllSongs = !showAllSongs }, modifier = Modifier.padding(horizontal = 20.dp)) {
+                                Text(if (showAllSongs) "Show fewer songs" else "Show all ${songs.size} songs")
+                            }
                         }
                     }
-                    Column(Modifier.padding(20.dp)) {
-                        Text(name, style = MaterialTheme.typography.displaySmall)
-                        Text("Artist", color = AurisOnSurfaceVariant)
-                        if (!bio.isNullOrBlank()) {
-                            var expanded by remember { mutableStateOf(false) }
-                            Surface(
-                                shape = ArtworkShapeSmall,
-                                color = AurisSurface,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 12.dp)
-                                    .clickable { expanded = !expanded }
-                            ) {
-                                Column(Modifier.animateContentSize(tween(AurisMotion.Standard, easing = AurisMotion.Ease)).padding(14.dp)) {
-                                    Text(
-                                        text = "About",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = AurisOnSurface,
-                                        modifier = Modifier.padding(bottom = 6.dp),
-                                    )
-                                    Text(
-                                        text = bio,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = AurisOnSurfaceVariant,
-                                        maxLines = if (expanded) Int.MAX_VALUE else 3,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = if (expanded) "Show less" else "Read more",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = AurisAccent,
-                                        modifier = Modifier.padding(top = 8.dp),
-                                    )
+                    listOf(MusicRow.Kind.ALBUM to "Albums", MusicRow.Kind.PLAYLIST to "Playlists").forEach { (kind, title) ->
+                        val collections = rows.filter { it.kind == kind }.distinctBy { it.id }
+                        if (collections.isNotEmpty()) item {
+                            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp))
+                            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(collections, key = { it.id }) { collection ->
+                                    Column(Modifier.width(152.dp).combinedClickable(onClick = { onCollection(collection) })) {
+                                        MediaArtwork(collection.artworkUrl, null, Modifier.size(152.dp))
+                                        Text(collection.title, maxLines = 2, modifier = Modifier.padding(top = 8.dp))
+                                    }
                                 }
                             }
                         }
-                        Button(onClick = onPlayAll, enabled = !loading && rows.any { it.kind == MusicRow.Kind.TRACK }, modifier = Modifier.padding(top = 16.dp)) { Text("Play songs") }
                     }
-                    if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    message?.let { Text(it, Modifier.padding(20.dp)) }
+                    if (!loading && rows.isEmpty()) item { Text("No artist releases found. Try searching for the artist directly.", Modifier.padding(20.dp)) }
                 }
-                val songs = rows.filter { it.kind == MusicRow.Kind.TRACK }
-                if (songs.isNotEmpty()) {
-                    item { Text("Songs", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp)) }
-                    items(if (showAllSongs) songs else songs.take(5), key = { it.id }) { song ->
-                        Row(Modifier.fillMaxWidth().combinedClickable(onClick = { onPlay(song) }, onLongClick = { onOptions(song) }).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            MediaArtwork(song.artworkUrl, null, Modifier.size(52.dp), shape = ArtworkShapeSmall)
-                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                Text(song.title, style = MaterialTheme.typography.titleMedium)
-                                Text(song.subtitle.orEmpty(), color = AurisOnSurfaceVariant)
-                            }
-                            IconButton(onClick = { onOptions(song) }) { Icon(Icons.Filled.MoreVert, "Options for ${song.title}") }
-                        }
-                    }
-                    if (songs.size > 5) item {
-                        TextButton(onClick = { showAllSongs = !showAllSongs }, modifier = Modifier.padding(horizontal = 20.dp)) {
-                            Text(if (showAllSongs) "Show fewer songs" else "Show all ${songs.size} songs")
-                        }
-                    }
-                }
-                listOf(MusicRow.Kind.ALBUM to "Albums", MusicRow.Kind.PLAYLIST to "Playlists").forEach { (kind, title) ->
-                    val collections = rows.filter { it.kind == kind }.distinctBy { it.id }
-                    if (collections.isNotEmpty()) item {
-                        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp))
-                        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(collections, key = { it.id }) { collection ->
-                                Column(Modifier.width(152.dp).combinedClickable(onClick = { onCollection(collection) })) {
-                                    MediaArtwork(collection.artworkUrl, null, Modifier.size(152.dp))
-                                    Text(collection.title, maxLines = 2, modifier = Modifier.padding(top = 8.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-                if (!loading && rows.isEmpty()) item { Text("No artist releases found. Try searching for the artist directly.", Modifier.padding(20.dp)) }
+                Box(Modifier.navigationBarsPadding().padding(horizontal = 16.dp)) { miniPlayer() }
             }
         }
     }
