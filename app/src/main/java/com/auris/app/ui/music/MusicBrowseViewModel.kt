@@ -683,9 +683,39 @@ class MusicBrowseViewModel(
 
     suspend fun playPlaylist(rows: List<MusicRow>, startIndex: Int = 0) {
         val selected = rows.getOrNull(startIndex) ?: error("No song selected")
-        val playable = rows.mapNotNull { resolveTrack(it.id, it.title) }
-        val resolvedIndex = playable.indexOfFirst { it.track.videoId == selected.id }
-        check(resolvedIndex >= 0 && enqueue(playable, resolvedIndex)) { "Could not play this song. Try again." }
+        val request = ++playbackRequest
+        playbackJob?.cancel()
+        val started = CompletableDeferred<Unit>()
+        _state.value = _state.value.copy(isResolving = true, message = null,
+            nowPlayingId = selected.id, nowPlayingTitle = selected.title,
+            nowPlayingArtist = selected.artistHint(), nowPlayingArtworkUrl = selected.artworkUrl)
+        playbackJob = viewModelScope.launch {
+            try {
+                startProgressivePlaylist(rows, startIndex,
+                    resolve = { resolveTrack(it.id, it.title) },
+                    start = { first ->
+                        check(enqueue(listOf(first))) { "Could not reach the playback service" }
+                        _state.value = _state.value.copy(isResolving = false)
+                        started.complete(Unit)
+                    },
+                    insert = { index, playable ->
+                        val item = buildMediaItem(playable.track.videoId, playable.track.title,
+                            playable.track.artist, playable.track.album,
+                            playable.track.largeArtworkUrl ?: playable.track.artworkUrl,
+                            playable.streamUrl, playable.mimeType)
+                        controller?.let { it.addMediaItem(index.coerceAtMost(it.mediaItemCount), item) }
+                    })
+            } catch (error: CancellationException) {
+                started.cancel(error)
+                throw error
+            } catch (error: Exception) {
+                if (!started.isCompleted) started.completeExceptionally(error)
+                else _state.value = _state.value.copy(message = "Some songs could not be added. Playback can continue.")
+            } finally {
+                if (playbackRequest == request) _state.value = _state.value.copy(isResolving = false)
+            }
+        }
+        started.await()
     }
 
     /** Saves a track to the library without playing it. */
