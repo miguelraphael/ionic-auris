@@ -153,6 +153,12 @@ cp local.properties.example local.properties   # add SUPABASE_URL / SUPABASE_ANO
 `SUPABASE_URL` / `SUPABASE_ANON_KEY` are injected as `BuildConfig` fields; only the anon
 key belongs in the app. Never ship a service-role key.
 
+For GitHub Actions APKs, configure both `SUPABASE_URL` and `SUPABASE_ANON_KEY`
+under **Repository Settings → Secrets and variables → Actions**, as variables or
+secrets. Variables take precedence when both are set. CI does not have your local
+`local.properties`; it rejects missing values because the app needs them at startup.
+After configuring them, rerun Android CI and download the newly built artifact.
+
 ## Extension loading
 
 `:source-api` is a **compatibility layer**, not a copy of Aniyomi's library — Aniyomi's

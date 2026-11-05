@@ -42,15 +42,26 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # Supabase values are optional for a green build: the fields compile to empty
-      # strings and are only needed at runtime. Set them as repository variables if
-      # you want CI-built APKs to be usable. Never put a service_role key here —
-      # only the anon key belongs in a client. Gradle reads ORG_GRADLE_PROJECT_*
-      # as project properties, so the values stay out of the command line.
+      # CI has no local.properties. Reject missing runtime configuration instead
+      # of publishing an APK that crashes on launch. Only use the client anon key.
+      - name: Validate app configuration
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
+        run: |
+          missing=0
+          for name in SUPABASE_URL SUPABASE_ANON_KEY; do
+            if [[ -z "${!name//[[:space:]]/}" ]]; then
+              echo "::error::$name is missing. Configure it in repository Actions variables or secrets."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
       - name: Build debug APK and run unit tests
         env:
-          ORG_GRADLE_PROJECT_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          ORG_GRADLE_PROJECT_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          ORG_GRADLE_PROJECT_SUPABASE_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL }}
+          ORG_GRADLE_PROJECT_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
         run: >
           ./gradlew :app:assembleDebug :app:testDebugUnitTest
           --no-daemon
