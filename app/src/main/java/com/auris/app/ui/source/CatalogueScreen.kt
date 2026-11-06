@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -98,32 +99,83 @@ fun CatalogueScreen(
         fadeEndFraction = 0.4f,
         modifier = modifier,
     ) {
-        Column(Modifier.fillMaxSize()) {
-            CatalogueHeader(state, onBack, onSourceChange)
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 150.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 130.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                CatalogueHeader(state, onBack, onSourceChange)
+            }
 
-            ModeTabs(selected = state.mode, onSelect = onModeChange, popularLabel = state.popularLabel)
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                ModeTabs(selected = state.mode, onSelect = onModeChange, popularLabel = state.popularLabel)
+            }
 
-            CatalogueSearchField(
-                query = state.query,
-                onQueryChange = onQueryChange,
-            )
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                CatalogueSearchField(
+                    query = state.query,
+                    onQueryChange = onQueryChange,
+                )
+            }
 
-            SlowNetworkHint(isLoading = state.isLoading)
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SlowNetworkHint(isLoading = state.isLoading)
+            }
 
             when {
-                state.error != null -> CatalogueError(state.error, onRetry)
-                state.isLoading && state.items.isEmpty() -> LoadingGrid()
-                state.isEmpty -> EmptyCatalogue(
-                    state = state,
-                    onClear = { onQueryChange("") },
-                    onRetry = onRetry,
-                )
-                else -> CatalogueGrid(state, onItemClick = onItemClick, onLoadMore = onLoadMore)
+                state.error != null -> {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        CatalogueError(state.error, onRetry)
+                    }
+                }
+                state.isLoading && state.items.isEmpty() -> {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        LoadingGrid()
+                    }
+                }
+                state.isEmpty -> {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        EmptyCatalogue(
+                            state = state,
+                            onClear = { onQueryChange("") },
+                            onRetry = onRetry,
+                        )
+                    }
+                }
+                else -> {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        SectionHeader(title = state.title)
+                    }
+
+                    items(state.items, key = { it.url }) { item ->
+                        MediaGridCard(
+                            imageUrl = item.thumbnailUrl,
+                            title = item.title,
+                            subtitle = item.author ?: item.year?.toString(),
+                            progress = null,
+                            onClick = { onItemClick(item) },
+                        )
+                    }
+
+                    if (state.hasNextPage) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                text = if (state.isLoading) "Loading…" else "Load more",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AurisOnSurfaceVariant,
+                                modifier = Modifier
+                                    .clickable(enabled = !state.isLoading, onClick = onLoadMore)
+                                    .padding(vertical = 12.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }
-
-
 }
 
 // ---- Header ------------------------------------------------------------------
@@ -131,7 +183,7 @@ fun CatalogueScreen(
 @Composable
 private fun CatalogueHeader(state: CatalogueUiState, onBack: () -> Unit, onSourceChange: (String) -> Unit) {
     var sourceMenu by remember { mutableStateOf(false) }
-    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 56.dp)) {
+    Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 56.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
             androidx.compose.material3.FilledTonalIconButton(onClick = onBack) {
@@ -186,7 +238,7 @@ private fun ModeTabs(
         label = "catalogueSelection",
     )
     BoxWithConstraints(
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
             .fillMaxWidth()
             .height(48.dp)
             .clip(RoundedCornerShape(AurisRadii.chip))
@@ -239,7 +291,7 @@ private fun CatalogueSearchField(query: String, onQueryChange: (String) -> Unit)
         color = AurisSurface,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 4.dp),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -249,34 +301,34 @@ private fun CatalogueSearchField(query: String, onQueryChange: (String) -> Unit)
                 Icons.Filled.Search,
                 contentDescription = null,
                 tint = AurisOnSurfaceVariant,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
             Spacer(Modifier.width(10.dp))
-
-            Box(Modifier.weight(1f)) {
-                if (field.text.isEmpty()) {
-                    Text(
-                        text = "Search this source",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = AurisOnSurfaceVariant,
-                    )
-                }
-                BasicTextField(
-                    value = field,
-                    onValueChange = { value ->
-                        field = value
-                        onQueryChange(value.text)
-                    },
-                    singleLine = true,
-                    textStyle = TextStyle(
-                        color = AurisOnSurface,
-                        fontSize = MaterialTheme.typography.bodyLarge.fontSize,
-                    ),
-                    cursorBrush = SolidColor(AurisAccent),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
+            BasicTextField(
+                value = field,
+                onValueChange = {
+                    field = it
+                    onQueryChange(it.text)
+                },
+                textStyle = TextStyle(
+                    color = AurisOnSurface,
+                    fontFamily = MaterialTheme.typography.bodyMedium.fontFamily,
+                    fontSize = MaterialTheme.typography.bodyMedium.fontSize,
+                ),
+                cursorBrush = SolidColor(AurisAccent),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                decorationBox = { innerTextField ->
+                    if (field.text.isEmpty()) {
+                        Text(
+                            text = "Search this source",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AurisOnSurfaceVariant,
+                        )
+                    }
+                    innerTextField()
+                },
+            )
             if (field.text.isNotEmpty()) {
                 Spacer(Modifier.width(8.dp))
                 Icon(
@@ -296,54 +348,12 @@ private fun CatalogueSearchField(query: String, onQueryChange: (String) -> Unit)
     }
 }
 
-// ---- Content -----------------------------------------------------------------
-
-@Composable
-private fun CatalogueGrid(state: CatalogueUiState, onItemClick: (SourceItem) -> Unit, onLoadMore: () -> Unit) {
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 150.dp),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 130.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-            SectionHeader(title = state.title)
-        }
-
-        items(state.items, key = { it.url }) { item ->
-            MediaGridCard(
-                imageUrl = item.thumbnailUrl,
-                title = item.title,
-                subtitle = item.author ?: item.year?.toString(),
-                progress = null,
-                onClick = { onItemClick(item) },
-            )
-        }
-
-        if (state.hasNextPage) {
-            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                // Pagination is deliberately absent: every screen in this app loads page 1 only,
-                // and an unbounded grid is a worse failure than a missing page. Flagged rather
-                // than silently truncating.
-                Text(
-                    text = if (state.isLoading) "Loading…" else "Load more",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AurisOnSurfaceVariant,
-                    modifier = Modifier.clickable(enabled = !state.isLoading, onClick = onLoadMore)
-                        .padding(vertical = 12.dp),
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun LoadingGrid() {
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+            .fillMaxWidth()
+            .padding(vertical = 16.dp),
     ) {
         SkeletonPosterGrid(rows = 2, columns = 2)
     }

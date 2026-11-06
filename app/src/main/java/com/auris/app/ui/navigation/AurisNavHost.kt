@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
@@ -50,10 +51,13 @@ import com.auris.app.ui.source.CatalogueScreen
 import com.auris.app.ui.source.CatalogueViewModel
 import com.auris.app.ui.settings.SettingsViewModel
 import com.auris.app.data.remote.music.MusicSource
+import com.auris.app.data.remote.music.MusicArtistDetails
+import com.auris.app.ui.music.MusicArtistPage
 import com.auris.app.ui.music.MusicBrowseScreen
 import com.auris.app.ui.music.MusicBrowseViewModel
 import com.auris.app.ui.music.MusicHomeScreen
 import com.auris.app.ui.music.MusicRow
+import com.auris.app.ui.music.artistHint
 import com.auris.app.ui.player.EpisodePlayerRoute
 import com.auris.app.ui.reader.MangaReaderScreen
 import com.auris.app.ui.reader.MangaReaderViewModel
@@ -70,6 +74,7 @@ import com.auris.app.source.repo.ExtensionRepo
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 /**
  * The single NavHost for the app.
@@ -174,20 +179,42 @@ fun AurisNavHost(
         enterTransition = {
             val isTab = TopLevelDestination.entries.any { it.route == targetState.destination.route }
             val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER
-            fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) +
-                slideInHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) {
-                    if (isTab || isVideo) 0 else it / 10
-                }
+            if (isTab || isVideo) {
+                fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
+            } else {
+                slideInHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it } +
+                    fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
+            }
         },
-        exitTransition = { fadeOut(tween(AurisMotion.Quick)) },
-        popEnterTransition = { fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) },
+        exitTransition = {
+            val isTab = TopLevelDestination.entries.any { it.route == targetState.destination.route }
+            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER
+            if (isTab || isVideo) {
+                fadeOut(tween(AurisMotion.Quick))
+            } else {
+                slideOutHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { -it / 3 } +
+                    fadeOut(tween(AurisMotion.Quick))
+            }
+        },
+        popEnterTransition = {
+            val isTab = TopLevelDestination.entries.any { it.route == targetState.destination.route }
+            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER
+            if (isTab || isVideo) {
+                fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
+            } else {
+                slideInHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { -it / 3 } +
+                    fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
+            }
+        },
         popExitTransition = {
             val isTab = TopLevelDestination.entries.any { it.route == initialState.destination.route }
             val isVideo = initialState.destination.route == Routes.EPISODE_PLAYER
-            fadeOut(tween(AurisMotion.Quick)) +
-                slideOutHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) {
-                    if (isTab || isVideo) 0 else it / 10
-                }
+            if (isTab || isVideo) {
+                fadeOut(tween(AurisMotion.Quick))
+            } else {
+                slideOutHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it } +
+                    fadeOut(tween(AurisMotion.Quick))
+            }
         },
     ) {
         composable(TopLevelDestination.HOME.route) {
@@ -284,7 +311,7 @@ fun AurisNavHost(
             // launch would compete with the library sync for nothing.
             LaunchedEffect(Unit) { music.loadHome() }
 
-            var homeSongOptions by remember { mutableStateOf<com.auris.app.ui.music.MusicRow?>(null) }
+            var homeSongOptions by remember { mutableStateOf<MusicRow?>(null) }
             homeSongOptions?.let { song -> com.auris.app.ui.music.MusicSongActions(song, music) { homeSongOptions = null } }
 
             MusicHomeScreen(
@@ -335,7 +362,66 @@ fun AurisNavHost(
                     fadeOut(tween(AurisMotion.Quick))
             },
         ) {
-            MusicPlayerRoute(onBack = { navController.popBackStack() })
+            val music = musicViewModel
+            val scope = rememberCoroutineScope()
+            var artistDialogRow by remember { mutableStateOf<MusicRow?>(null) }
+            var artistDialogDetails by remember { mutableStateOf<MusicArtistDetails?>(null) }
+            var artistDialogRows by remember { mutableStateOf<List<MusicRow>>(emptyList()) }
+            var isArtistLoading by remember { mutableStateOf(false) }
+
+            MusicPlayerRoute(
+                onBack = { navController.popBackStack() },
+                onArtistClick = { artistName ->
+                    if (music != null && artistName.isNotBlank()) {
+                        val row = MusicRow(
+                            id = "artist-$artistName",
+                            title = artistName,
+                            subtitle = artistName,
+                            artworkUrl = null,
+                            kind = MusicRow.Kind.TRACK,
+                        )
+                        artistDialogRow = row
+                        artistDialogDetails = null
+                        artistDialogRows = emptyList()
+                        isArtistLoading = true
+                        scope.launch {
+                            try {
+                                val (details, rows) = music.loadArtist(row)
+                                artistDialogDetails = details
+                                artistDialogRows = rows
+                            } finally {
+                                isArtistLoading = false
+                            }
+                        }
+                    }
+                },
+            )
+
+            artistDialogRow?.let { row ->
+                MusicArtistPage(
+                    name = artistDialogDetails?.name ?: row.artistHint().orEmpty().ifBlank { row.title },
+                    artwork = artistDialogDetails?.photoUrl ?: artistDialogRows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl,
+                    bio = artistDialogDetails?.bio,
+                    rows = artistDialogRows.distinctBy { it.kind to it.id },
+                    loading = isArtistLoading,
+                    message = null,
+                    onBack = { artistDialogRow = null },
+                    onPlay = { item -> music?.play(item) },
+                    onPlayAll = {
+                        val tracks = artistDialogRows.filter { it.kind == MusicRow.Kind.TRACK }
+                        if (tracks.isNotEmpty()) {
+                            scope.launch { music?.playPlaylist(tracks) }
+                        }
+                    },
+                    onCollection = { item ->
+                        scope.launch {
+                            val collectionRows = music?.collectionRows(item.id).orEmpty()
+                            artistDialogRows = collectionRows
+                        }
+                    },
+                    onOptions = {},
+                )
+            }
         }
 
         // Extension management. Reached from Settings, not a top-level tab, so the nav pill
@@ -456,7 +542,7 @@ fun AurisNavHost(
             }
             val musicState by music.state.collectAsStateWithLifecycle()
 
-            var optionsSong by remember { mutableStateOf<com.auris.app.ui.music.MusicRow?>(null) }
+            var optionsSong by remember { mutableStateOf<MusicRow?>(null) }
             optionsSong?.let { song ->
                 com.auris.app.ui.music.MusicSongActions(song, music) { optionsSong = null }
             }

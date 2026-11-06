@@ -42,7 +42,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -252,20 +255,37 @@ private fun DetailHero(
     palette: ArtworkPalette,
     onBack: () -> Unit,
 ) {
+    val backdropUrl = state.coverUrl ?: state.posterUrl
     Column {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (state.coverUrl == null) Modifier.height(100.dp) else Modifier.aspectRatio(WIDE_ASPECT)),
+                .then(
+                    if (state.coverUrl != null) {
+                        Modifier.aspectRatio(WIDE_ASPECT)
+                    } else {
+                        Modifier.height(280.dp)
+                    }
+                ),
         ) {
-            // The wide cover is the composition the artwork was designed for, so it is shown at
-            // full bleed here rather than as a poster-shaped card.
-            AsyncImage(
-                model = state.coverUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (backdropUrl != null) {
+                AsyncImage(
+                    model = backdropUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (state.coverUrl == null) {
+                                Modifier
+                                    .graphicsLayer { alpha = 0.45f }
+                                    .blur(20.dp)
+                            } else {
+                                Modifier
+                            }
+                        ),
+                )
+            }
 
             // Scrim. Two stops rather than a single flat overlay, so the title text at the
             // bottom is legible against a bright cover without dimming the artwork itself more
@@ -275,9 +295,9 @@ private fun DetailHero(
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.25f),
+                            0f to Color.Black.copy(alpha = 0.35f),
                             0.45f to Color.Transparent,
-                            1f to AurisBackground.copy(alpha = 0.92f),
+                            1f to AurisBackground.copy(alpha = 0.95f),
                         ),
                     ),
             )
@@ -286,6 +306,7 @@ private fun DetailHero(
                 CircularProgressIndicator(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
+                        .statusBarsPadding()
                         .padding(20.dp)
                         .size(20.dp),
                     strokeWidth = 2.dp,
@@ -318,15 +339,41 @@ private fun DetailHero(
                     modifier = Modifier.size(20.dp),
                 )
             }
+
+            // When no wide cover is available (e.g. Manga), the poster is anchored inside the blurred hero banner
+            if (state.coverUrl == null && state.posterUrl != null) {
+                AsyncImage(
+                    model = state.posterUrl,
+                    contentDescription = "Poster for ${state.title}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 20.dp, bottom = 8.dp)
+                        .width(112.dp)
+                        .height(160.dp)
+                        .clip(RoundedCornerShape(AurisRadii.artworkSmall))
+                        .shadow(elevation = 10.dp, shape = RoundedCornerShape(AurisRadii.artworkSmall)),
+                )
+            }
         }
 
         Column(Modifier.padding(horizontal = 20.dp)) {
-            if (state.posterUrl != null) {
-                AsyncImage(state.posterUrl, "Poster for ${state.title}",
+            // When coverUrl was present, show the poster under the wide banner as before
+            if (state.coverUrl != null && state.posterUrl != null) {
+                Spacer(Modifier.height(12.dp))
+                AsyncImage(
+                    model = state.posterUrl,
+                    contentDescription = "Poster for ${state.title}",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.width(112.dp).height(160.dp)
-                        .clip(RoundedCornerShape(AurisRadii.artworkSmall)))
+                    modifier = Modifier
+                        .width(112.dp)
+                        .height(160.dp)
+                        .clip(RoundedCornerShape(AurisRadii.artworkSmall))
+                        .shadow(elevation = 10.dp, shape = RoundedCornerShape(AurisRadii.artworkSmall)),
+                )
                 Spacer(Modifier.height(16.dp))
+            } else {
+                Spacer(Modifier.height(8.dp))
             }
             Text(
                 text = state.title,

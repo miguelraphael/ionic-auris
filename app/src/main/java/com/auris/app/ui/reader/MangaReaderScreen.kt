@@ -28,16 +28,24 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +62,8 @@ import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisRadii
 import com.auris.app.ui.theme.AurisSurface
 import com.auris.app.ui.theme.AurisTrack
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * Manga reader: vertically paged chapter images with a tap-to-reveal progress overlay.
@@ -86,6 +96,7 @@ fun MangaReaderScreen(
         initialPage = state.currentPage,
         pageCount = { state.totalPages.coerceAtLeast(1) },
     )
+    val scope = rememberCoroutineScope()
 
     // Report page changes upward so the ViewModel's state and the pager's cannot drift.
     LaunchedEffect(pagerState, state.isLoading, state.totalPages) {
@@ -175,7 +186,13 @@ fun MangaReaderScreen(
             exit = fadeOut() + slideOutVertically { it },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            ReaderProgressBar(state, onChapterChange)
+            ReaderProgressBar(
+                state = state,
+                onChapterChange = onChapterChange,
+                onSeekPage = { target ->
+                    scope.launch { pagerState.scrollToPage(target) }
+                },
+            )
         }
     }
 }
@@ -199,6 +216,16 @@ private fun ReaderTopBar(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        FilledTonalIconButton(onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = AurisOnSurface,
+            )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
         Column(Modifier.weight(1f)) {
             Text(
                 text = state.chapterTitle.ifBlank { "Chapter" },
@@ -218,7 +245,7 @@ private fun ReaderTopBar(
 
         Spacer(Modifier.width(12.dp))
 
-        // The progress pill carries the count, so it is the only chrome the eye needs.
+        // The progress pill carries the count, giving immediate visual feedback.
         Surface(
             shape = RoundedCornerShape(AurisRadii.chip),
             color = AurisSurface,
@@ -230,21 +257,18 @@ private fun ReaderTopBar(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
-
-        Spacer(Modifier.width(12.dp))
-
-        androidx.compose.material3.FilledTonalIconButton(onClick = onBack) {
-            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back", tint = AurisOnSurface)
-        }
     }
 }
 
 @Composable
-private fun ReaderProgressBar(state: MangaReaderUiState, onChapterChange: (Int) -> Unit) {
-    val fraction = if (state.totalPages == 0) 0f else {
-        (state.currentPage + 1f) / state.totalPages
-    }
+private fun ReaderProgressBar(
+    state: MangaReaderUiState,
+    onChapterChange: (Int) -> Unit,
+    onSeekPage: (Int) -> Unit,
+) {
+    var draggingPage by remember { mutableStateOf<Int?>(null) }
+    val displayPage = draggingPage ?: (state.currentPage + 1)
+    val total = state.totalPages.coerceAtLeast(1)
 
     Column(
         modifier = Modifier
@@ -254,34 +278,117 @@ private fun ReaderProgressBar(state: MangaReaderUiState, onChapterChange: (Int) 
                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp,
                 start = 20.dp,
                 end = 20.dp,
-                top = 12.dp,
+                top = 14.dp,
             ),
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            androidx.compose.material3.FilledTonalButton(
-                enabled = state.previousChapter != null,
-                onClick = { state.previousChapter?.let(onChapterChange) },
-            ) { Text("Previous chapter") }
-            androidx.compose.material3.FilledTonalButton(
-                enabled = state.nextChapter != null,
-                onClick = { state.nextChapter?.let(onChapterChange) },
-            ) { Text("Next chapter") }
-        }
-        // Slim bar rather than a Material slider: a slider would imply the user can drag to seek,
-        // which is not how paging works, and its thumb would invite a gesture that does nothing.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(3.dp)
-                .clip(CircleShape)
-                .background(AurisTrack),
+        // Page scrubbing slider with live indicator
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text(
+                text = "Page $displayPage of $total",
+                style = MaterialTheme.typography.labelMedium,
+                color = AurisOnSurface,
+            )
+            if (state.totalPages > 0) {
+                Text(
+                    text = "${((displayPage.toFloat() / total) * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AurisAccent,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        if (total > 1) {
+            Slider(
+                value = displayPage.toFloat(),
+                onValueChange = { value ->
+                    draggingPage = value.roundToInt().coerceIn(1, total)
+                },
+                onValueChangeFinished = {
+                    draggingPage?.let { page ->
+                        onSeekPage((page - 1).coerceIn(0, total - 1))
+                        draggingPage = null
+                    }
+                },
+                valueRange = 1f..total.toFloat(),
+                steps = if (total in 3..60) total - 2 else 0,
+                colors = SliderDefaults.colors(
+                    thumbColor = AurisAccent,
+                    activeTrackColor = AurisAccent,
+                    inactiveTrackColor = AurisTrack,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp),
+            )
+        } else {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(fraction.coerceIn(0f, 1f))
-                    .height(3.dp)
-                    .background(AurisAccent),
-            )
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(CircleShape)
+                    .background(AurisTrack),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(AurisAccent),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilledTonalButton(
+                enabled = state.previousChapter != null,
+                onClick = { state.previousChapter?.let(onChapterChange) },
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Previous")
+            }
+
+            Surface(
+                shape = RoundedCornerShape(AurisRadii.chip),
+                color = AurisSurface,
+            ) {
+                Text(
+                    text = state.chapterTitle.ifBlank { "Chapter" },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = AurisOnSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
+
+            FilledTonalButton(
+                enabled = state.nextChapter != null,
+                onClick = { state.nextChapter?.let(onChapterChange) },
+            ) {
+                Text("Next")
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
     }
 }

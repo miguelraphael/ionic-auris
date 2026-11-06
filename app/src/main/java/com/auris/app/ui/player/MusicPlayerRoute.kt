@@ -76,6 +76,7 @@ import kotlin.math.roundToInt
 fun MusicPlayerRoute(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onArtistClick: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val viewModel: PlayerViewModel = viewModel(factory = PlayerViewModel.factory(context))
@@ -110,6 +111,7 @@ fun MusicPlayerRoute(
             onPrevious = viewModel::previous,
             onOpenQueue = { showQueue = true },
             onOpenSleepTimer = { showSleepTimer = true },
+            onArtistClick = onArtistClick,
         )
 
         SnackbarHost(

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Bedtime
@@ -96,6 +97,7 @@ fun MusicPlayerScreen(
     onPrevious: () -> Unit = {},
     onOpenQueue: () -> Unit = {},
     onOpenSleepTimer: () -> Unit = {},
+    onArtistClick: ((String) -> Unit)? = null,
 ) {
     // The screen's gradient tracks the current album art.
     val palette = rememberArtworkPaletteValue(artworkKey = state.artworkUrl)
@@ -223,16 +225,45 @@ fun MusicPlayerScreen(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = listOf(state.artist, state.album)
-                    .filter { it.isNotBlank() }
-                    .joinToString(" – "),
-                style = MaterialTheme.typography.bodyLarge,
-                color = AurisOnSurface,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (state.artist.isNotBlank()) {
+                    Text(
+                        text = state.artist,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (onArtistClick != null) AurisAccent else AurisOnSurface,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(enabled = onArtistClick != null) {
+                                onArtistClick?.invoke(state.artist)
+                            }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+                if (state.artist.isNotBlank() && state.album.isNotBlank()) {
+                    Text(
+                        text = " – ",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = AurisOnSurfaceVariant,
+                    )
+                }
+                if (state.album.isNotBlank()) {
+                    Text(
+                        text = state.album,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = AurisOnSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
 
             Spacer(Modifier.height(18.dp))
 
