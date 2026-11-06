@@ -53,9 +53,9 @@ data class RemoteSource(
 /**
  * An extension repository the user can browse.
  *
- * @param signingKeyFingerprint reserved for signature verification. Kept in the model so a
- *   repo can be added before verification is implemented, but **nothing is trusted yet** —
- *   see `ExtensionRepositoryClient`, which warns about this.
+ * @param signingKeyFingerprint declared signing certificate SHA-256 fingerprint for
+ *   the repository. When present, extensions from this repo must match this fingerprint,
+ *   enforced by [SignatureVerifier].
  */
 data class ExtensionRepo(
     val baseUrl: String,

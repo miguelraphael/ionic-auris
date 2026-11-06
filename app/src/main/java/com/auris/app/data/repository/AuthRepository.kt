@@ -25,10 +25,11 @@ import kotlinx.coroutines.withContext
  * ### Two sources of truth, deliberately
  * supabase-kt persists its own token pair and refreshes it (`Auth` owns
  * refresh, so no caller here ever handles a token). `sync_sessions` mirrors
- * the *identity* — user id plus the current tokens — so the sync worker can
+ * the *identity* — user id and email — so the sync worker can
  * gate on "signed in" with a Room read and address rows to the right owner
- * without touching the network stack. The mirror is one-way: auth state
- * flows from supabase-kt into Room, never back.
+ * without touching the network stack. Tokens are managed exclusively by
+ * supabase-kt's secure storage and are never mirrored into Room or backup archives.
+ * The mirror is one-way: auth state flows from supabase-kt into Room, never back.
  *
  * ### Why sign-out always clears locally
  * A sign-out that needs the network strands the user signed in on airplane
@@ -173,8 +174,8 @@ class AuthRepository(
             SyncSessionEntity(
                 userId = user.id,
                 email = user.email,
-                accessToken = session.accessToken,
-                refreshToken = session.refreshToken,
+                accessToken = null,
+                refreshToken = null,
                 updatedAt = System.currentTimeMillis(),
             ),
         )

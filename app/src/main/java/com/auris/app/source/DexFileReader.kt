@@ -27,6 +27,9 @@ class DexFileReader(private val path: String) {
      *
      * Reads through the archive rather than requiring the caller to extract first, so both
      * the loader and its tests work straight from the installed APK.
+     *
+     * Extraction is strictly bounded against zip bombs: single entries cannot exceed
+     * [MAX_ENTRY_DEX_BYTES] and total extracted DEX content cannot exceed [MAX_TOTAL_DEX_BYTES].
      */
     fun readClassNamesFromArchive(): List<String> {
         val names = mutableSetOf<String>()
@@ -35,13 +38,28 @@ class DexFileReader(private val path: String) {
         runCatching {
             val zip = java.util.zip.ZipFile(path)
             zip.use {
+                var totalExtractedBytes = 0L
                 for (entry in zip.entries()) {
                     if (!entry.name.startsWith("classes") || !entry.name.endsWith(".dex")) continue
 
                     val out = File(tmpDir, "auris-${entry.name}-${System.nanoTime()}")
                     try {
+                        var entryBytes = 0L
                         zip.getInputStream(entry).use { input ->
-                            out.outputStream().use { output -> input.copyTo(output) }
+                            out.outputStream().use { output ->
+                                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                                var bytesRead: Int
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    entryBytes += bytesRead
+                                    totalExtractedBytes += bytesRead
+                                    if (entryBytes > MAX_ENTRY_DEX_BYTES || totalExtractedBytes > MAX_TOTAL_DEX_BYTES) {
+                                        throw IllegalStateException(
+                                            "DEX size exceeded limit (entry: $entryBytes, total: $totalExtractedBytes)"
+                                        )
+                                    }
+                                    output.write(buffer, 0, bytesRead)
+                                }
+                            }
                         }
                         out.setReadOnly()
                         names += readDescriptors(out.absolutePath)
@@ -210,7 +228,7 @@ class DexFileReader(private val path: String) {
         return b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)
     }
 
-    private companion object {
+    companion object {
         const val DEX_HEADER_SIZE = 0x70
 
         /** Offset of `header_size`, used as the "is this a dex?" sanity check. */
@@ -219,6 +237,12 @@ class DexFileReader(private val path: String) {
 
         /** Guards against reading an absurd descriptor from a corrupt offset. */
         const val MAX_DESCRIPTOR_LENGTH = 1024
+
+        /** Maximum uncompressed size allowed for a single classes*.dex entry (35 MB). */
+        const val MAX_ENTRY_DEX_BYTES = 35 * 1024 * 1024L
+
+        /** Maximum aggregate uncompressed DEX size extracted from an archive (70 MB). */
+        const val MAX_TOTAL_DEX_BYTES = 70 * 1024 * 1024L
     }
 }
 

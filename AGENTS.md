@@ -63,3 +63,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Working memory (Logseq)
+
+- Use `/home/ana/Documents/Knowledge-Base-For-Agents/` as persistent working memory.
+- At the start of each session, read `pages/Memory.md` first, then follow links relevant to the task.
+- Before stopping, update the relevant task notes and the index with decisions, verification, and outstanding work.
+- Keep `Memory` short and use it as an index. Give separate tasks separate notes and link related notes with Logseq `[[page links]]`.
