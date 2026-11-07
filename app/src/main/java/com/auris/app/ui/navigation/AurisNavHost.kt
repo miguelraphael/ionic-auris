@@ -495,6 +495,7 @@ fun AurisNavHost(
             MangaReaderScreen(
                 state = readerState,
                 onPageChanged = viewModel::onPageChanged,
+                onPageProgress = viewModel::onPageProgress,
                 onToggleOverlay = viewModel::toggleOverlay,
                 onRetry = viewModel::retry,
                 onBack = { navController.popBackStack() },

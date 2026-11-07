@@ -34,6 +34,8 @@ class MangaReaderViewModelTest {
     private var calls = 0
     private var fail = false
     private var lastProgressPage: Long? = null
+    private var lastWatched: Boolean? = null
+    private var lastEntryStatus: com.auris.app.core.model.EntryStatus? = null
     private var queuedMediaType: MediaType? = null
     private var vm: MangaReaderViewModel? = null
 
@@ -53,8 +55,8 @@ class MangaReaderViewModelTest {
             "observeById" -> MutableStateFlow(entry)
             "findById" -> entry
             "observeUnits" -> units
-            "updateUnitProgress" -> { lastProgressPage = args[3] as Long; Unit }
-            "updateProgress" -> Unit
+            "updateUnitProgress" -> { lastProgressPage = args[3] as Long; lastWatched = args[2] as Boolean; Unit }
+            "updateProgress" -> { lastEntryStatus = args[5] as com.auris.app.core.model.EntryStatus?; Unit }
             else -> error("Unexpected DAO call: $method")
         } }
         val syncDao = proxy<SyncDao> { method, args ->
@@ -133,4 +135,42 @@ class MangaReaderViewModelTest {
         advanceUntilIdle()
         assertEquals(3L, lastProgressPage)
     }
+
+    @Test fun tallFinalImageCompletesOnlyAfterItsBottomIsVisible() = runTest(dispatcher) {
+        val reader = reader(2)
+        awaitLoad(reader)
+        reader.onPageProgress(3, false)
+        advanceUntilIdle()
+        assertEquals(3, reader.state.value.currentPage)
+        assertEquals(3L, lastProgressPage)
+        assertEquals(false, lastWatched)
+        assertEquals(com.auris.app.core.model.EntryStatus.IN_PROGRESS, lastEntryStatus)
+
+        // The current page has not changed, but reaching its bottom must still persist completion.
+        reader.onPageProgress(3, true)
+        advanceUntilIdle()
+        assertEquals(true, lastWatched)
+        assertEquals(com.auris.app.core.model.EntryStatus.COMPLETED, lastEntryStatus)
+    }
+
+    @Test fun restoringTheLastPageDoesNotMarkAnUnreadStripComplete() = runTest(dispatcher) {
+        units.value = units.value.map { it.copy(lastPositionMs = 3) }
+        val reader = reader(2)
+        awaitLoad(reader)
+        assertEquals(3, reader.state.value.currentPage)
+        assertEquals(false, lastWatched)
+        assertEquals(com.auris.app.core.model.EntryStatus.IN_PROGRESS, lastEntryStatus)
+    }
+
+
+    @Test fun reopeningACompletedChapterDoesNotRegressItsCompletion() = runTest(dispatcher) {
+        units.value = units.value.map { it.copy(lastPositionMs = 3, isWatched = true) }
+        val reader = reader(2)
+        awaitLoad(reader)
+        reader.onPageProgress(3, false)
+        advanceUntilIdle()
+        assertEquals(true, lastWatched)
+        assertEquals(com.auris.app.core.model.EntryStatus.COMPLETED, lastEntryStatus)
+    }
+
 }

@@ -143,7 +143,8 @@ class MangaReaderViewModel(
                     isEmpty = pages.isEmpty(),
                     error = if (pages.isEmpty()) "This chapter has no readable pages" else null,
                 )
-                if (pages.isNotEmpty()) saveProgress(restoredPage)
+                currentPageComplete = false
+                if (pages.isNotEmpty()) saveProgress(restoredPage, false)
             }
             .onFailure { error ->
                 if (error is CancellationException) throw error
@@ -159,24 +160,30 @@ class MangaReaderViewModel(
             }
     }
 
-    fun onPageChanged(index: Int) {
+    fun onPageChanged(index: Int) = onPageProgress(index, true)
+
+    private var currentPageComplete = false
+
+    fun onPageProgress(index: Int, pageComplete: Boolean) {
         if (_state.value.isLoading || index !in _state.value.pages.indices) return
-        if (index == _state.value.currentPage) return
+        if (index == _state.value.currentPage && currentPageComplete == pageComplete) return
+        currentPageComplete = pageComplete
         _state.value = _state.value.copy(currentPage = index)
-        saveProgress(index)
+        saveProgress(index, pageComplete)
     }
 
     private var progressJob: Job? = null
 
-    private fun saveProgress(index: Int) {
+    private fun saveProgress(index: Int, pageComplete: Boolean) {
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             val units = libraryRepository.observeUnits(entryId).first()
             val chapter = units.firstOrNull { it.unitIndex == unitIndex } ?: return@launch
-            val complete = index == _state.value.totalPages - 1
+            val complete = chapter.isWatched || (pageComplete && index == _state.value.totalPages - 1)
             // Manga uses lastPositionMs as a zero-based page index; audio/video keep milliseconds.
-            libraryRepository.updateUnitProgress(entryId, unitIndex, chapter.isWatched || complete, index.toLong())
-            val fraction = (index + 1f) / _state.value.totalPages.coerceAtLeast(1)
+            libraryRepository.updateUnitProgress(entryId, unitIndex, complete, index.toLong())
+            val fraction = if (chapter.isWatched) 1f else
+                (index + if (pageComplete) 1f else 0f) / _state.value.totalPages.coerceAtLeast(1)
             val ordinal = units.indexOfFirst { it.unitIndex == unitIndex }.coerceAtLeast(0)
             libraryRepository.updateProgress(entryId, (ordinal + fraction) / units.size.coerceAtLeast(1),
                 unitIndex, chapter.title, index.toLong(),

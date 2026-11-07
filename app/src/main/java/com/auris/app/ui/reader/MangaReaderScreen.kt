@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,6 +48,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,15 +73,12 @@ import com.auris.app.ui.theme.AurisRadii
 import com.auris.app.ui.theme.AurisSurface
 import com.auris.app.ui.theme.AurisTrack
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Manga reader: vertically paged chapter images with a tap-to-reveal progress overlay.
- *
- * ### Why vertical
- * Japanese manga reads right-to-left and top-to-bottom, so vertical paging is the correct
- * orientation for the primary content. Horizontal paging with RTL feel is the alternative and is
- * added behind a preference later rather than guessed at now.
+ * Manga reader with continuous width-fit strips and an optional vertically paged mode.
  *
  * ### Backdrop
  * Deliberately near-black rather than the page's own dominant colour. Manga pages are mostly
@@ -91,18 +98,41 @@ fun MangaReaderScreen(
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
     onChapterChange: (Int) -> Unit = {},
+    onPageProgress: (Int, Boolean) -> Unit = { page, _ -> onPageChanged(page) },
 ) {
     val pagerState = rememberPagerState(
         initialPage = state.currentPage,
         pageCount = { state.totalPages.coerceAtLeast(1) },
     )
     val scope = rememberCoroutineScope()
+    var longStrip by rememberSaveable { mutableStateOf(true) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = state.currentPage)
+    val loadedAspects = remember(state.pages) { mutableStateMapOf<Int, Float>() }
+    val density = LocalDensity.current
+    val screenWidth = with(density) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
 
-    // Report page changes upward so the ViewModel's state and the pager's cannot drift.
-    LaunchedEffect(pagerState, state.isLoading, state.totalPages) {
-        if (!state.isLoading && state.totalPages > 0) {
-            pagerState.scrollToPage(state.currentPage.coerceIn(0, state.totalPages - 1))
-            snapshotFlowCompat(pagerState) { it.currentPage }.collect(onPageChanged)
+
+    // Restore the same page when switching mode or after chapter images are resolved.
+    LaunchedEffect(state.pages, state.isLoading, longStrip) {
+        if (!state.isLoading && state.pages.isNotEmpty()) {
+            val restored = state.currentPage.coerceIn(state.pages.indices)
+            if (longStrip) {
+                listState.scrollToItem(restored)
+                snapshotFlow {
+                    val layout = listState.layoutInfo
+                    val current = listState.firstVisibleItemIndex.coerceIn(state.pages.indices)
+                    val last = layout.visibleItemsInfo.lastOrNull { it.index == state.pages.lastIndex }
+                    val ratio = loadedAspects[state.pages.lastIndex]
+                    // Wait for the loaded image's natural height to be measured, not its placeholder.
+                    val endVisible = last != null && ratio != null &&
+                        abs(last.size - layout.viewportSize.width / ratio) <= 2f &&
+                        last.offset + last.size <= layout.viewportEndOffset
+                    (if (endVisible) state.pages.lastIndex else current) to endVisible
+                }.distinctUntilChanged().collect { (page, complete) -> onPageProgress(page, complete) }
+            } else {
+                pagerState.scrollToPage(restored)
+                snapshotFlow { pagerState.settledPage }.collect { onPageProgress(it, true) }
+            }
         }
     }
 
@@ -114,6 +144,35 @@ fun MangaReaderScreen(
         when {
             state.isLoading -> ReaderLoading()
             state.pages.isEmpty() -> ReaderEmpty(state.error, onRetry)
+            longStrip -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                itemsIndexed(state.pages, key = { index, _ -> index }) { index, page ->
+                    val aspect = loadedAspects[index] ?: 0.7f
+                    SubcomposeAsyncImage(
+                        model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(page.imageUrl ?: page.url)
+                            .headers(okhttp3.Headers.Builder().apply {
+                                page.headers.forEach { (name, value) -> set(name, value) }
+                            }.build())
+                            // Finite dimensions keep unusually tall webtoons out of original-size decoding.
+                            .size(screenWidth.coerceAtMost(1024), 4096)
+                            .scale(coil.size.Scale.FIT)
+                            .build(),
+                        contentDescription = "Page ${index + 1}",
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(aspect)
+                            .clickable(interactionSource = remember { MutableInteractionSource() },
+                                indication = null, onClick = onToggleOverlay),
+                        onSuccess = { result ->
+                            val image = result.result.drawable
+                            if (image.intrinsicWidth > 0 && image.intrinsicHeight > 0) {
+                                loadedAspects[index] = image.intrinsicWidth.toFloat() / image.intrinsicHeight
+                            }
+                        },
+                        loading = { ReaderLoading() },
+                        error = { ReaderEmpty("This page could not load. Retry to refresh the chapter images.", onRetry) },
+                    )
+                }
+            }
             else -> VerticalPager(
                 state = pagerState,
                 // Reading consumes the whole screen: no system bars, no content padding.
@@ -177,7 +236,16 @@ fun MangaReaderScreen(
             exit = fadeOut() + slideOutVertically { -it },
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            ReaderTopBar(state, onBack)
+            Column {
+                ReaderTopBar(state, onBack)
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(READER_CHROME).padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(selected = !longStrip, onClick = { longStrip = false }, label = { Text("Page") })
+                    FilterChip(selected = longStrip, onClick = { longStrip = true }, label = { Text("Long strip") })
+                }
+            }
         }
 
         AnimatedVisibility(
@@ -190,7 +258,9 @@ fun MangaReaderScreen(
                 state = state,
                 onChapterChange = onChapterChange,
                 onSeekPage = { target ->
-                    scope.launch { pagerState.scrollToPage(target) }
+                    scope.launch {
+                        if (longStrip) listState.scrollToItem(target) else pagerState.scrollToPage(target)
+                    }
                 },
             )
         }
@@ -443,9 +513,3 @@ private val READER_BACKDROP = Color(0xFF0B0E14)
 
 /** Chrome sits over artwork, so it is translucent rather than opaque. */
 private val READER_CHROME = Color(0xE00B0E14)
-
-/** Reads [PagerState.currentPage] as a flow without importing the snapshotFlow plumbing here. */
-private fun snapshotFlowCompat(
-    pagerState: androidx.compose.foundation.pager.PagerState,
-    read: (androidx.compose.foundation.pager.PagerState) -> Int,
-) = androidx.compose.runtime.snapshotFlow { read(pagerState) }
