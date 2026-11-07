@@ -97,7 +97,7 @@ fun MusicPlayerScreen(
     onPrevious: () -> Unit = {},
     onOpenQueue: () -> Unit = {},
     onOpenSleepTimer: () -> Unit = {},
-    onArtistClick: ((String) -> Unit)? = null,
+    onArtistClick: ((artist: String, trackId: String?) -> Unit)? = null,
 ) {
     // The screen's gradient tracks the current album art.
     val palette = rememberArtworkPaletteValue(artworkKey = state.artworkUrl)
@@ -241,7 +241,7 @@ fun MusicPlayerScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .clickable(enabled = onArtistClick != null) {
-                                onArtistClick?.invoke(state.artist)
+                                onArtistClick?.invoke(state.artist, state.entryId)
                             }
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     )

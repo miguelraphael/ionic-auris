@@ -182,7 +182,7 @@ fun AurisNavHost(
             if (isTab || isVideo) {
                 fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             } else {
-                slideInHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it } +
+                slideInHorizontally(AurisMotion.SlideSpring) { it } +
                     fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             }
         },
@@ -190,10 +190,10 @@ fun AurisNavHost(
             val isTab = TopLevelDestination.entries.any { it.route == targetState.destination.route }
             val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER
             if (isTab || isVideo) {
-                fadeOut(tween(AurisMotion.Quick))
+                fadeOut(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             } else {
-                slideOutHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { -it / 3 } +
-                    fadeOut(tween(AurisMotion.Quick))
+                slideOutHorizontally(AurisMotion.SlideSpring) { -it / 3 } +
+                    fadeOut(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             }
         },
         popEnterTransition = {
@@ -202,7 +202,7 @@ fun AurisNavHost(
             if (isTab || isVideo) {
                 fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             } else {
-                slideInHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { -it / 3 } +
+                slideInHorizontally(AurisMotion.SlideSpring) { -it / 3 } +
                     fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             }
         },
@@ -210,10 +210,10 @@ fun AurisNavHost(
             val isTab = TopLevelDestination.entries.any { it.route == initialState.destination.route }
             val isVideo = initialState.destination.route == Routes.EPISODE_PLAYER
             if (isTab || isVideo) {
-                fadeOut(tween(AurisMotion.Quick))
+                fadeOut(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             } else {
-                slideOutHorizontally(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it } +
-                    fadeOut(tween(AurisMotion.Quick))
+                slideOutHorizontally(AurisMotion.SlideSpring) { it } +
+                    fadeOut(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             }
         },
     ) {
@@ -350,16 +350,16 @@ fun AurisNavHost(
         composable(
             route = Routes.PLAYER,
             enterTransition = {
-                slideInVertically(tween(AurisMotion.Emphasized, easing = AurisMotion.Ease)) { it / 3 } +
-                    fadeIn(tween(AurisMotion.Standard))
+                slideInVertically(AurisMotion.SlideSpring) { it } +
+                    fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             },
             exitTransition = {
-                slideOutVertically(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it / 3 } +
-                    fadeOut(tween(AurisMotion.Quick))
+                slideOutVertically(AurisMotion.SlideSpring) { it } +
+                    fadeOut(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             },
             popExitTransition = {
-                slideOutVertically(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it / 3 } +
-                    fadeOut(tween(AurisMotion.Quick))
+                slideOutVertically(AurisMotion.SlideSpring) { it } +
+                    fadeOut(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             },
         ) {
             val music = musicViewModel
@@ -371,10 +371,11 @@ fun AurisNavHost(
 
             MusicPlayerRoute(
                 onBack = { navController.popBackStack() },
-                onArtistClick = { artistName ->
+                onArtistClick = { artistName, trackId ->
                     if (music != null && artistName.isNotBlank()) {
+                        val effectiveTrackId = trackId ?: music.state.value.nowPlayingId
                         val row = MusicRow(
-                            id = "artist-$artistName",
+                            id = effectiveTrackId ?: "artist-$artistName",
                             title = artistName,
                             subtitle = artistName,
                             artworkUrl = null,

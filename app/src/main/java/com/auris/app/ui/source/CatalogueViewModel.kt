@@ -80,7 +80,7 @@ class CatalogueViewModel(
                     MangaDexSource.ID -> "English chapters · MangaDex"
                     com.auris.app.data.remote.anime.HiAnimeSource.ID -> "Sub / Dub where available · HiAnime"
                     "mangapill" -> "English manga · MangaPill"
-                    "animekhor" -> "Chinese animation · English subtitles · OK.ru servers"
+                    com.auris.app.data.remote.anime.AnimeggSource.ID -> "Japanese anime · Sub & Dub · High definition MP4 streams"
                     else -> ""
                 },
                 error = null,

@@ -7,13 +7,13 @@ source outage does not force you to retype the title.
 | Type | Provider | Supported content |
 | --- | --- | --- |
 | Anime | HiAnime | Existing sub/dub catalog; ZokoAnime servers |
-| Anime | AnimeKhor | Chinese animation; source-provided English-subtitled OK.ru mirrors |
+| Anime | Animegg | Japanese anime (sub/dub); high definition direct MP4 streams |
 | Manga | MangaDex | Existing English-chapter catalog |
 | Manga | MangaPill | Trending titles, latest chapter updates, search, and chapter images |
 
 These are built-in connectors, not new extension compatibility. Providers have different
-catalogs: AnimeKhor is not a replacement for every Japanese anime on HiAnime. Episodes
-without a supported OK.ru mirror report an error rather than pretending another embed
+catalogs: Animegg provides an alternative catalog of Japanese anime alongside HiAnime. Episodes
+without a playable stream target report an error rather than pretending another embed
 is playable. Source availability can differ by network and region.
 
 Changing the tab's provider does not rewrite saved titles. Library entries and progress

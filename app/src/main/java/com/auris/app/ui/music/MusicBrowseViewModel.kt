@@ -163,9 +163,6 @@ class MusicBrowseViewModel(
     private fun connectController() {
         val token = SessionToken(context, ComponentName(context, MusicPlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
-        // `MoreExecutors.directExecutor()` rather than the main executor: the listener body
-        // only assigns a field, and running it inline avoids a dispatch hop while the service
-        // is still binding.
         future.addListener(
             {
                 controller = runCatching { future.get() }.getOrNull()
@@ -206,8 +203,6 @@ class MusicBrowseViewModel(
     fun search(query: String) {
         searchJob?.cancel()
 
-        // A blank query is the category-tile landing, not a request. Nothing is fetched and the
-        // old results are dropped so the tiles cannot sit under a stale list.
         if (query.isBlank()) {
             _state.value = _state.value.copy(
                 query = query,
@@ -235,13 +230,6 @@ class MusicBrowseViewModel(
 
     /**
      * Loads the home shelves, once.
-     *
-     * The seeds run sequentially rather than concurrently. Firing five InnerTube requests at
-     * once is the fastest way to be throttled, and there is no documented limit to reason
-     * about — each shelf appears as it arrives instead.
-     *
-     * A seed that fails is skipped rather than failing the page: one bad response should not
-     * leave the user with an empty home.
      */
     fun loadHome() {
         if (homeRequested) return
@@ -264,8 +252,6 @@ class MusicBrowseViewModel(
                 if (rows.isEmpty()) continue
 
                 loaded += MusicHomeShelf(seed.title, rows)
-                // Published after each shelf so the screen fills in progressively rather than
-                // waiting for the slowest query.
                 _state.value = _state.value.copy(shelves = loaded.toList())
             }
 
@@ -276,12 +262,7 @@ class MusicBrowseViewModel(
         }
     }
 
-    /**
-     * Retries the home shelves after a failed load.
-     *
-     * [loadHome] is guarded by [homeRequested] so recomposition cannot refetch five shelves.
-     * The retry is the explicit way past that guard.
-     */
+    /** Retries the home shelves after a failed load. */
     fun retryHome() {
         homeRequested = false
         loadHome()
@@ -305,8 +286,6 @@ class MusicBrowseViewModel(
 
     private fun MusicBrowseUiState.failed(error: Throwable): MusicBrowseUiState = copy(
         isLoading = false,
-        // A failure here is usually the client version drifting, not a transient network issue,
-        // so the message says so rather than suggesting a retry will help.
         error = error.message?.takeIf { it.isNotBlank() }
             ?: "Could not reach YouTube Music",
     )
@@ -318,10 +297,6 @@ class MusicBrowseViewModel(
      *
      * Tracks resolve a stream and enqueue it; albums and playlists browse their track list and
      * enqueue the whole thing, which is what makes the notification's Next button meaningful.
-     *
-     * @param openPlayer asks the caller to open the full player once audio has actually
-     *   started. Home and Library used to navigate immediately and unconditionally, which is
-     *   why a tap showed whatever was already playing — or "Nothing is playing" on a cold start.
      */
     fun play(row: MusicRow, openPlayer: Boolean = false) {
         val request = ++playbackRequest
@@ -338,14 +313,9 @@ class MusicBrowseViewModel(
 
                 val tracks = when (row.kind) {
                     MusicRow.Kind.TRACK -> {
-                        // Start the cover lookup now, alongside the stream resolve, rather than after
-                        // it. On a slow network a stream takes several seconds; the artwork request
-                        // is then already finished and costs nothing. The artwork is attached after
-                        // the resolve so the stream starts immediately — awaiting it as an argument
-                        // would put the two requests back in sequence.
                         val artwork = async { officialArtwork(row.title, row.artistHint()) }
-                        val playable = resolveTrack(row.id, row.title)
-                        listOfNotNull(playable?.withArtwork(artwork.await()))
+                        val playable = resolveTrack(row.id, fallbackTitle = row.title, artistHint = row.artistHint())
+                        listOfNotNull(playable?.withArtwork(artwork.await() ?: row.albumArtworkUrl ?: row.artworkUrl))
                     }
                     else -> collectionTracks(row.id).mapNotNull { resolveTrack(it) }
                 }
@@ -421,39 +391,31 @@ class MusicBrowseViewModel(
 
     /**
      * Resolves a catalogue track once, keeping the stream it returned.
-     *
-     * The stream used to be resolved twice per tap — once for metadata and again for the queue —
-     * which doubled the latency and gave the second resolve a chance to fail on its own.
+     * Preserves clean metadata (title, artist) if known from catalogue/library, rather than
+     * overwriting it with YouTube's raw video upload title (e.g. "(Official Lyric Video)").
      */
     private suspend fun resolveTrack(
         videoId: String,
-        fallbackTitle: String,
+        fallbackTitle: String? = null,
+        artistHint: String? = null,
     ): PlayableTrack? {
         val resolved = source.resolveAudioStream(videoId).getOrElse { error ->
-            // No provider answered at all — every instance was unreachable, or none is
-            // configured. Recorded so [play] can point at Settings rather than implying the
-            // track is gone.
             lastError = error.message ?: error::class.java.simpleName
             return null
         }
 
-        // Recorded before the early return so [play] can say *why* there is no stream rather
-        // than reporting a generic failure. See [StreamRefusal].
         lastRefusal = resolved.refusal
 
         val stream = resolved.stream?.takeIf { it.isPlayable() } ?: return null
 
-        val title = resolved.title ?: fallbackTitle
+        val title = fallbackTitle?.takeIf { it.isNotBlank() } ?: resolved.title ?: videoId
+        val artist = artistHint?.takeIf { it.isNotBlank() } ?: resolved.author?.cleanArtist()
 
-        // Artwork is derived from the video id, not taken from the resolve. The resolver does
-        // return thumbnail URLs, but they are instance-relative and the instance answers them
-        // with an HTML error page rather than a JPEG (see [youtubeThumbnailUrl]) — so using them
-        // painted broken images on every played track.
         return PlayableTrack(
             track = MusicTrack(
                 videoId = videoId,
                 title = title,
-                artist = resolved.author?.cleanArtist(),
+                artist = artist,
                 album = null,
                 durationMs = stream.durationMs ?: resolved.lengthMs,
                 artworkUrl = youtubeThumbnailUrl(videoId),
@@ -494,8 +456,6 @@ class MusicBrowseViewModel(
 
         val stream = resolved.stream?.takeIf { it.isPlayable() } ?: return null
         return PlayableTrack(
-            // Collection tracks normally carry the album cover already. The thumbnail is only a
-            // fallback for rows that came back without artwork.
             track = track.copy(
                 artist = track.artist?.cleanArtist(),
                 artworkUrl = track.artworkUrl ?: youtubeThumbnailUrl(track.videoId),
@@ -515,18 +475,8 @@ class MusicBrowseViewModel(
 
     /**
      * Hands the resolved queue to the playback service.
-     *
-     * Each track is resolved individually rather than trusting one URL for the queue: InnerTube
-     * URLs are per-video, so a single resolved URL cannot cover an album.
-     *
-     * Tracks are resolved sequentially with a small gap. InnerTube has no documented rate limit
-     * and firing twenty player requests at once is a good way to get throttled.
-     *
-     * @return true when the service accepted the queue.
      */
     private suspend fun enqueue(tracks: List<PlayableTrack>, startIndex: Int = 0): Boolean {
-        // Wait for the binding rather than failing the tap: on a cold start the service is still
-        // connecting when the first card is tapped.
         val sessionController = controller ?: controllerReady.await()
 
         if (sessionController == null) {
@@ -576,7 +526,8 @@ class MusicBrowseViewModel(
     }
 
     suspend fun addToQueue(row: MusicRow, next: Boolean) {
-        val track = resolveTrack(row.id, row.title) ?: error("Could not resolve this song. Try again.")
+        val track = resolveTrack(row.id, fallbackTitle = row.title, artistHint = row.artistHint())
+            ?: error("Could not resolve this song. Try again.")
         val session = controller ?: controllerReady.await() ?: error("Playback service unavailable")
         val item = buildMediaItem(row.id, row.title, row.artistHint(), track.track.album,
             row.artworkUrl, track.streamUrl, track.mimeType)
@@ -588,11 +539,10 @@ class MusicBrowseViewModel(
 
     suspend fun radio(row: MusicRow) {
         val cleanArtist = row.artistHint().orEmpty()
-        // 1. Immediately play the seed track so the user hears music without waiting
-        val seed = resolveTrack(row.id, row.title) ?: error("Could not start radio for this song.")
+        val seed = resolveTrack(row.id, fallbackTitle = row.title, artistHint = row.artistHint())
+            ?: error("Could not start radio for this song.")
         enqueue(listOf(seed))
 
-        // 2. Discover related radio suggestions asynchronously
         val history = libraryRepository.observeLibrary().first()
         val suggestions = MusicSuggestions.suggest(
             source = source,
@@ -602,7 +552,6 @@ class MusicBrowseViewModel(
             limit = 10,
         )
 
-        // 3. Queue the radio suggestions into ExoPlayer's session
         val session = controller ?: controllerReady.await() ?: return
         for (track in suggestions) {
             val resolved = resolveTrack(track) ?: continue
@@ -620,7 +569,7 @@ class MusicBrowseViewModel(
     }
 
     suspend fun explore(row: MusicRow, album: Boolean): List<MusicRow> {
-        val artist = row.artistHint().orEmpty()
+        val artist = row.artistHint().orEmpty().ifBlank { row.title }
         val query = if (album) "${row.title} $artist".trim() else artist
         if (query.isBlank()) return emptyList()
         val results = source.search(query, 40).getOrNull().orEmpty()
@@ -658,8 +607,10 @@ class MusicBrowseViewModel(
     }
 
     suspend fun loadArtist(row: MusicRow): Pair<MusicArtistDetails?, List<MusicRow>> {
-        val cleanName = row.artistHint().orEmpty()
-        val ctx = source.songContext(row.id).getOrNull()
+        val cleanName = row.artistHint().orEmpty().ifBlank { row.title }
+        val ctx = if (row.id.isNotBlank() && !row.id.startsWith("artist-")) {
+            source.songContext(row.id).getOrNull()
+        } else null
         val artistId = ctx?.artistBrowseId
         if (!artistId.isNullOrBlank()) {
             val details = source.artistDetails(artistId, cleanName).getOrNull()
@@ -669,7 +620,7 @@ class MusicBrowseViewModel(
                 return Pair(details ?: MusicArtistDetails(artistId, cleanName), rows)
             }
         }
-        val searchRows = explore(row, false)
+        val searchRows = explore(row.copy(subtitle = cleanName), false)
         val details = MusicArtistDetails(
             id = "",
             name = cleanName,
@@ -695,7 +646,7 @@ class MusicBrowseViewModel(
         playbackJob = viewModelScope.launch {
             try {
                 startProgressivePlaylist(rows, startIndex,
-                    resolve = { resolveTrack(it.id, it.title)?.withArtwork(it.albumArtworkUrl) },
+                    resolve = { resolveTrack(it.id, fallbackTitle = it.title, artistHint = it.artistHint())?.withArtwork(it.albumArtworkUrl ?: it.artworkUrl) },
                     start = { first ->
                         check(enqueue(listOf(first))) { "Could not reach the playback service" }
                         _state.value = _state.value.copy(isResolving = false)

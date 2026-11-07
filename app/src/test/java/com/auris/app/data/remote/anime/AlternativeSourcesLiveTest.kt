@@ -33,12 +33,12 @@ class AlternativeSourcesLiveTest {
         println("PASS MangaPill: trending, latest, search, ${units.size} chapters, image resolution and bytes")
     }
 
-    @Test fun animeKhorBrowseToVideoBytes() = runBlocking {
+    @Test fun animeggBrowseToVideoBytes() = runBlocking {
         enabled()
-        val source = AnimeKhorSource(http)
+        val source = AnimeggSource(http)
         assertTrue(source.popular(1).items.isNotEmpty())
         assertTrue(source.latest(1).items.isNotEmpty())
-        val entry = source.search(1, "Shrouding", FilterList()).items.first { it.url.contains("shrounding-the-heavens") }
+        val entry = source.search(1, "Naruto", FilterList()).items.first { it.title == "Naruto" }
         val episodes = source.units(entry)
         assertTrue(episodes.isNotEmpty())
         val target = source.streams(entry, episodes.last()).first()
@@ -49,6 +49,6 @@ class AlternativeSourcesLiveTest {
             val bytes = it.body!!.byteStream().use { stream -> stream.readNBytes(1024) }
             assertTrue("Expected MP4 header", bytes.take(32).toByteArray().toString(Charsets.ISO_8859_1).contains("ftyp"))
         }
-        println("PASS AnimeKhor: popular, latest, search, ${episodes.size} episodes, OK.ru resolution and real MP4 bytes")
+        println("PASS Animegg: popular, latest, search, ${episodes.size} episodes, stream resolution and real MP4 bytes")
     }
 }
