@@ -1,11 +1,15 @@
-Auris 0.1.4 — authentication and keyboard fixes (Android 8.0 or newer).
+Auris 0.1.5 — navigation refinements, album exploration, and sync hardening (Android 8.0 or newer).
 
-- Fixes release authentication failing before its first HTTP request because R8 removed generic types required by Ktor reflection.
-- Keeps sign-in and registration forms scrollable above the keyboard.
-- Replaces internal exception text with readable authentication errors and keeps diagnostic logging free of request contents.
-- Retains the startup fix from 0.1.3, release shrinking, and non-debuggable production signing.
+- Removes redundant back buttons on top-level Anime and Manga catalogue tabs.
+- Redesigns the catalogue "Change source" action into an integrated glass chip with an in-app bottom sheet selector.
+- Replaces the media detail season dropdown with a modal bottom sheet to prevent upward menu clipping over artwork.
+- Expands album search results from YouTube Music and enables direct navigation to album details and track listings on tap.
+- Resolves missing artist attribution for tracks played from albums.
+- Hardens sync operations with atomic cleanups and confirmed tombstone purges while retaining local modifications during progress uploads.
+- Enforces package path and code verification for extension installations.
+- Retains all security hardening, release shrinking, and non-debuggable production signing.
 - Uses the same production key and `com.auris.app` package for in-place updates without clearing data.
 
-The security and playback changes from 0.1.2 remain included. Older debug previews (`com.auris.app.debug`) are a separate installation; local data is not automatically transferred between packages. Legacy library items with unknown account ownership remain retained for explicit recovery; do not clear storage to troubleshoot them.
+The security, authentication, and playback changes from previous previews remain included. Older debug previews (`com.auris.app.debug`) are a separate installation; local data is not automatically transferred between packages. Legacy library items with unknown account ownership remain retained for explicit recovery; do not clear storage to troubleshoot them.
 
-This remains a preview. The signed release was tested on an API 34 emulator: keyboard-visible form scrolling and an invalid login reaching Supabase passed. Successful real-account sign-in/registration, backend authorization, and broader playback/device checks remain unverified. Provider availability varies by network.
+This remains a preview. Provider availability varies by network; backend authorization and broader playback/device checks remain separate from the regression checks.
