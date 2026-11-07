@@ -244,6 +244,7 @@ class ExtensionsViewModel(
      * up by the loader on next launch and fail as a corrupt extension rather than a failed
      * install.
      */
+    private val installGuard = com.auris.app.source.repo.ExtensionInstallGuard()
     private var trustDecision: CompletableDeferred<Boolean>? = null
 
     fun confirmTrust(accepted: Boolean) {
@@ -251,8 +252,9 @@ class ExtensionsViewModel(
     }
 
     fun install(item: ExtensionListItem) {
-        viewModelScope.launch {
-            val packageName = item.remote.packageName
+        val packageName = item.remote.packageName
+        if (!installGuard.acquire(packageName)) return
+        val installJob = viewModelScope.launch {
             setStage(packageName, InstallProgress.Stage.DOWNLOADING)
 
             val target = File(extensionsDir, "$packageName.apk")
@@ -316,6 +318,7 @@ class ExtensionsViewModel(
                 runCatching { temp.delete() }
             }
         }
+        installJob.invokeOnCompletion { installGuard.release(packageName) }
     }
 
     /**
