@@ -31,12 +31,11 @@ sealed interface SignatureVerdict {
     data object Trusted : SignatureVerdict
 
     /**
-     * The repo declares no key, so this fingerprint was recorded on first sight.
+     * The repo declares no key; this observed fingerprint requires explicit first-use consent.
      *
      * Trust on first use is a real weakness — it protects against a later swap but not against a
-     * repo that is already hostile at install time. It is allowed because refusing would make
-     * every user-supplied repository unusable, and it is surfaced as [UNVERIFIED] in the UI so it
-     * is never silently treated as [Trusted].
+     * repo that is already hostile at install time. The caller must obtain explicit consent before
+     * installing and recording this fingerprint; it is never treated as [Trusted].
      */
     data class Pinned(val fingerprint: String) : SignatureVerdict
 
@@ -161,4 +160,17 @@ object SignatureVerifier {
 
     /** SHA-256 rendered as hex is 64 characters. */
     private const val SHA256_HEX_LENGTH = 64
+}
+
+/** Must complete before persisting a signer or loading downloaded extension code. */
+suspend fun requireExtensionInstallConsent(
+    verdict: SignatureVerdict,
+    confirmFirstUse: suspend (fingerprint: String) -> Boolean,
+) {
+    when (verdict) {
+        SignatureVerdict.Trusted -> Unit
+        is SignatureVerdict.Rejected -> error(verdict.reason)
+        is SignatureVerdict.Pinned ->
+            check(confirmFirstUse(verdict.fingerprint)) { "Installation cancelled: publisher was not trusted" }
+    }
 }

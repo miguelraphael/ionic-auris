@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
 import com.auris.app.source.repo.isSecureRepositoryUrl
+import com.auris.app.source.repo.requireExtensionInstallConsent
 import java.io.File
 
 /** Callbacks the screen raises. */
@@ -338,6 +339,19 @@ class ExtensionsViewModel(
             previouslyPinned = pinned,
         )
 
+        requireExtensionInstallConsent(verdict) { fingerprint ->
+            check(trustDecision == null) { "Another extension is awaiting trust approval" }
+            val decision = CompletableDeferred<Boolean>()
+            trustDecision = decision
+            _state.value = _state.value.copy(pendingTrust = ExtensionTrustRequest(item.remote.packageName, fingerprint))
+            try {
+                decision.await()
+            } finally {
+                trustDecision = null
+                _state.value = _state.value.copy(pendingTrust = null)
+            }
+        }
+
         return when (verdict) {
             is SignatureVerdict.Trusted -> {
                 // Prefer the pinned value so an update that legitimately adds a second signer
@@ -350,17 +364,6 @@ class ExtensionsViewModel(
             }
 
             is SignatureVerdict.Pinned -> {
-                // Never load unknown third-party code until the user accepts this exact signer.
-                check(trustDecision == null) { "Another extension is awaiting trust approval" }
-                val decision = CompletableDeferred<Boolean>()
-                trustDecision = decision
-                _state.value = _state.value.copy(pendingTrust = ExtensionTrustRequest(item.remote.packageName, verdict.fingerprint))
-                try {
-                    check(decision.await()) { "Installation cancelled: publisher was not trusted" }
-                } finally {
-                    trustDecision = null
-                    _state.value = _state.value.copy(pendingTrust = null)
-                }
                 Log.w(
                     TAG,
                     "No declared signing key for ${item.remote.packageName}; " +
