@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +24,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
@@ -30,6 +34,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -131,6 +138,7 @@ data class MediaDetailUiState(
  *
  * @param onUnitClick receives the tapped unit; the caller owns playback/navigation.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaDetailScreen(
     state: MediaDetailUiState,
@@ -182,18 +190,33 @@ fun MediaDetailScreen(
                             Icon(Icons.Filled.ExpandMore, "Choose season or film", tint = AurisAccent)
                         }
                     }
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = choosingSeason,
-                        onDismissRequest = { choosingSeason = false },
-                    ) {
-                        state.seasons.forEach { season ->
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(season.label) },
-                                trailingIcon = {
-                                    if (season.isCurrent) Icon(Icons.Filled.Check, "Selected", tint = AurisAccent)
-                                },
-                                onClick = { choosingSeason = false; onSeasonClick(season) },
-                            )
+                    if (choosingSeason) {
+                        ModalBottomSheet(
+                            onDismissRequest = { choosingSeason = false },
+                            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                            containerColor = AurisBackground,
+                        ) {
+                            Text("Seasons & films", style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).selectableGroup(),
+                                contentPadding = PaddingValues(bottom = 24.dp),
+                            ) {
+                                items(state.seasons, key = { it.item.url }) { season ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth()
+                                            .selectable(selected = season.isCurrent, role = Role.RadioButton,
+                                                onClick = { choosingSeason = false; onSeasonClick(season) })
+                                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(season.label, style = MaterialTheme.typography.titleMedium,
+                                            color = if (season.isCurrent) AurisAccent else AurisOnSurface,
+                                            modifier = Modifier.weight(1f))
+                                        if (season.isCurrent) Icon(Icons.Filled.Check, "Selected", tint = AurisAccent)
+                                    }
+                                }
+                            }
                         }
                     }
                 }

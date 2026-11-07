@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +37,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import com.auris.app.ui.theme.AurisBackground
+import com.auris.app.ui.theme.glassPanel
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -86,8 +96,8 @@ fun CatalogueScreen(
     onQueryChange: (String) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Returns to the extensions list; this screen draws no nav pill. */
-    onBack: () -> Unit = {},
+    /** Present only for a catalogue opened from another screen, not a top-level tab. */
+    onBack: (() -> Unit)? = null,
     onLoadMore: () -> Unit = {},
     onSourceChange: (String) -> Unit = {},
 ) {
@@ -180,30 +190,17 @@ fun CatalogueScreen(
 
 // ---- Header ------------------------------------------------------------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CatalogueHeader(state: CatalogueUiState, onBack: () -> Unit, onSourceChange: (String) -> Unit) {
+private fun CatalogueHeader(state: CatalogueUiState, onBack: (() -> Unit)?, onSourceChange: (String) -> Unit) {
     var sourceMenu by remember { mutableStateOf(false) }
     Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 56.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.FilledTonalIconButton(onClick = onBack) {
+        if (onBack != null) {
+            androidx.compose.material3.IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = AurisOnSurface)
             }
-            if (state.sources.size > 1) Box {
-                androidx.compose.material3.FilledTonalButton(onClick = { sourceMenu = true }) {
-                    Text("Change source")
-                }
-                androidx.compose.material3.DropdownMenu(expanded = sourceMenu,
-                    onDismissRequest = { sourceMenu = false }) {
-                    state.sources.forEach { source ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text(source.name + if (source.key == state.sourceKey) " · Selected" else "") },
-                            onClick = { sourceMenu = false; onSourceChange(source.key) })
-                    }
-                }
-            }
+            Spacer(Modifier.height(12.dp))
         }
-        Spacer(Modifier.height(12.dp))
         Text(
             text = state.sourceName.ifBlank { "Catalogue" },
             style = MaterialTheme.typography.displayLarge,
@@ -217,6 +214,48 @@ private fun CatalogueHeader(state: CatalogueUiState, onBack: () -> Unit, onSourc
                 style = MaterialTheme.typography.bodyMedium,
                 color = AurisOnSurfaceVariant,
             )
+        }
+        if (state.sources.size > 1) {
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .glassPanel(RoundedCornerShape(AurisRadii.chip))
+                    .clickable(role = Role.Button) { sourceMenu = true }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("Change source", style = MaterialTheme.typography.labelLarge, color = AurisAccent)
+                Icon(Icons.Filled.ExpandMore, null, tint = AurisAccent, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+    if (sourceMenu) {
+        ModalBottomSheet(
+            onDismissRequest = { sourceMenu = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = AurisBackground,
+        ) {
+            Text("Choose source", style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp).selectableGroup(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                items(state.sources, key = { it.key }) { source ->
+                    val selected = source.key == state.sourceKey
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .selectable(selected = selected, role = Role.RadioButton, onClick = {
+                                sourceMenu = false
+                                onSourceChange(source.key)
+                            })
+                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(source.name, style = MaterialTheme.typography.titleMedium,
+                            color = if (selected) AurisAccent else AurisOnSurface, modifier = Modifier.weight(1f))
+                        if (selected) Icon(Icons.Filled.Check, "Selected", tint = AurisAccent)
+                    }
+                }
+            }
         }
     }
 }

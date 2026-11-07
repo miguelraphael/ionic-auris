@@ -263,7 +263,6 @@ fun AurisNavHost(
                     sourcePreferences.edit().putString(MediaType.ANIME.name, key).apply()
                 },
                 onLoadMore = animeCatalogue::loadMore,
-                onBack = { navController.navigate(TopLevelDestination.HOME.route) },
             )
         }
 
@@ -293,7 +292,6 @@ fun AurisNavHost(
                     sourcePreferences.edit().putString(MediaType.MANGA.name, key).apply()
                 },
                 onLoadMore = mangaCatalogue::loadMore,
-                onBack = { navController.navigate(TopLevelDestination.HOME.route) },
             )
         }
 
