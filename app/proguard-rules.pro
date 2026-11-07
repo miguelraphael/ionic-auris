@@ -32,3 +32,10 @@
 -keep class org.mozilla.javascript.engine.** { *; }
 -dontwarn org.mozilla.javascript.**
 -dontwarn org.schabi.newpipe.extractor.**
+
+# Ktor plugin creation uses a Kotlin callable reference and reflects its original JVM
+# descriptor. Keep this API boundary and descriptor names intact in minified releases.
+-keepattributes Signature,EnclosingMethod
+-keep class io.ktor.client.plugins.api.** { *; }
+-keep interface kotlin.jvm.functions.Function0 { *; }
+-keep interface kotlin.jvm.functions.Function1 { *; }

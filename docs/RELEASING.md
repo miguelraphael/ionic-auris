@@ -11,6 +11,7 @@ The tag workflow first requires the debug regression test job, then builds relea
 Before tagging:
 
 - Review integrated unit tests, debug/release lint and a signed release APK.
+- Cold-launch the signed/minified release APK repeatedly on an unlocked device and inspect crash logs and rendered UI before publication. See `docs/RELEASE_STARTUP_HOTFIX.md`.
 - Verify login/account switching and media controls on an unlocked device.
 - Confirm deployed Supabase RLS separately; client filters do not enforce server security.
 - Confirm the new version code/name and release notes. Create a new tag; never overwrite an existing tag.
