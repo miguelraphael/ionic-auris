@@ -22,9 +22,18 @@ class InvidiousInstanceStoreTest {
         // A trailing slash would produce a double slash in `/api/v1/...`, which some instances
         // answer with a 404 rather than redirecting.
         assertEquals("https://host.example", InvidiousInstanceStore.normalise("https://host.example/"))
-        // Plain http is left alone rather than upgraded: a self-hosted instance on a LAN is the
-        // user's call, not ours.
-        assertEquals("http://192.168.1.10", InvidiousInstanceStore.normalise("http://192.168.1.10"))
+        assertNull(InvidiousInstanceStore.normalise("http://192.168.1.10"))
+    }
+
+    @Test
+    fun `rejects credentials and URL suffixes that alter API requests`() {
+        listOf(
+            "https://user:password@host.example",
+            "https://user@host.example",
+            "https://host.example?token=secret",
+            "https://host.example#fragment",
+            "https://host.example:invalid",
+        ).forEach { assertNull(it, InvidiousInstanceStore.normalise(it)) }
     }
 
     @Test

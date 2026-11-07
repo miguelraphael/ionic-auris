@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * The public Invidious instances Auris will stream audio through, persisted.
@@ -40,7 +41,7 @@ class InvidiousInstanceStore(context: Context) {
     /**
      * Replaces the list.
      *
-     * Entries are normalised and de-duplicated, and anything that is not an `http(s)` URL is
+     * Entries are normalised and de-duplicated, and anything that is not a credential-free HTTPS URL is
      * dropped rather than stored — a malformed entry would otherwise fail at playback time with
      * a confusing transport error instead of never being saved.
      *
@@ -76,7 +77,11 @@ class InvidiousInstanceStore(context: Context) {
         // Absent key means "never configured", which is different from "configured as empty".
         val stored = prefs.getString(KEY_INSTANCES, null) ?: return DEFAULT_INSTANCES
         if (stored.isBlank()) return emptyList()
-        return stored.split(SEPARATOR).mapNotNull(::normalise)
+        val clean = stored.split(SEPARATOR).mapNotNull(::normalise).distinct()
+        if (clean.joinToString(SEPARATOR) != stored) {
+            prefs.edit().putString(KEY_INSTANCES, clean.joinToString(SEPARATOR)).apply()
+        }
+        return clean
     }
 
     companion object {
@@ -118,12 +123,15 @@ class InvidiousInstanceStore(context: Context) {
                 else -> "https://$trimmed"
             }
 
-            val host = withScheme.substringAfter("://")
+            val url = withScheme.toHttpUrlOrNull() ?: return null
+            if (url.scheme != "https" || url.username.isNotEmpty() || url.password.isNotEmpty() ||
+                url.query != null || url.fragment != null
+            ) return null
             // A host with no dot cannot be a public instance, and accepting it would let a typo
             // become a stored entry that fails only at playback.
-            if ('.' !in host.substringBefore('/')) return null
+            if ('.' !in url.host) return null
 
-            return withScheme
+            return url.toString().trimEnd('/')
         }
     }
 }

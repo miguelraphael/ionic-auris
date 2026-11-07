@@ -86,6 +86,7 @@ class AuthViewModel(
     fun onGateShown() {
         _state.value = _state.value.copy(
             isLoading = false,
+            email = "",
             password = "",
             error = null,
             emailError = null,
