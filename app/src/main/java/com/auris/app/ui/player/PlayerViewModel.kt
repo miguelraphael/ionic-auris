@@ -47,6 +47,7 @@ data class PlayerQueueItem(
  * [publish] therefore runs on every event and on a half-second tick, which is why the seek bar
  * moves while playing without the service having to emit progress.
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlayerViewModel(context: Context) : ViewModel() {
 
     private val appContext = context.applicationContext

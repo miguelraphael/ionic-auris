@@ -47,8 +47,8 @@ android {
         applicationId = "com.auris.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
@@ -59,12 +59,27 @@ android {
         buildConfigField("String", "KITSU_BASE_URL", "\"https://kitsu.io/api/edge\"")
     }
 
+    val releaseStore = providers.environmentVariable("AURIS_KEYSTORE_PATH").orNull
+    val releaseStorePassword = providers.environmentVariable("AURIS_KEYSTORE_PASSWORD").orNull
+    val releaseAlias = providers.environmentVariable("AURIS_KEY_ALIAS").orNull
+    val releaseKeyPassword = providers.environmentVariable("AURIS_KEY_PASSWORD").orNull
+    val releaseSigningReady = listOf(releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassword)
+        .all { !it.isNullOrBlank() }
+    if (releaseSigningReady) signingConfigs.create("production") {
+        storeFile = file(releaseStore!!)
+        storePassword = releaseStorePassword
+        keyAlias = releaseAlias
+        keyPassword = releaseKeyPassword
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             isMinifyEnabled = false
         }
         release {
+            isDebuggable = false
+            if (releaseSigningReady) signingConfig = signingConfigs.getByName("production")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -89,20 +104,18 @@ android {
     }
 
     lint {
-        /**
-         * Skip `lintVitalRelease` during `assembleRelease`.
-         *
-         * Lint runs as a release-blocking step, and on a memory-constrained machine the
-         * whole-project analysis exhausts RAM and never returns — the build hangs rather than
-         * failing, which is much worse than a slower report.
-         *
-         * This disables only the *release-blocking gate*. Lint still runs on demand:
-         * `./gradlew :app:lint` reports the same issues without blocking anything, and
-         * `abortOnError` is untouched for that path.
-         *
-         * Re-enable before shipping, once the release build runs on hardware that can afford it.
-         */
-        checkReleaseBuilds = false
+        checkReleaseBuilds = true
+    }
+
+    val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+        doLast {
+            check(releaseSigningReady) {
+                "Release signing requires AURIS_KEYSTORE_PATH, AURIS_KEYSTORE_PASSWORD, AURIS_KEY_ALIAS and AURIS_KEY_PASSWORD."
+            }
+        }
+    }
+    tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+        dependsOn(validateReleaseSigning)
     }
 
     testOptions {

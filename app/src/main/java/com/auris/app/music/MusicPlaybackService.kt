@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
+import androidx.media3.session.SessionError
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
@@ -91,9 +92,10 @@ class MusicPlaybackService : MediaSessionService() {
         val mediaSession = MediaSession.Builder(this, exo)
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+                    if (!isAllowedController(controller)) return MediaSession.ConnectionResult.reject()
                     val base = super.onConnect(session, controller)
                     val commands = base.availableSessionCommands.buildUpon()
-                    if (controller.packageName == packageName) {
+                    if (controller.uid == android.os.Process.myUid()) {
                         commands.add(SessionCommand(SET_SLEEP_TIMER, Bundle.EMPTY))
                         commands.add(SessionCommand(SET_SMART_SHUFFLE, Bundle.EMPTY))
                         commands.add(SessionCommand(SET_EQUALIZER, Bundle.EMPTY))
@@ -106,11 +108,14 @@ class MusicPlaybackService : MediaSessionService() {
 
                 override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo,
                     command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+                    if (controller.uid != android.os.Process.myUid()) {
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
+                    }
                     when (command.customAction) {
                         SET_SLEEP_TIMER -> setSleepTimer(args.getLong(SLEEP_DURATION))
                         SET_SMART_SHUFFLE -> setSmartShuffle(args.getBoolean(SMART_ENABLED))
                         SET_EQUALIZER -> {
-                            val eq = equalizer ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                            val eq = equalizer ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
                             val band = args.getInt("band")
                             if (band in 0 until eq.numberOfBands) {
                                 eq.setBandLevel(band.toShort(), args.getInt("level").coerceIn(
@@ -121,7 +126,7 @@ class MusicPlaybackService : MediaSessionService() {
                                 publishModes()
                             }
                         }
-                        else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                        else -> return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
                     }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
@@ -243,7 +248,13 @@ class MusicPlaybackService : MediaSessionService() {
         }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+    // Media3 derives isTrusted from the system media-control trust check. Keep system/notification
+    // controllers working while rejecting arbitrary installed apps before exposing the session.
+    internal fun isAllowedController(controller: MediaSession.ControllerInfo): Boolean =
+        controller.uid == android.os.Process.myUid() || controller.isTrusted
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
+        if (isAllowedController(controllerInfo)) session else null
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Swiping the app away while music plays should *not* stop playback — that is the point
