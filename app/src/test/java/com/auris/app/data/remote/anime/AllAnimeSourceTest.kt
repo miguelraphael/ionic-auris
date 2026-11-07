@@ -163,7 +163,7 @@ class AllAnimeSourceTest {
     }
 
     @Test
-    fun streamsResolvesClockHlsAndDecryptsSources() = runBlocking {
+    fun streamsResolvesClockHlsAndDiscardsRawIframeUrls() = runBlocking {
         val streamsJson = """
             {
               "data": {
@@ -175,8 +175,8 @@ class AllAnimeSourceTest {
                       "type": "iframe"
                     },
                     {
-                      "sourceUrl": "https://mp4upload.com/embed-test.html",
-                      "sourceName": "Mp4",
+                      "sourceUrl": "https://ok.ru/videoembed/3201471154834",
+                      "sourceName": "Ok",
                       "type": "iframe"
                     }
                   ]
@@ -191,7 +191,10 @@ class AllAnimeSourceTest {
                 {
                   "link": "https://cdn.example.com/hls/master.m3u8",
                   "hls": true,
-                  "resolutionStr": "1080p"
+                  "resolutionStr": "1080p",
+                  "headers": {
+                    "Referer": "https://repackager.wixmp.com/"
+                  }
                 }
               ]
             }
@@ -204,15 +207,24 @@ class AllAnimeSourceTest {
         val unit = SourceUnit("show_1<&sep>1", 1, "Episode 1")
         val targets = source.streams(entry, unit)
 
-        assertEquals(2, targets.size)
+        // Only the direct playable HLS stream is emitted; unresolvable ok.ru iframe is discarded!
+        assertEquals(1, targets.size)
         val hlsTarget = targets[0]
         assertEquals("https://cdn.example.com/hls/master.m3u8", hlsTarget.url)
         assertTrue(hlsTarget.isAdaptive)
-        assertEquals("AllAnime · Default (HLS)", hlsTarget.label)
+        assertEquals("AllAnime · Default (1080p)", hlsTarget.label)
+        assertEquals("https://repackager.wixmp.com/", hlsTarget.headers["Referer"])
+    }
 
-        val mp4Target = targets[1]
-        assertEquals("https://mp4upload.com/embed-test.html", mp4Target.url)
-        assertFalse(mp4Target.isAdaptive)
-        assertEquals("AllAnime · Mp4", mp4Target.label)
+    @Test
+    fun decryptUrlSupportsMultiplePrefixes() {
+        val original = "/apivtwo/clock?id=test123"
+        val mask56 = 56
+        val hex56 = original.map { (it.code xor mask56).toString(16).padStart(2, '0') }.joinToString("")
+        val cipher56 = "--$hex56"
+        assertEquals(original, source.decryptUrl(cipher56))
+
+        val plainUrl = "https://cdn.example.com/stream.m3u8"
+        assertEquals(plainUrl, source.decryptUrl(plainUrl))
     }
 }

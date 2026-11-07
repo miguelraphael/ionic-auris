@@ -3,9 +3,7 @@ package com.auris.app.data.remote.anime
 import com.auris.app.core.model.MediaType
 import com.auris.app.source.*
 import eu.kanade.tachiyomi.source.model.FilterList
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -21,6 +19,8 @@ import kotlin.coroutines.coroutineContext
 class AnimepaheSource(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
         .build(),
     private val site: HttpUrl = "https://animepahe.ru/".toHttpUrl(),
 ) : MediaSource {
@@ -166,28 +166,53 @@ class AnimepaheSource(
         val root = json.parseToJsonElement(jsonStr).jsonObject
         val dataArray = root["data"]?.jsonArray ?: return emptyList()
 
-        val targets = mutableListOf<StreamTarget>()
-        for (elem in dataArray) {
-            val obj = elem.jsonObject
-            for ((key, value) in obj) {
-                val streamObj = value.jsonObject
-                val kwikUrl = streamObj["kwik"]?.jsonPrimitive?.contentOrNull ?: continue
-                val audio = streamObj["audio"]?.jsonPrimitive?.contentOrNull ?: "sub"
-                targets.add(
+        return coroutineScope {
+            val deferredTargets = dataArray.flatMap { elem ->
+                elem.jsonObject.map { (key, value) ->
+                    async {
+                        val streamObj = value.jsonObject
+                        val kwikUrl = streamObj["kwik"]?.jsonPrimitive?.contentOrNull ?: return@async null
+                        val audio = streamObj["audio"]?.jsonPrimitive?.contentOrNull ?: "sub"
+                        val label = "Animepahe · $key ($audio)"
+                        resolveKwik(kwikUrl, label)
+                    }
+                }
+            }
+            deferredTargets.awaitAll().filterNotNull()
+        }
+    }
+
+    private suspend fun resolveKwik(kwikUrl: String, label: String): StreamTarget? {
+        val request = Request.Builder()
+            .url(kwikUrl)
+            .header("Referer", site.toString())
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        return withContext(Dispatchers.IO) {
+            coroutineContext.ensureActive()
+            runCatching {
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use null
+                    val html = resp.body?.string() ?: return@use null
+                    val unpacked = JsUnpacker.unpack(html)
+                    val m3u8Match = Regex("""const\s+source\s*=\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(unpacked)
+                        ?: Regex("""source\s*=\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(unpacked)
+                        ?: Regex("""['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(unpacked)
+                    val rawUrl = m3u8Match?.groupValues?.get(1) ?: return@use null
+                    val directUrl = rawUrl.replace("\\", "").trim('\'', '"')
                     StreamTarget(
-                        url = kwikUrl,
+                        url = directUrl,
                         headers = mapOf(
-                            "Referer" to site.toString(),
+                            "Referer" to "https://kwik.cx/",
                             "User-Agent" to USER_AGENT,
                         ),
-                        isAdaptive = kwikUrl.contains(".m3u8"),
-                        label = "Animepahe · $key ($audio)",
+                        isAdaptive = true,
+                        label = label,
                     )
-                )
-            }
+                }
+            }.getOrNull()
         }
-
-        return targets
     }
 
     private suspend fun get(url: HttpUrl): String {

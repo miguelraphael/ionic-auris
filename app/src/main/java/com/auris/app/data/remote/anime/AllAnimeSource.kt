@@ -189,7 +189,6 @@ class AllAnimeSource(
             throw IOException("No episodes available for this show")
         }
 
-        // Sort ascending numerically
         val sortedEps = epStrings.sortedBy { it.toDoubleOrNull() ?: Double.MAX_VALUE }
 
         return sortedEps.mapIndexed { i, epStr ->
@@ -233,43 +232,39 @@ class AllAnimeSource(
             val sourceName = obj["sourceName"]?.jsonPrimitive?.contentOrNull ?: "Server"
             val decryptedUrl = decryptUrl(rawUrl)
 
-            if (decryptedUrl.startsWith("/apivtwo/clock")) {
-                val clockId = decryptedUrl.substringAfter("id=", "")
+            if (decryptedUrl.contains("/apivtwo/clock") || decryptedUrl.contains("/apiv2/clock")) {
+                val clockId = decryptedUrl.substringAfter("id=", "").substringBefore("&")
                 if (clockId.isNotBlank()) {
-                    val streamLink = resolveClockStream(clockId)
-                    if (streamLink != null) {
-                        targets.add(
-                            StreamTarget(
-                                url = streamLink,
-                                headers = mapOf(
-                                    "Referer" to site.toString(),
-                                    "User-Agent" to USER_AGENT,
-                                ),
-                                isAdaptive = streamLink.contains(".m3u8"),
-                                label = "AllAnime · $sourceName (HLS)",
-                            )
-                        )
-                    }
+                    val clockStreams = resolveClockStreams(clockId, sourceName)
+                    targets.addAll(clockStreams)
                 }
+            } else if (decryptedUrl.contains("mp4upload.com")) {
+                resolveMp4Upload(decryptedUrl)?.let { targets.add(it) }
+            } else if (decryptedUrl.contains("streamwish") || decryptedUrl.contains("filemoon") || decryptedUrl.contains("bysekoze")) {
+                resolvePackedStream(decryptedUrl, sourceName)?.let { targets.add(it) }
             } else if (decryptedUrl.startsWith("http")) {
-                targets.add(
-                    StreamTarget(
-                        url = decryptedUrl,
-                        headers = mapOf(
-                            "Referer" to site.toString(),
-                            "User-Agent" to USER_AGENT,
-                        ),
-                        isAdaptive = decryptedUrl.contains(".m3u8"),
-                        label = "AllAnime · $sourceName",
+                val isDirectStream = decryptedUrl.contains(".m3u8") || decryptedUrl.contains(".mp4")
+                val isEmbedPage = decryptedUrl.contains("/embed") || decryptedUrl.contains("/e/") || decryptedUrl.endsWith(".html")
+                if (isDirectStream && !isEmbedPage) {
+                    targets.add(
+                        StreamTarget(
+                            url = decryptedUrl,
+                            headers = mapOf(
+                                "Referer" to site.toString(),
+                                "User-Agent" to USER_AGENT,
+                            ),
+                            isAdaptive = decryptedUrl.contains(".m3u8"),
+                            label = "AllAnime · $sourceName",
+                        )
                     )
-                )
+                }
             }
         }
 
         return targets
     }
 
-    private suspend fun resolveClockStream(clockId: String): String? {
+    private suspend fun resolveClockStreams(clockId: String, sourceName: String): List<StreamTarget> {
         val url = clockGateway.newBuilder().addQueryParameter("id", clockId).build()
         val request = Request.Builder()
             .url(url)
@@ -281,24 +276,121 @@ class AllAnimeSource(
             coroutineContext.ensureActive()
             runCatching {
                 client.newCall(request).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use null
-                    val body = resp.body?.string() ?: return@use null
+                    if (!resp.isSuccessful) return@use emptyList()
+                    val body = resp.body?.string() ?: return@use emptyList()
                     val root = json.parseToJsonElement(body).jsonObject
-                    val links = root["links"]?.jsonArray
-                    links?.firstOrNull()?.jsonObject?.get("link")?.jsonPrimitive?.contentOrNull
+                    val links = root["links"]?.jsonArray ?: return@use emptyList()
+                    val list = mutableListOf<StreamTarget>()
+                    for (item in links) {
+                        val linkObj = item.jsonObject
+                        val streamUrl = linkObj["link"]?.jsonPrimitive?.contentOrNull ?: continue
+                        val isHls = linkObj["hls"]?.jsonPrimitive?.booleanOrNull ?: streamUrl.contains(".m3u8")
+                        val res = linkObj["resolutionStr"]?.jsonPrimitive?.contentOrNull
+                        val label = if (res != null) {
+                            "AllAnime · $sourceName ($res)"
+                        } else if (isHls) {
+                            "AllAnime · $sourceName (HLS)"
+                        } else {
+                            "AllAnime · $sourceName"
+                        }
+                        val headers = mutableMapOf<String, String>()
+                        val rawHeaders = linkObj["headers"]?.jsonObject
+                        if (rawHeaders != null) {
+                            for ((k, v) in rawHeaders) {
+                                v.jsonPrimitive.contentOrNull?.let { headers[k] = it }
+                            }
+                        }
+                        if (!headers.containsKey("Referer")) {
+                            headers["Referer"] = site.toString()
+                        }
+                        headers["User-Agent"] = USER_AGENT
+
+                        list.add(
+                            StreamTarget(
+                                url = streamUrl,
+                                headers = headers,
+                                isAdaptive = isHls,
+                                label = label,
+                            )
+                        )
+                    }
+                    list
+                }
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    private suspend fun resolveMp4Upload(embedUrl: String): StreamTarget? {
+        val request = Request.Builder()
+            .url(embedUrl)
+            .header("Referer", site.toString())
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        return withContext(Dispatchers.IO) {
+            coroutineContext.ensureActive()
+            runCatching {
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use null
+                    val html = resp.body?.string() ?: return@use null
+                    val mp4Match = Regex("""player\.src\(\s*(?:\{\s*type:[^,]+,\s*src:\s*)?["'](https?://[^"']+\.mp4[^"']*)["']""").find(html)
+                        ?: Regex("""src:\s*["'](https?://[^"']+\.mp4[^"']*)["']""").find(html)
+                    val directUrl = mp4Match?.groupValues?.get(1) ?: return@use null
+                    StreamTarget(
+                        url = directUrl,
+                        headers = mapOf(
+                            "Referer" to "https://mp4upload.com/",
+                            "User-Agent" to USER_AGENT,
+                        ),
+                        isAdaptive = false,
+                        label = "AllAnime · Mp4Upload (Direct MP4)",
+                    )
                 }
             }.getOrNull()
         }
     }
 
-    private fun decryptUrl(url: String): String {
-        if (!url.startsWith("--")) return url
-        val hex = url.substringAfterLast("--")
+    private suspend fun resolvePackedStream(embedUrl: String, sourceName: String): StreamTarget? {
+        val request = Request.Builder()
+            .url(embedUrl)
+            .header("Referer", site.toString())
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        return withContext(Dispatchers.IO) {
+            coroutineContext.ensureActive()
+            runCatching {
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use null
+                    val html = resp.body?.string() ?: return@use null
+                    val unpacked = JsUnpacker.unpack(html)
+                    val m3u8Match = Regex("""(?:sources|file|source)\s*:\s*(?:\[\s*\{\s*file:\s*)?["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)
+                        ?: Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)
+                    val directUrl = m3u8Match?.groupValues?.get(1) ?: return@use null
+                    StreamTarget(
+                        url = directUrl,
+                        headers = mapOf(
+                            "Referer" to embedUrl,
+                            "User-Agent" to USER_AGENT,
+                        ),
+                        isAdaptive = true,
+                        label = "AllAnime · $sourceName (HLS)",
+                    )
+                }
+            }.getOrNull()
+        }
+    }
+
+    fun decryptUrl(url: String): String {
+        val match = prefixRegex.find(url) ?: return url
+        val (prefix, hexData) = match.destructured
+        val mask = maskMap[prefix] ?: 56
+
         return buildString {
-            for (i in hex.indices step 2) {
-                if (i + 1 < hex.length) {
-                    val byteVal = hex.substring(i, i + 2).toIntOrNull(16) ?: break
-                    append((byteVal xor 56).toChar())
+            for (i in hexData.indices step 2) {
+                if (i + 1 < hexData.length) {
+                    val byteVal = hexData.substring(i, i + 2).toIntOrNull(16) ?: break
+                    append((byteVal xor mask).toChar())
                 }
             }
         }
@@ -335,6 +427,20 @@ class AllAnimeSource(
         const val KEY = "builtin-allanime"
         private const val PAGE_SIZE = 26
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        private val keyMap = mapOf(
+            "--" to "s5feqxw21",
+            "#-" to "1234567890123456789012345",
+            "##" to "1234567890123456789",
+            "-#" to "feqx1",
+            "#" to "allanimenews"
+        )
+
+        private val maskMap = keyMap.mapValues { (_, key) ->
+            key.fold(0) { acc, char -> acc xor char.code }
+        }
+
+        private val prefixRegex = Regex("""^(--|#-|-#|##|#)([0-9a-fA-F]+)$""")
 
         private const val POPULAR_HASH = "31a117653812a2547fd981632e8c99fa8bf8a75c4ef1a77a1567ef1741a7ab9c"
         private const val LATEST_HASH = "e42a4466d984b2c0a2cecae5dd13aa68867f634b16ee0f17b380047d14482406"

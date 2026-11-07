@@ -138,17 +138,14 @@ class AnimepaheSourceTest {
     }
 
     @Test
-    fun streamsExtractsKwikLinks() = runBlocking {
+    fun streamsResolvesKwikDirectHlsStream() = runBlocking {
+        val kwikEmbedUrl = server.url("/e/kwik_720").toString()
         val json = """
             {
               "data": [
                 {
                   "720p": {
-                    "kwik": "https://kwik.cx/e/kwik_720",
-                    "audio": "jpn"
-                  },
-                  "1080p": {
-                    "kwik": "https://kwik.cx/e/kwik_1080",
+                    "kwik": "$kwikEmbedUrl",
                     "audio": "jpn"
                   }
                 }
@@ -156,16 +153,27 @@ class AnimepaheSourceTest {
             }
         """.trimIndent()
 
+        val kwikHtml = """
+            <html>
+            <body>
+            <script type="text/javascript">
+            eval(function(p,a,c,k,e,d){while(c--)if(k[c])p=p.replace(new RegExp('\\b'+c.toString(a)+'\\b','g'),k[c]);return p}('const 0=\'1\';',2,2,'source|https://kwik.example.com/master720.m3u8'.split('|'),0,{}))
+            </script>
+            </body>
+            </html>
+        """.trimIndent()
+
         server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(kwikHtml))
 
         val entry = SourceItem("anime_123", "Anime", null)
         val unit = SourceUnit("anime_123/ep_456", 1, "Episode 1")
         val targets = source.streams(entry, unit)
 
-        assertEquals(2, targets.size)
-        assertEquals("https://kwik.cx/e/kwik_720", targets[0].url)
+        assertEquals(1, targets.size)
+        assertEquals("https://kwik.example.com/master720.m3u8", targets[0].url)
+        assertTrue(targets[0].isAdaptive)
         assertEquals("Animepahe · 720p (jpn)", targets[0].label)
-        assertEquals("https://kwik.cx/e/kwik_1080", targets[1].url)
-        assertEquals("Animepahe · 1080p (jpn)", targets[1].label)
+        assertEquals("https://kwik.cx/", targets[0].headers["Referer"])
     }
 }
