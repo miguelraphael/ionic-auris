@@ -1,5 +1,7 @@
 # 0.1.2 release candidate
 
+Superseded by [0.1.3](https://github.com/miguelraphael/ionic-auris/releases/tag/v0.1.3) after a minified startup crash. See `RELEASE_STARTUP_HOTFIX.md` for the fix and signed-device verification.
+
 - App version: 0.1.2; version code: 3.
 - Source candidate: `3418583` plus release documentation updates.
 - Proposed new tag: `v0.1.2`. Existing `v0.1.0` and `v0.1.1` tags must remain unchanged.
