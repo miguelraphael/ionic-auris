@@ -68,10 +68,11 @@ class ExtensionRepositoryTest {
 
     @Test
     fun uninstallRemovesExtensionAndItsApk() = runBlocking {
-        val apk = java.io.File.createTempFile("ext", ".apk").apply { writeText("x") }
+        val directory = java.nio.file.Files.createTempDirectory("extensions").toFile()
+        val apk = java.io.File(directory, "eu.kanade.tachiyomi.animeextension.en.example.apk").apply { writeText("x") }
         repository.register(entity(apkPath = apk.absolutePath))
 
-        repository.uninstall("eu.kanade.tachiyomi.animeextension.en.example")
+        repository.uninstall("eu.kanade.tachiyomi.animeextension.en.example", directory)
 
         assertTrue(installed().isEmpty())
         // The APK file itself must go too, or reinstalling leaves stale versions behind.
@@ -82,7 +83,7 @@ class ExtensionRepositoryTest {
     fun uninstallUnknownPackageIsNoOp() = runBlocking {
         repository.register(entity())
 
-        repository.uninstall("com.example.never.installed")
+        repository.uninstall("com.example.never.installed", java.io.File("/data/extensions"))
 
         assertEquals(1, installed().size)
     }
@@ -94,6 +95,33 @@ class ExtensionRepositoryTest {
 
         assertEquals(1, installed().size)
         assertTrue(enabled().isEmpty())
+    }
+
+    @Test
+    fun updatingDisabledExtensionPreservesDisabledState() = runBlocking {
+        val old = entity()
+        repository.register(old)
+        repository.setEnabled(old.packageName, false)
+
+        val updated = repository.register(old.copy(versionCode = 2, enabled = true))
+
+        assertTrue(!updated.enabled)
+        assertTrue(enabled().isEmpty())
+        assertEquals(2L, installed().single().versionCode)
+    }
+
+    @Test
+    fun uninstallDoesNotFollowStoredPathOutsideExtensionsDirectory() = runBlocking {
+        val outside = java.io.File.createTempFile("unrelated", ".apk").apply { writeText("keep") }
+        val directory = java.nio.file.Files.createTempDirectory("extensions").toFile()
+        val extension = entity(apkPath = outside.absolutePath)
+        repository.register(extension)
+
+        repository.uninstall(extension.packageName, directory)
+
+        assertTrue(outside.exists())
+        assertTrue(installed().isEmpty())
+        outside.delete()
     }
 
     @Test

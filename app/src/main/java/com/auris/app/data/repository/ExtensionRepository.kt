@@ -4,6 +4,7 @@ import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.ExtensionDao
 import com.auris.app.data.local.entity.ExtensionEntity
 import java.io.File
+import com.auris.app.source.repo.extensionFile
 
 /**
  * Owns the installed-extension list: install, uninstall, enable/disable and update checks.
@@ -27,13 +28,14 @@ class ExtensionRepository(
     suspend fun find(packageName: String): ExtensionEntity? = extensionDao.find(packageName)
 
     /**
-     * Records an extension, replacing any existing row for the same package.
+     * Records an extension, replacing metadata while preserving the user's enabled choice.
      *
      * @return the stored entity
      */
     suspend fun register(extension: ExtensionEntity): ExtensionEntity {
-        extensionDao.upsert(extension)
-        return extension
+        val registered = extension.copy(enabled = extensionDao.find(extension.packageName)?.enabled ?: extension.enabled)
+        extensionDao.upsert(registered)
+        return registered
     }
 
     suspend fun registerAll(extensions: List<ExtensionEntity>) = extensionDao.upsertAll(extensions)
@@ -47,10 +49,9 @@ class ExtensionRepository(
      * The file is deleted here rather than left to the caller because a stale APK is worse
      * than none: on the next install it could be loaded again in place of the new one.
      */
-    suspend fun uninstall(packageName: String) {
-        extensionDao.find(packageName)?.apkPath?.let { path ->
-            runCatching { File(path).takeIf { it.exists() }?.delete() }
-        }
+    suspend fun uninstall(packageName: String, extensionsDir: File) {
+        val apk = extensionFile(extensionsDir, packageName)
+        if (apk.exists()) check(apk.delete()) { "Could not remove extension APK" }
         extensionDao.delete(packageName)
     }
 

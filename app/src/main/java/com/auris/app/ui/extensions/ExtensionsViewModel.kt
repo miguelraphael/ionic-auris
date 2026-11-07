@@ -17,6 +17,7 @@ import com.auris.app.source.repo.ExtensionListItem
 import com.auris.app.source.repo.ExtensionRepo
 import com.auris.app.source.repo.ExtensionRepositoryClient
 import com.auris.app.source.repo.InstallProgress
+import com.auris.app.source.repo.extensionFile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -257,17 +258,18 @@ class ExtensionsViewModel(
         val installJob = viewModelScope.launch {
             setStage(packageName, InstallProgress.Stage.DOWNLOADING)
 
-            val target = File(extensionsDir, "$packageName.apk")
-            val temp = File(extensionsDir, "$packageName.part")
+            var temp: File? = null
 
             runCatching {
-                client.downloadApk(item.remote, item.repo, temp).getOrThrow()
+                val target = extensionFile(extensionsDir, packageName)
+                val staged = extensionFile(extensionsDir, packageName, ".part").also { temp = it }
+                client.downloadApk(item.remote, item.repo, staged).getOrThrow()
 
                 setStage(packageName, InstallProgress.Stage.INSTALLING)
 
                 // Identity comes from the APK, not the index: an index could claim one package
                 // and ship another.
-                val identity = ExtensionApkReader.read(context, temp)
+                val identity = ExtensionApkReader.read(context, staged)
                 check(identity.packageName == packageName) {
                     "APK declares ${identity.packageName}, expected $packageName"
                 }
@@ -278,13 +280,13 @@ class ExtensionsViewModel(
                 // and leaves the previous version installed. Verifying after the rename would
                 // mean a hostile APK had already replaced a good one, and the failure path would
                 // have to try to restore it.
-                val fingerprint = verifySignature(item, temp)
+                val fingerprint = verifySignature(item, staged)
 
                 target.delete()
-                check(temp.renameTo(target)) { "Could not move downloaded APK into place" }
+                check(staged.renameTo(target)) { "Could not move downloaded APK into place" }
                 target.setReadOnly()
 
-                extensionRepository.register(
+                val registered = extensionRepository.register(
                     ExtensionEntity(
                         packageName = identity.packageName,
                         label = item.remote.name,
@@ -297,7 +299,8 @@ class ExtensionsViewModel(
                     ),
                 )
 
-                extensionLoader.load(target, identity.packageName)
+                extensionLoader.unload(identity.packageName)
+                if (registered.enabled) extensionLoader.loadInstalled(registered, extensionsDir)
             }.onSuccess {
                 // Without this the row's spinner never clears: the stage stays at
                 // INSTALLING and the row keeps rendering the progress indicator
@@ -315,7 +318,7 @@ class ExtensionsViewModel(
                     message = "Install failed: ${error.message}",
                     isMessageError = true,
                 )
-                runCatching { temp.delete() }
+                runCatching { temp?.delete() }
             }
         }
         installJob.invokeOnCompletion { installGuard.release(packageName) }
@@ -385,18 +388,37 @@ class ExtensionsViewModel(
     /** Uninstalls and drops the APK so a stale file cannot be loaded next launch. */
     fun uninstall(item: ExtensionListItem) {
         viewModelScope.launch {
-            extensionRepository.uninstall(item.remote.packageName)
-            runCatching { File(extensionsDir, "${item.remote.packageName}.apk").delete() }
-            extensionLoader.clearCache()
-            _state.value = _state.value.copy(
-                message = "Removed ${item.remote.name}",
-                isMessageError = false,
-            )
+            runCatching {
+                extensionRepository.uninstall(item.remote.packageName, extensionsDir)
+                extensionLoader.unload(item.remote.packageName)
+            }.onSuccess {
+                _state.value = _state.value.copy(
+                    message = "Removed ${item.remote.name}",
+                    isMessageError = false,
+                )
+            }.onFailure {
+                _state.value = _state.value.copy(
+                    message = "Could not remove extension: ${it.message}",
+                    isMessageError = true,
+                )
+            }
         }
     }
 
     fun setEnabled(item: ExtensionListItem, enabled: Boolean) {
-        viewModelScope.launch { extensionRepository.setEnabled(item.remote.packageName, enabled) }
+        viewModelScope.launch {
+            runCatching {
+                val installed = extensionRepository.find(item.remote.packageName) ?: return@launch
+                if (enabled) extensionLoader.loadInstalled(installed, extensionsDir)
+                else extensionLoader.unload(installed.packageName)
+                extensionRepository.setEnabled(installed.packageName, enabled)
+            }.onFailure {
+                _state.value = _state.value.copy(
+                    message = "Could not enable extension: ${it.message}",
+                    isMessageError = true,
+                )
+            }
+        }
     }
 
     fun focus(item: ExtensionListItem) {

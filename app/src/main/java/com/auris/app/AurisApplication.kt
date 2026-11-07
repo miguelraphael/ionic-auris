@@ -108,17 +108,15 @@ class AurisApplication : Application(), Configuration.Provider, coil.ImageLoader
     private fun reloadInstalledExtensions() {
         initScope.launch {
             runCatching {
-                val enabled = container.extensionRepository.enabled()
-                    .first()
-                    .map { it.packageName }
-                    .toSet()
-                val apks = container.extensionsDir
-                    .listFiles { file -> file.isFile && file.extension == "apk" }
-                    ?.filter { it.nameWithoutExtension in enabled }
-                    .orEmpty()
-                if (apks.isNotEmpty()) {
-                    val loaded = container.extensionLoader.loadAll(apks)
-                    Log.i(TAG, "Reloaded ${loaded.size} installed extension(s)")
+                val enabled = container.extensionRepository.enabled().first()
+                for (installed in enabled) {
+                    runCatching {
+                        container.extensionLoader.loadInstalled(installed, container.extensionsDir)
+                    }.onFailure {
+                        // Keep the APK for inspection/reinstall, but quarantine it from execution.
+                        container.extensionRepository.setEnabled(installed.packageName, false)
+                        Log.w(TAG, "Disabled unverified extension ${installed.packageName}: ${it.message}")
+                    }
                 }
             }.onFailure { error ->
                 Log.w(TAG, "Could not reload installed extensions: ${error.message}")

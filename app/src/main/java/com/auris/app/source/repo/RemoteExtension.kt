@@ -28,6 +28,8 @@ data class RemoteExtension(
      */
     @SerialName("sources") val sources: List<RemoteSource>? = null,
 ) {
+    init { requireExtensionPackageName(packageName) }
+
     val isNsfw: Boolean get() = nsfw == 1
     val sourceCount: Int get() = sources?.size ?: 0
 

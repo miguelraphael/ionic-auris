@@ -10,6 +10,12 @@ import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.SourceFactory
 import java.io.File
 import java.lang.reflect.Modifier
+import com.auris.app.data.local.entity.ExtensionEntity
+import com.auris.app.source.repo.ApkSigner
+import com.auris.app.source.repo.ExtensionRepositoryClient
+import com.auris.app.source.repo.extensionFile
+import com.auris.app.source.repo.requireExtensionPackageName
+import com.auris.app.source.repo.verifyInstalledExtension
 
 /**
  * Loads extension APKs and reflects their sources out.
@@ -36,7 +42,8 @@ import java.lang.reflect.Modifier
  * Loaders are held for the process lifetime (see [unloadAll]). Closing a loader does not
  * unload classes that have already been referenced, so dropping a loader while a screen still
  * holds a source leaves classes that cannot be instantiated again. Unloading is therefore
- * explicit, and happens at app teardown rather than on "uninstall".
+ * explicit. Removing a package drops registry references, but cannot revoke objects already
+ * held by a screen or stop code already running; process restart is required for that.
  */
 class ExtensionLoader(
     private val context: Context,
@@ -57,11 +64,11 @@ class ExtensionLoader(
      * (see [LoadedSource]), so there is nothing to partition on.
      */
     override val sources: List<LoadedSource>
-        get() = loaded.values.flatMap { it.allSources }
+        get() = synchronized(this) { loaded.values.flatMap { it.allSources } }
 
     @VisibleForTesting
     internal val loadedPackages: Set<String>
-        get() = loaded.keys.toSet()
+        get() = synchronized(this) { loaded.keys.toSet() }
 
     /**
      * Loads one extension APK and reflects its sources.
@@ -71,7 +78,9 @@ class ExtensionLoader(
      *
      * @return the sources found, or an empty list if the APK yielded none
      */
+    @Synchronized
     fun load(apkFile: File, packageName: String): List<LoadedSource> {
+        requireExtensionPackageName(packageName)
         loaded[packageName]?.let { existing ->
             if (existing.apkPath == apkFile.absolutePath) return existing.allSources
         }
@@ -99,6 +108,28 @@ class ExtensionLoader(
             Log.e(TAG, "Failed to load extension $packageName", e)
             emptyList()
         }
+    }
+
+    /** Verifies stored bytes, publisher and identity before any installed code executes. */
+    @Synchronized
+    fun loadInstalled(installed: ExtensionEntity, extensionsDir: File): List<LoadedSource> {
+        val apk = extensionFile(extensionsDir, installed.packageName)
+        require(File(installed.apkPath).canonicalFile == apk.canonicalFile) { "Unexpected installed APK path" }
+        require(apk.length() in ExtensionRepositoryClient.MIN_APK_BYTES..ExtensionRepositoryClient.MAX_APK_BYTES) {
+            "Installed extension size is invalid"
+        }
+        val identity = ExtensionApkReader.read(context, apk)
+        verifyInstalledExtension(installed, identity, ApkSigner.fingerprints(context.packageManager, apk.absolutePath))
+        return load(apk, installed.packageName)
+    }
+
+    /** Removes future lookups; already-running extension code needs a process restart. */
+    @Synchronized
+    fun unload(packageName: String) {
+        requireExtensionPackageName(packageName)
+        loaded.remove(packageName)
+        val cache = File(cacheRoot, packageName)
+        if (cache.canonicalFile.parentFile == cacheRoot.canonicalFile) cache.deleteRecursively()
     }
 
     /** Loads many extensions, keeping the ones that work. */
@@ -352,6 +383,7 @@ class ExtensionLoader(
      * process, which is all that "unload" can honestly mean — see the lifecycle note on the
      * class doc for why this is only safe at teardown.
      */
+    @Synchronized
     fun unloadAll() {
         val count = loaded.size
         loaded.clear()

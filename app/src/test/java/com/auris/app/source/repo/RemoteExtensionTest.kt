@@ -111,7 +111,7 @@ class RemoteExtensionTest {
         // whole index, and `torrent`/`nsfw` are optional in practice.
         val withExtras = """
             [{
-              "name": "X", "pkg": "p", "apk": "a.apk", "lang": "en",
+              "name": "X", "pkg": "com.example.test", "apk": "a.apk", "lang": "en",
               "code": 1, "version": "1",
               "brandNewField": {"nested": [1, 2, 3]},
               "sig": "deadbeef"
@@ -133,7 +133,7 @@ class RemoteExtensionTest {
         // (or the reverse).
         val extension = RemoteExtension(
             name = "X",
-            packageName = "p",
+            packageName = "com.example.test",
             apkFileName = "x-v1.apk",
             lang = "en",
             versionCode = 1,
@@ -155,7 +155,7 @@ class RemoteExtensionTest {
         val repo = ExtensionRepo(baseUrl = "https://example.test/repo", name = "Test")
         val extension = RemoteExtension(
             name = "X",
-            packageName = "p",
+            packageName = "com.example.test",
             apkFileName = "x-v1.apk",
             lang = "en",
             versionCode = 1,
@@ -171,7 +171,7 @@ class RemoteExtensionTest {
         val item = ExtensionListItem(
             remote = RemoteExtension(
                 name = "X",
-                packageName = "p",
+                packageName = "com.example.test",
                 apkFileName = "x-v1.apk",
                 lang = "en",
                 versionCode = 1,
@@ -218,7 +218,7 @@ class RemoteExtensionTest {
         val repo = ExtensionRepo.DEFAULT
         val extension = RemoteExtension(
             name = "X",
-            packageName = "p",
+            packageName = "com.example.test",
             apkFileName = "x.apk",
             lang = "en",
             versionCode = 10,
@@ -244,7 +244,7 @@ class RemoteExtensionTest {
         val repo = ExtensionRepo.DEFAULT
         val extension = RemoteExtension(
             name = "X",
-            packageName = "p",
+            packageName = "com.example.test",
             apkFileName = "x.apk",
             lang = "en",
             versionCode = 1,
@@ -266,7 +266,7 @@ class RemoteExtensionTest {
     }
 
     private fun installed(versionCode: Long = 1, enabled: Boolean = true) = ExtensionEntity(
-        packageName = "p",
+        packageName = "com.example.test",
         label = "X",
         versionName = "1",
         versionCode = versionCode,
@@ -304,7 +304,7 @@ class RemoteExtensionTest {
     fun catalogueKeyIsNullWithoutSources() {        val item = ExtensionListItem(
             remote = RemoteExtension(
                 name = "Helper",
-                packageName = "p",
+                packageName = "com.example.test",
                 apkFileName = "x.apk",
                 lang = "en",
                 versionCode = 1,
@@ -324,7 +324,7 @@ class RemoteExtensionTest {
         val item = ExtensionListItem(
             remote = RemoteExtension(
                 name = "Aniyomi: AnimeKhor",
-                packageName = "p",
+                packageName = "com.example.test",
                 apkFileName = "x.apk",
                 lang = "en",
                 versionCode = 1,
@@ -342,7 +342,7 @@ class RemoteExtensionTest {
         val item = ExtensionListItem(
             remote = RemoteExtension(
                 name = "Standalone",
-                packageName = "p",
+                packageName = "com.example.test",
                 apkFileName = "x.apk",
                 lang = "en",
                 versionCode = 1,

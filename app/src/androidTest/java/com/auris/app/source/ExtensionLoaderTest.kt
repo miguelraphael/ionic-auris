@@ -48,6 +48,33 @@ class ExtensionLoaderTest : ExtensionTestBase() {
     }
 
     @Test
+    fun changedInstalledHashNeverRegistersSources() {
+        val original = mockExtensionApk()
+        val directory = java.io.File(original.parentFile, "verified-load-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val installed = java.io.File(directory, mockExtensionPackage() + ".apk")
+        original.copyTo(installed, overwrite = true)
+        installed.setReadOnly()
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val metadata = ExtensionApkReader.read(context, installed).copy(
+            signatureHash = "0".repeat(64),
+            signingCertFingerprint = "a".repeat(64),
+        )
+
+        assertTrue(runCatching { extensionLoader.loadInstalled(metadata, directory) }.isFailure)
+        assertTrue(extensionLoader.sources.isEmpty())
+        assertTrue(extensionLoader.loadedPackages.isEmpty())
+    }
+
+    @Test
+    fun unloadingPackageRemovesSourcesFromRegistry() {
+        loadAll()
+        extensionLoader.unload(mockExtensionPackage())
+
+        assertTrue(extensionLoader.sources.isEmpty())
+        assertTrue(extensionLoader.loadedPackages.isEmpty())
+    }
+
+    @Test
     fun discoversFactoriesByInterfaceNotAnnotation() {
         loadAll()
 
