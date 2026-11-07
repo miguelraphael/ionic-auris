@@ -39,3 +39,10 @@
 -keep class io.ktor.client.plugins.api.** { *; }
 -keep interface kotlin.jvm.functions.Function0 { *; }
 -keep interface kotlin.jvm.functions.Function1 { *; }
+
+# Ktor constructs typeOf<HttpClientEngineCapability<*>>() on the first HTTP request.
+# Its generic parameter must survive for Kotlin reflection to accept the star projection.
+-keep interface io.ktor.client.engine.HttpClientEngineCapability { *; }
+# The next engine attribute reflects HttpClientConfig<*> and its engine-config bound.
+-keep class io.ktor.client.HttpClientConfig { *; }
+-keep class io.ktor.client.engine.HttpClientEngineConfig { *; }

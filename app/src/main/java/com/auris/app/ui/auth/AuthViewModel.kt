@@ -1,14 +1,31 @@
 package com.auris.app.ui.auth
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.SignUpOutcome
+import io.github.jan.supabase.auth.exception.AuthErrorCode
+import io.github.jan.supabase.auth.exception.AuthRestException
+import io.github.jan.supabase.exceptions.RestException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+internal fun authFailureMessage(error: Throwable, registering: Boolean): String = when {
+    error is AuthRestException && error.errorCode == AuthErrorCode.EmailNotConfirmed ->
+        "Confirm your email before signing in."
+    error is RestException && error.statusCode == 429 ->
+        "Too many attempts. Please wait a few minutes and try again."
+    error is RestException && !registering && error.statusCode in listOf(400, 401) ->
+        "Sign-in failed. Check your email and password."
+    error is LinkageError ->
+        "Authentication could not start. Please install the latest app update."
+    registering -> "Registration failed. Please try again later."
+    else -> "Sign-in failed. Please try again later."
+}
 
 /** Everything the login screen renders. */
 data class AuthUiState(
@@ -128,20 +145,20 @@ class AuthViewModel(
                         }
                     }
                     .onFailure { error ->
+                        logFailure(error)
                         _state.value = _state.value.copy(
                             isLoading = false,
-                            error = error.message?.takeIf { it.isNotBlank() }
-                                ?: "Registration failed. Check your connection and try again.",
+                            error = authFailureMessage(error, registering = true),
                         )
                     }
             } else {
                 authRepository.signIn(email, password)
                     .onSuccess { _state.value = _state.value.copy(password = "") }
                     .onFailure { error ->
+                        logFailure(error)
                         _state.value = _state.value.copy(
                             isLoading = false,
-                            error = error.message?.takeIf { it.isNotBlank() }
-                                ?: "Sign-in failed. Check your connection and try again.",
+                            error = authFailureMessage(error, registering = false),
                         )
                     }
                 // Success clears itself: the gate routes away on the new session.
@@ -154,6 +171,14 @@ class AuthViewModel(
     override fun onCleared() {
         _state.value = _state.value.copy(password = "")
         super.onCleared()
+    }
+
+    private fun logFailure(error: Throwable) {
+        // Exception messages can contain request bodies or credentials. Record only types
+        // and call sites so release failures can be retraced without logging account data.
+        generateSequence(error) { it.cause }.take(8).forEach { cause ->
+            Log.e("AurisAuth", cause.javaClass.name + "\n" + cause.stackTrace.joinToString("\n"))
+        }
     }
 
     class Factory(
