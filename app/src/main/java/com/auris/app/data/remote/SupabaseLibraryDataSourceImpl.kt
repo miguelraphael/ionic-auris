@@ -83,7 +83,7 @@ class SupabaseLibraryDataSourceImpl(
                                 or {
                                     gt("updated_at", after.updatedAt!!)
                                     and {
-                                        eq("updated_at", after.updatedAt)
+                                        eq("updated_at", after.updatedAt!!)
                                         gt("id", after.id)
                                     }
                                 }

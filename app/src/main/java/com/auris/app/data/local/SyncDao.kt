@@ -88,9 +88,6 @@ interface SyncDao {
     @Query("DELETE FROM sync_outbox WHERE entity_id IN (SELECT id FROM library_entries WHERE user_id = :userId)")
     suspend fun clearOutboxFor(userId: String)
 
-    @Query("DELETE FROM sync_outbox WHERE entity_id = :entryId AND entity_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1))")
-    suspend fun clearOutboxForEntry(entryId: String)
-
     @Query("SELECT * FROM sync_outbox WHERE NOT EXISTS (SELECT 1 FROM library_entries WHERE id = sync_outbox.entity_id)")
     suspend fun orphanedOutbox(): List<SyncOutboxEntity>
 

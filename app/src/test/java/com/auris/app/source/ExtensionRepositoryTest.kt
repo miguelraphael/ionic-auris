@@ -111,7 +111,7 @@ class ExtensionRepositoryTest {
     }
 
     @Test
-    fun uninstallDoesNotFollowStoredPathOutsideExtensionsDirectory() = runBlocking {
+    fun uninstallDoesNotFollowStoredPathOutsideExtensionsDirectory(): Unit = runBlocking {
         val outside = java.io.File.createTempFile("unrelated", ".apk").apply { writeText("keep") }
         val directory = java.nio.file.Files.createTempDirectory("extensions").toFile()
         val extension = entity(apkPath = outside.absolutePath)

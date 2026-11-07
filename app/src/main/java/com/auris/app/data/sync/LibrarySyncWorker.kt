@@ -111,7 +111,6 @@ internal class LibrarySyncPass(
                         }
                         remote.deleteEntry(userId, entry.remoteId)
                         // Clear every stale write for this title before removing its owner row.
-                        syncDao.clearOutboxForEntry(entry.id)
                         libraryDao.purgeTombstone(entry.id)
                     }
 
