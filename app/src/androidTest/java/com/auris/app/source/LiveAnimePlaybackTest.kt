@@ -6,7 +6,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.auris.app.data.remote.anime.HiAnimeSource
+import com.auris.app.data.remote.anime.AllAnimeSource
 import com.auris.app.ui.player.EpisodePlayer
 import eu.kanade.tachiyomi.source.model.FilterList
 import kotlinx.coroutines.runBlocking
@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 class LiveAnimePlaybackTest {
     @Test fun rendersFirstFrameOfResolvedEpisode() = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("aurisLiveAnime") == "true")
-        val source = HiAnimeSource()
+        val source = AllAnimeSource()
         val title = source.search(1, "Naruto", FilterList()).items.first()
         val episode = source.units(title).first()
         val targets = source.streams(title, episode)

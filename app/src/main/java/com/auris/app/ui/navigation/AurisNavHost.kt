@@ -244,7 +244,7 @@ fun AurisNavHost(
                 key = "anime-catalogue",
                 factory = CatalogueViewModel.factory(
                     extensionLoader = extensionLoader,
-                    sourceKey = selectedSource(MediaType.ANIME, com.auris.app.data.remote.anime.HiAnimeSource.KEY),
+                    sourceKey = selectedSource(MediaType.ANIME, com.auris.app.data.remote.anime.AllAnimeSource.KEY),
                     mediaType = MediaType.ANIME,
                     extensionContentRepository = extensionContentRepository,
                     libraryRepository = libraryRepository,

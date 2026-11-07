@@ -6,16 +6,17 @@ source outage does not force you to retype the title.
 
 | Type | Provider | Supported content |
 | --- | --- | --- |
-| Anime | HiAnime | Existing sub/dub catalog; ZokoAnime servers |
-| Anime | Animegg | Japanese anime (sub/dub); high definition direct MP4 streams |
+| Anime | AllAnime | Comprehensive sub/dub anime library; direct HLS (.m3u8) playback streams |
+| Anime | Animepahe | Fast airing releases and lightweight encodes via Pahe & Kwik streams |
 | Manga | MangaDex | Existing English-chapter catalog |
 | Manga | Weeb Central | Official digital releases, volume rips, scanlations, and full chapter image strips |
 | Manga | MangaPill | Trending titles, latest chapter updates, search, and chapter images |
 
 These are built-in connectors, not new extension compatibility. Providers have different
-catalogs: Animegg provides an alternative catalog of Japanese anime alongside HiAnime. Episodes
-without a playable stream target report an error rather than pretending another embed
-is playable. Source availability can differ by network and region.
+catalogs: AllAnime provides a massive library with direct adaptive HLS video streaming,
+while Animepahe provides fast airing updates and efficient encodes. Episodes without a
+playable stream target report an error rather than pretending another embed is playable.
+Source availability can differ by network and region.
 
 Changing the tab's provider does not rewrite saved titles. Library entries and progress
 remain tied to their original source. To use another provider for a saved title, search

@@ -79,9 +79,9 @@ class CatalogueViewModel(
                 sourceLanguage = when (resolved.id) {
                     MangaDexSource.ID -> "English chapters · MangaDex"
                     com.auris.app.data.remote.manga.WeebCentralSource.ID -> "Official digital scans & volume rips · Weeb Central"
-                    com.auris.app.data.remote.anime.HiAnimeSource.ID -> "Sub / Dub where available · HiAnime"
+                    com.auris.app.data.remote.anime.AllAnimeSource.ID -> "Sub / Dub · Comprehensive anime library & HLS streams"
+                    com.auris.app.data.remote.anime.AnimepaheSource.ID -> "Fast airing releases & lightweight encodes · Animepahe"
                     "mangapill" -> "English manga · MangaPill"
-                    com.auris.app.data.remote.anime.AnimeggSource.ID -> "Japanese anime · Sub & Dub · High definition MP4 streams"
                     else -> ""
                 },
                 error = null,
