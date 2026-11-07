@@ -79,6 +79,13 @@ class MusicBrowseRowsTest {
     }
 
     @Test
+    fun missingArtistDoesNotTurnAlbumTitleIntoPlaybackArtist() {
+        val row = MusicCollectionItem(MusicCollectionItem.Kind.TRACK,
+            tracks = listOf(track(artist = null, album = "Actual Album"))).toRows().single()
+        assertNull(row.artistHint())
+    }
+
+    @Test
     fun keepsCompositeOrderAndIdentity() {
         val rows = MusicCollectionItem(
             kind = MusicCollectionItem.Kind.UNKNOWN,

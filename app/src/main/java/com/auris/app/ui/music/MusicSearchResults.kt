@@ -33,6 +33,10 @@ internal enum class MusicSearchFilter(val label: String) {
     TOP("Top Results"), SONGS("Songs"), ALBUMS("Albums"), PLAYLISTS("Playlists"),
 }
 
+internal fun selectMusicSearchResult(row: MusicRow, onPlay: (MusicRow) -> Unit, onOpenAlbum: (MusicRow) -> Unit) {
+    if (row.kind == MusicRow.Kind.ALBUM) onOpenAlbum(row) else onPlay(row)
+}
+
 internal class MusicSearchSections(rows: List<MusicRow>) {
     private val unique = rows.filter { it.id.isNotBlank() }
         .sortedBy { it.resultType.searchPriority }.distinctBy { it.kind to it.id }
@@ -69,7 +73,8 @@ internal fun MusicSearchResults(
         MusicSearchFilter.ALBUMS -> sections.albums.isEmpty()
         MusicSearchFilter.PLAYLISTS -> sections.playlists.isEmpty()
     }
-    if (filter == MusicSearchFilter.PLAYLISTS && !empty) {
+    if (filter in listOf(MusicSearchFilter.ALBUMS, MusicSearchFilter.PLAYLISTS) && !empty) {
+        val collections = if (filter == MusicSearchFilter.ALBUMS) sections.albums else sections.playlists
         LazyVerticalGrid(
             modifier = Modifier.navigationBarsPadding(),
             columns = GridCells.Adaptive(140.dp),
@@ -78,8 +83,8 @@ internal fun MusicSearchResults(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item(key = "playlists-header", span = { GridItemSpan(maxLineSpan) }) { SearchSectionHeader("Playlists") }
-            gridItems(sections.playlists, key = { it.id }) { row ->
+            item(key = "collections-header", span = { GridItemSpan(maxLineSpan) }) { SearchSectionHeader(filter.label) }
+            gridItems(collections, key = { it.id }) { row ->
                 SearchCollectionCard(row, { onPlay(row) }, Modifier.fillMaxWidth())
             }
         }
@@ -129,7 +134,8 @@ internal fun MusicSearchResults(
                         }
                         IconButton(onClick = { if (top.id == state.nowPlayingId) onOpenPlayer() else onPlay(top) },
                             modifier = Modifier.background(AurisAccent, CircleShape)) {
-                            Icon(Icons.Filled.PlayArrow, "Play ${top.title}", tint = AurisBackground)
+                            Icon(if (top.kind == MusicRow.Kind.ALBUM) Icons.Filled.ChevronRight else Icons.Filled.PlayArrow,
+                                if (top.kind == MusicRow.Kind.ALBUM) "Open ${top.title}" else "Play ${top.title}", tint = AurisBackground)
                         }
                     }
                 }

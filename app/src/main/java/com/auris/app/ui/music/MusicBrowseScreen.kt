@@ -72,6 +72,7 @@ fun MusicBrowseScreen(
     onPrevious: () -> Unit = {},
     onNext: () -> Unit = {},
     onOptions: (MusicRow) -> Unit = {},
+    onOpenAlbum: (MusicRow) -> Unit = {},
 ) {
     var filterHistory by rememberSaveable(state.query) { mutableStateOf(listOf(MusicSearchFilter.TOP.name)) }
     val filter = MusicSearchFilter.valueOf(filterHistory.last())
@@ -140,7 +141,7 @@ fun MusicBrowseScreen(
                     )
                     else -> MusicSearchResults(
                         state = state, filter = filter, onFilter = selectFilter,
-                        onPlay = onPlay,
+                        onPlay = { selectMusicSearchResult(it, onPlay, onOpenAlbum) },
                         onOptions = onOptions,
                         onOpenPlayer = { if (!state.isResolving) onOpenPlayer() },
                     )

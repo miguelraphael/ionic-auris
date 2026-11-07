@@ -11,6 +11,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -542,20 +544,73 @@ fun AurisNavHost(
             val musicState by music.state.collectAsStateWithLifecycle()
 
             var optionsSong by remember { mutableStateOf<MusicRow?>(null) }
-            optionsSong?.let { song ->
-                com.auris.app.ui.music.MusicSongActions(song, music) { optionsSong = null }
+            var selectedAlbum by remember { mutableStateOf<MusicRow?>(null) }
+            var albumTracks by remember { mutableStateOf(emptyList<MusicRow>()) }
+            var albumLoading by remember { mutableStateOf(false) }
+            var albumError by remember { mutableStateOf<String?>(null) }
+            val albumScope = rememberCoroutineScope()
+            fun playAlbum(index: Int = 0) {
+                albumScope.launch {
+                    try {
+                        music.playPlaylist(albumTracks, index)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        albumError = "Could not start playback. Try another song."
+                    }
+                }
+            }
+            androidx.compose.runtime.LaunchedEffect(selectedAlbum) {
+                val album = selectedAlbum ?: return@LaunchedEffect
+                albumTracks = emptyList()
+                albumError = null
+                albumLoading = true
+                try {
+                    albumTracks = music.collectionRows(album.id).filter { it.kind == MusicRow.Kind.TRACK }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    albumError = "Could not load this album. Close it and try again."
+                } finally {
+                    albumLoading = false
+                }
             }
 
             MusicBrowseScreen(
                 state = musicState,
                 onQueryChange = music::search,
                 onPlay = music::play,
+                onOpenAlbum = { selectedAlbum = it },
                 onTogglePlayPause = music::togglePlayPause,
                 onPrevious = music::previous,
                 onNext = music::next,
                 onOptions = { optionsSong = it },
                 onOpenPlayer = { navController.navigate(Routes.PLAYER) },
             )
+            selectedAlbum?.let { album ->
+                com.auris.app.ui.music.MusicAlbumPage(
+                    title = album.title, tracks = albumTracks, loading = albumLoading, message = albumError ?: musicState.message,
+                    onBack = { selectedAlbum = null },
+                    onPlayAll = { playAlbum() },
+                    onPlay = { index -> playAlbum(index) },
+                    onOptions = { optionsSong = it },
+                    bottomBar = {
+                        if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
+                            title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
+                            artworkUrl = musicState.nowPlayingArtworkUrl, isPlaying = musicState.isPlaying,
+                            isLoading = musicState.isResolving || musicState.isBuffering,
+                            onClick = { if (!musicState.isResolving) { selectedAlbum = null; navController.navigate(Routes.PLAYER) } },
+                            onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
+                            canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
+                            canGoNext = !musicState.isResolving && musicState.canGoNext,
+                            modifier = Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    },
+                )
+            }
+            optionsSong?.let { song ->
+                com.auris.app.ui.music.MusicSongActions(song, music) { optionsSong = null }
+            }
         }
 
         // Settings. Diagnostics moved under it: a diagnostics screen reached from an

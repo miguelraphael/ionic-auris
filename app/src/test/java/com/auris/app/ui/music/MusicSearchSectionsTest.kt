@@ -8,6 +8,24 @@ class MusicSearchSectionsTest {
     private fun row(kind: MusicRow.Kind, id: String) = MusicRow(kind, id, null, null, id)
 
     @Test
+    fun albumTapOpensDetailsWithoutStartingPlayback() {
+        val opened = mutableListOf<MusicRow>()
+        val played = mutableListOf<MusicRow>()
+        val album = row(MusicRow.Kind.ALBUM, "MPREalbum")
+        selectMusicSearchResult(album, { played += it }, { opened += it })
+        assertEquals(listOf(album), opened)
+        assertTrue(played.isEmpty())
+    }
+
+    @Test
+    fun songTapStillStartsPlayback() {
+        val song = row(MusicRow.Kind.TRACK, "song")
+        val played = mutableListOf<MusicRow>()
+        selectMusicSearchResult(song, { played += it }, { fail("A song is not an album") })
+        assertEquals(listOf(song), played)
+    }
+
+    @Test
     fun groupsKindsAndDeduplicatesWithoutMergingDifferentKinds() {
         val song = row(MusicRow.Kind.TRACK, "same")
         val album = row(MusicRow.Kind.ALBUM, "same")

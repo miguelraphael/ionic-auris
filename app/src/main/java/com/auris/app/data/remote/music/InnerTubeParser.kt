@@ -41,6 +41,53 @@ class InnerTubeParser {
     /** Parses a `browse` response into tracks, albums and playlists. */
     fun parseBrowse(root: JsonObject): List<MusicCollectionItem> = root.collectRenderers()
 
+    /** The album shelf's own More endpoint supplies the current search filter. */
+    fun albumSearchParams(root: JsonObject): String? {
+        fun find(element: JsonElement, depth: Int = 0): String? {
+            if (depth > MAX_DEPTH) return null
+            return when (element) {
+                is JsonObject -> {
+                    val shelf = element["musicShelfRenderer"]?.asObject()
+                    val endpoint = shelf?.get("bottomEndpoint")?.asObject()?.get("searchEndpoint")?.asObject()
+                    val albums = shelf?.firstText("title").equals("Albums", ignoreCase = true)
+                    if (albums && endpoint != null) endpoint.string("params")
+                    else element.values.firstNotNullOfOrNull { find(it, depth + 1) }
+                }
+                is JsonArray -> element.firstNotNullOfOrNull { find(it, depth + 1) }
+                else -> null
+            }
+        }
+        return find(root)
+    }
+
+    /** Album rows often omit artists because the album header already names them. */
+    fun albumMetadata(root: JsonObject): Pair<String?, String?>? {
+        fun find(element: JsonElement, depth: Int = 0): JsonObject? {
+            if (depth > MAX_DEPTH) return null
+            return when (element) {
+                is JsonObject -> element["musicResponsiveHeaderRenderer"]?.asObject()
+                    ?: element["musicDetailHeaderRenderer"]?.asObject()
+                    ?: element.values.firstNotNullOfOrNull { find(it, depth + 1) }
+                is JsonArray -> element.firstNotNullOfOrNull { find(it, depth + 1) }
+                else -> null
+            }
+        }
+        val header = find(root) ?: return null
+        val artist = (header.runs("straplineTextOne") + header.runs("subtitle"))
+            .filter { run ->
+                val endpoint = run["navigationEndpoint"]?.asObject()?.get("browseEndpoint")?.asObject()
+                endpoint?.string("browseId")?.startsWith("UC") == true ||
+                    endpoint?.get("browseEndpointContextSupportedConfigs")?.asObject()
+                        ?.get("browseEndpointContextMusicConfig")?.asObject()?.string("pageType") == "MUSIC_PAGE_TYPE_ARTIST"
+            }.mapNotNull { it.string("text")?.takeIf(String::isNotBlank) }
+            .distinct().joinToString(", ").takeIf(String::isNotBlank)?.cleanArtist()
+            ?: header.firstText("straplineTextOne")?.takeIf(String::isNotBlank)?.cleanArtist()
+            ?: header.firstSubtitle()?.split("•")?.map(String::trim)
+                ?.filterIndexed { index, text -> text.isNotBlank() && !text.isNonMetadata(index) }
+                ?.firstOrNull()?.cleanArtist()
+        return header.firstTitle() to artist
+    }
+
     /** Only collection header renderers can supply an album cover, never a video row. */
     fun albumArtwork(root: JsonObject): String? {
         fun find(element: JsonElement, depth: Int = 0): String? {

@@ -55,6 +55,9 @@ interface MusicSource {
     /** Searches the catalogue. */
     suspend fun search(query: String, limit: Int): Result<List<MusicCollectionItem>>
 
+    /** User search can expand the short album preview without multiplying discovery requests. */
+    suspend fun searchWithAlbums(query: String, limit: Int): Result<List<MusicCollectionItem>> = search(query, limit)
+
     /** Fetches an album, playlist or other browsable collection, with its track list. */
     suspend fun collection(browseId: String, limit: Int): Result<List<MusicCollectionItem>>
 
@@ -116,6 +119,9 @@ class DefaultMusicSource(
 
     override suspend fun search(query: String, limit: Int): Result<List<MusicCollectionItem>> =
         catalogue.search(query, InnerTubeSearchParams.ALL, limit)
+
+    override suspend fun searchWithAlbums(query: String, limit: Int): Result<List<MusicCollectionItem>> =
+        catalogue.search(query, InnerTubeSearchParams.ALL, limit, includeAlbumResults = true)
 
     override suspend fun collection(browseId: String, limit: Int): Result<List<MusicCollectionItem>> =
         catalogue.collection(browseId, limit)

@@ -82,6 +82,7 @@ class InnerTubeClient(
         query: String,
         params: String? = InnerTubeSearchParams.ALL,
         limit: Int = DEFAULT_LIMIT,
+        includeAlbumResults: Boolean = false,
     ): Result<List<MusicCollectionItem>> = post(
         endpoint = "search",
         body = json.encodeToString(
@@ -90,7 +91,17 @@ class InnerTubeClient(
         ),
         transform = { json.parseToJsonElement(it).requireObject() },
     ).mapCatching { root ->
-        parser.parseSearch(root).take(if (limit > 0) limit else Int.MAX_VALUE)
+        val maximum = if (limit > 0) limit else Int.MAX_VALUE
+        val initial = parser.parseSearch(root).take(maximum)
+        val albumParams = if (includeAlbumResults) parser.albumSearchParams(root) else null
+        if (albumParams == null) initial else {
+            // Follow the endpoint supplied by this response, rather than pinning stale filter tokens.
+            val albums = search(query, albumParams, limit).getOrNull().orEmpty()
+                .filter { it.album != null }
+            (initial + albums).distinctBy { item ->
+                item.album?.browseId ?: item.playlist?.browseId ?: item.tracks.firstOrNull()?.videoId
+            }
+        }
     }
 
     /**
@@ -157,9 +168,16 @@ class InnerTubeClient(
         }
 
         val albumCover = if (browseId.startsWith("MPRE")) parser.albumArtwork(root) else null
+        val albumMetadata = if (browseId.startsWith("MPRE")) parser.albumMetadata(root) else null
         items.take(maxTracks.coerceAtLeast(0)).map { item ->
-            if (albumCover == null) item else item.copy(tracks = item.tracks.map { track ->
-                track.copy(artworkUrl = albumCover, largeArtworkUrl = albumCover, albumArtworkUrl = albumCover)
+            item.copy(tracks = item.tracks.map { track ->
+                track.copy(
+                    artist = track.artist?.takeIf { it.isNotBlank() } ?: albumMetadata?.second,
+                    album = track.album?.takeIf { it.isNotBlank() } ?: albumMetadata?.first,
+                    artworkUrl = albumCover ?: track.artworkUrl,
+                    largeArtworkUrl = albumCover ?: track.largeArtworkUrl,
+                    albumArtworkUrl = albumCover ?: track.albumArtworkUrl,
+                )
             })
         }
     }

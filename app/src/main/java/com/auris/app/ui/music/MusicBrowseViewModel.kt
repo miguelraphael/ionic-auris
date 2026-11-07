@@ -220,9 +220,15 @@ class MusicBrowseViewModel(
 
         searchJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MS)
-            source.search(query, BROWSE_LIMIT)
-                .onSuccess { items -> _state.value = _state.value.withResults(items, isLoading = false) }
-                .onFailure { error -> _state.value = _state.value.failed(error) }
+            source.searchWithAlbums(query, BROWSE_LIMIT)
+                .onSuccess { items ->
+                    currentCoroutineContext().ensureActive()
+                    _state.value = _state.value.withResults(items, isLoading = false)
+                }
+                .onFailure { error ->
+                    currentCoroutineContext().ensureActive()
+                    _state.value = _state.value.failed(error)
+                }
         }
     }
 
@@ -457,7 +463,7 @@ class MusicBrowseViewModel(
         val stream = resolved.stream?.takeIf { it.isPlayable() } ?: return null
         return PlayableTrack(
             track = track.copy(
-                artist = track.artist?.cleanArtist(),
+                artist = track.artist?.takeIf { it.isNotBlank() }?.cleanArtist() ?: resolved.author?.cleanArtist(),
                 artworkUrl = track.artworkUrl ?: youtubeThumbnailUrl(track.videoId),
                 largeArtworkUrl = track.largeArtworkUrl ?: track.artworkUrl
                     ?: youtubeThumbnailUrl(track.videoId, large = true),
@@ -736,8 +742,9 @@ internal fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
             MusicRow(
                 kind = MusicRow.Kind.TRACK,
                 title = track.title,
-                subtitle = listOfNotNull(artist, track.album).joinToString(" • ")
-                    .takeIf { it.isNotBlank() },
+                // The first subtitle segment is used as the artist at playback time. An
+                // album-only subtitle would incorrectly turn its title into an artist hint.
+                subtitle = artist?.let { listOfNotNull(it, track.album).joinToString(" • ") },
                 artworkUrl = track.largeArtworkUrl ?: track.artworkUrl,
                 albumArtworkUrl = track.albumArtworkUrl,
                 id = track.videoId,
