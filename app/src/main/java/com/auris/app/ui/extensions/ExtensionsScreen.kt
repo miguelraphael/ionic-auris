@@ -107,6 +107,27 @@ fun ExtensionsScreen(
     onBack: () -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 32.dp,
 ) {
+    state.pendingTrust?.let { request ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { actions.onConfirmTrust(false) },
+            title = { androidx.compose.material3.Text("Trust this extension publisher?") },
+            text = { androidx.compose.material3.Text(
+                "No trusted publisher key is configured for ${request.packageName}. " +
+                    "This extension can access Auris data and session state. Verify this signing fingerprint " +
+                    "through a trusted source before continuing:\n\n${request.fingerprint}"
+            ) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { actions.onConfirmTrust(true) }) {
+                    androidx.compose.material3.Text("Trust and install")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { actions.onConfirmTrust(false) }) {
+                    androidx.compose.material3.Text("Cancel")
+                }
+            },
+        )
+    }
     // The gradient tracks whichever icon the user last touched, so the header carries a colour.
     val palette = rememberArtworkPaletteValue(artworkKey = state.focusIconKey)
 
@@ -310,9 +331,9 @@ private fun ExtensionsHeader(
 
         Spacer(Modifier.height(4.dp))
 
-        // Signatures are not verified yet. Stated plainly rather than implied safe.
+        // Certificate pins protect updates; initial unkeyed installs require explicit trust.
         Text(
-            text = "Extensions run third-party code. Repos are not signature-verified yet.",
+            text = "Extensions run with Auris permissions. Publisher keys are checked when configured; unkeyed first installs require your trust.",
             style = MaterialTheme.typography.labelMedium,
             color = AurisOnSurfaceVariant.copy(alpha = 0.75f),
             modifier = Modifier.padding(top = 8.dp),

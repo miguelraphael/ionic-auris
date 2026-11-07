@@ -18,6 +18,24 @@ import org.junit.Test
  */
 class LogRedactionTest {
 
+    @Test
+    fun redactsGenericCredentialFieldsIncludingShortAndQuotedValues() {
+        val inputs = listOf(
+            "apikey=secret&other=value",
+            "access_token=short refresh_token=another",
+            "\"password\": \"a secret with spaces\"",
+            "API_KEY: abc",
+            "password='single quoted secret'",
+        )
+        inputs.forEach { input ->
+            val output = LogRedactor.redact(input)
+            assertTrue(output, output.contains("[redacted]"))
+            listOf("secret", "short", "another", "abc", "quoted").forEach {
+                assertFalse(output, output.contains(it))
+            }
+        }
+    }
+
     private fun redact(line: String) = LogRedactor.redact(line)
 
     // ---- The credential classes that must never leak -----------------------

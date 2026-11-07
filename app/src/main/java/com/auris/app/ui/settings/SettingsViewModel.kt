@@ -205,7 +205,7 @@ class SettingsViewModel(
                 )
             }
 
-            !trimmed.startsWith("https://") -> {
+            !com.auris.app.source.repo.isSecureRepositoryUrl(trimmed) -> {
                 _state.value = _state.value.copy(
                     repoEditing = true,
                     message = "Repository URL must use https:// — an unencrypted index can be " +

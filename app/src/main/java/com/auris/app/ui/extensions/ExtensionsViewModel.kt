@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
+import com.auris.app.source.repo.isSecureRepositoryUrl
 import java.io.File
 
 /** Callbacks the screen raises. */
@@ -37,7 +39,10 @@ data class ExtensionsUiActions(
     val onDismissMessage: () -> Unit = {},
     val onQueryChange: (String) -> Unit = {},
     val onLoadMore: () -> Unit = {},
+    val onConfirmTrust: (Boolean) -> Unit = {},
 )
+
+data class ExtensionTrustRequest(val packageName: String, val fingerprint: String)
 
 /** Everything the extensions screen renders. */
 data class ExtensionsUiState(
@@ -53,6 +58,7 @@ data class ExtensionsUiState(
     val focusIconKey: String? = null,
     val progress: Map<String, InstallProgress.Stage> = emptyMap(),
     val message: String? = null,
+    val pendingTrust: ExtensionTrustRequest? = null,
     /** Whether [message] reports a failure rather than a completed action. */
     val isMessageError: Boolean = false,
     /** Current search text; blank means no filtering. */
@@ -192,8 +198,8 @@ class ExtensionsViewModel(
      */
     fun setRepoUrl(url: String) {
         val trimmed = url.trim()
-        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-            _state.value = _state.value.copy(error = "Repository URL must start with http(s)://")
+        if (!isSecureRepositoryUrl(trimmed)) {
+            _state.value = _state.value.copy(error = "Repository URL must use https:// without embedded credentials")
             return
         }
         repoStore.update { current ->
@@ -237,6 +243,12 @@ class ExtensionsViewModel(
      * up by the loader on next launch and fail as a corrupt extension rather than a failed
      * install.
      */
+    private var trustDecision: CompletableDeferred<Boolean>? = null
+
+    fun confirmTrust(accepted: Boolean) {
+        trustDecision?.complete(accepted)
+    }
+
     fun install(item: ExtensionListItem) {
         viewModelScope.launch {
             val packageName = item.remote.packageName
@@ -338,8 +350,17 @@ class ExtensionsViewModel(
             }
 
             is SignatureVerdict.Pinned -> {
-                // Trust on first use. Allowed so a repository with no declared key is usable at
-                // all, but reported so the UI can say it is pinned rather than verified.
+                // Never load unknown third-party code until the user accepts this exact signer.
+                check(trustDecision == null) { "Another extension is awaiting trust approval" }
+                val decision = CompletableDeferred<Boolean>()
+                trustDecision = decision
+                _state.value = _state.value.copy(pendingTrust = ExtensionTrustRequest(item.remote.packageName, verdict.fingerprint))
+                try {
+                    check(decision.await()) { "Installation cancelled: publisher was not trusted" }
+                } finally {
+                    trustDecision = null
+                    _state.value = _state.value.copy(pendingTrust = null)
+                }
                 Log.w(
                     TAG,
                     "No declared signing key for ${item.remote.packageName}; " +
@@ -421,4 +442,5 @@ fun ExtensionsViewModel.actions(): ExtensionsUiActions = ExtensionsUiActions(
     onDismissMessage = ::consumeMessage,
     onQueryChange = ::onQueryChange,
     onLoadMore = ::loadMore,
+    onConfirmTrust = ::confirmTrust,
 )

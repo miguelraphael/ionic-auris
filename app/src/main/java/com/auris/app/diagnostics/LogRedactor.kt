@@ -40,6 +40,9 @@ object LogRedactor {
         // `Cookie: session=…` / `Cookie=…`
         Rule(Regex("""((?i:cookie)\s*[:=]\s*)\S+"""), keepGroup = 1),
 
+        // Query parameters, JSON fields and key=value error messages (including short secrets).
+        Rule(Regex("""((?i:apikey|api_key|access_token|refresh_token|password)\b["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s&,;}]+)"""), keepGroup = 1),
+
         // Supabase project URLs. The ref is not itself a secret, but it pairs with any key that
         // leaked beside it, so the whole URL is masked.
         Rule(Regex("""https?://[a-z0-9-]+\.supabase\.co""", RegexOption.IGNORE_CASE), keepGroup = 0),

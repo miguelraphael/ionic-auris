@@ -32,6 +32,20 @@ class LogExporterTest {
     )
 
     @Test
+    fun exportedBufferAndStateAreRedacted() = kotlinx.coroutines.runBlocking {
+        val context: android.content.Context = ApplicationProvider.getApplicationContext()
+        val buffer = AurisLogBuffer()
+        buffer.append('E', "Auth", "password=buffer-secret")
+        val exporter = LogExporter(context, buffer, { "access_token=state-secret" }, includeLogcat = false)
+
+        val file = exporter.exportAndShare().getOrThrow()
+        val text = file.readText()
+        assertTrue(text.contains("[redacted]"))
+        org.junit.Assert.assertFalse(text.contains("buffer-secret"))
+        org.junit.Assert.assertFalse(text.contains("state-secret"))
+    }
+
+    @Test
     fun shareIntentCarriesStreamAndSubject() {
         val uri = Uri.parse("content://com.auris.app.fileprovider/diagnostics/x.txt")
 

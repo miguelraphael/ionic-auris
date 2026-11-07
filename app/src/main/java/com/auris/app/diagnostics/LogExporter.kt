@@ -60,7 +60,7 @@ class LogExporter(
                 writeHeader(writer)
                 writeAppState(writer)
                 writeOwnLogs(writer)
-                writeLogcat(writer)
+                if (includeLogcat) writeLogcat(writer)
                 writeFooter(writer)
             }
 
@@ -91,14 +91,14 @@ class LogExporter(
     private suspend fun writeAppState(writer: PrintWriter) {
         writer.println("===== APP STATE =====")
         runCatching { appStateProvider() }
-            .onSuccess { writer.println(it) }
-            .onFailure { writer.println("(could not collect app state: ${it.message})") }
+            .onSuccess { writer.println(LogRedactor.redact(it)) }
+            .onFailure { writer.println(LogRedactor.redact("(could not collect app state: ${it.message})")) }
         writer.println()
     }
 
     private fun writeOwnLogs(writer: PrintWriter) {
         writer.println("===== APP LOG BUFFER (${buffer.size()} entries) =====")
-        buffer.drain().forEach { writer.println(it) }
+        buffer.drain().forEach { writer.println(LogRedactor.redact(it)) }
         writer.println()
     }
 
@@ -123,7 +123,7 @@ class LogExporter(
         }.onFailure {
             // `logcat` is unavailable on some hardened/enterprise builds, and it is not a reason
             // to fail the whole export — the app's own buffer is the more useful half anyway.
-            writer.println("(logcat unavailable: ${it.message})")
+            writer.println(LogRedactor.redact("(logcat unavailable: ${it.message})"))
         }
         writer.println()
     }
@@ -187,7 +187,9 @@ class LogExporter(
     }.getOrDefault("unknown")
 
     private fun appVersionCode(): Long = runCatching {
-        context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+        androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(
+            context.packageManager.getPackageInfo(context.packageName, 0),
+        )
     }.getOrDefault(0L)
 
     private fun installTime(): String = runCatching {

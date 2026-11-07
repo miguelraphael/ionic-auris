@@ -356,7 +356,7 @@ private fun RepoSection(
  * the repository's own site, a keyserver, or the maintainer.
  *
  * That is why it is not auto-populated from `index.json`, even though Keiyoushi's index does
- * carry a `signingKey` field. It is offered as documentation, not read as authority.
+ * carry a `signingKey` field. This manually configured key is enforced during installation.
  */
 @Composable
 private fun SigningKeyField(
