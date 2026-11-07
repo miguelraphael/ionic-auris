@@ -175,6 +175,12 @@ android {
     tasks.matching { it.name.startsWith("merge") && it.name.endsWith("AndroidTestAssets") }
         .configureEach { dependsOn(mockExtensionApk) }
 
+    // Android-test lint also reads the generated fixture assets.
+    tasks.matching {
+        (it.name.startsWith("lintAnalyze") && it.name.endsWith("AndroidTest")) ||
+            (it.name.startsWith("generate") && it.name.endsWith("AndroidTestLintModel"))
+    }.configureEach { dependsOn(mockExtensionApk) }
+
     packaging {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",

@@ -22,3 +22,16 @@ Consent does not authenticate a compromised repository's first publisher key. No
 Backend RLS cannot be established from client source. See [backend verification](README.md). No backend changes, account deletion, credential rotation, production key generation, or release publication were performed.
 
 A signed/minified release APK and device behavior require separate verification. The release signing configuration deliberately fails when required credentials are missing. Existing debug installations use a different package from the production release.
+
+## Verification
+
+The integrated run completed successfully on 2026-11-07:
+
+- `:app:assembleDebug`: passed.
+- `:app:testDebugUnitTest`: 447 total, 440 passed, 7 skipped, no failures/errors.
+- `:app:lintDebug`: 0 errors, 111 warnings (previous audit: 10 errors).
+- `:app:assembleDebugAndroidTest`: passed; no device tests executed.
+- Missing-signing negative check: `:app:validateReleaseSigning` failed as intended with the required-variable message.
+- Release workflow YAML/bash and matching/mismatching tag-version fixtures checked.
+
+The combined build exposed an undeclared dependency between generated extension test assets and Android-test lint. Declaring both lint consumers' dependency fixed the task ordering; the full combined run then passed. Existing D8 Kotlin-metadata warnings remain and did not fail the debug build. These checks do not establish signed/minified release behavior or on-device behavior.
