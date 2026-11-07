@@ -37,6 +37,9 @@ open. No token is copied into the Room mirror. This does not claim that the SDK'
 is encrypted. The library database and its identity mirror are still included in platform
 backup; restoring them does not authenticate the SDK.
 
+See [local data privacy](local-data-privacy.md) for the email/history included in platform
+backup, sign-out retention, deletion limits, and local-only unit progress.
+
 Device-local music playlists are separate from the synced Room library and retain their
 existing device-local behavior. A delayed save of a brand-new public catalogue item with no
 captured owner can still run under the account active when the save reaches the repository;

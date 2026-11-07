@@ -227,14 +227,23 @@ interface LibraryDao {
     suspend fun softDelete(id: String, now: Long = System.currentTimeMillis()): Int
 
     /**
-     * Removes a tombstone for good, once Supabase has confirmed the delete (or the user
-     * signed out). Units go with it via `ON DELETE CASCADE`.
+     * Removes a tombstone for good once Supabase has confirmed the delete.
+     * Explicit unit cleanup avoids relying on a connection's foreign-key setting.
      *
      * Kept separate from [softDelete] on purpose: nothing in the UI path may hard-delete,
      * or a deleted item would reappear on the next pull.
      */
+    @Transaction
+    suspend fun purgeTombstone(id: String): Int {
+        deleteTombstoneUnits(id)
+        return deleteTombstone(id)
+    }
+
+    @Query("DELETE FROM library_units WHERE entry_id = :id AND entry_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND is_deleted = 1)")
+    suspend fun deleteTombstoneUnits(id: String)
+
     @Query("DELETE FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND id = :id AND is_deleted = 1")
-    suspend fun purgeTombstone(id: String): Int
+    suspend fun deleteTombstone(id: String): Int
 
     /**
      * Deletes tombstoned rows whose delete has already been confirmed by the server.
@@ -243,7 +252,8 @@ interface LibraryDao {
     @Query(
         """
         DELETE FROM library_entries
-        WHERE is_deleted = 1 AND sync_state = 'SYNCED' AND updated_at < :before
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1)
+          AND is_deleted = 1 AND sync_state = 'SYNCED' AND updated_at < :before
         """
     )
     suspend fun purgeSyncedTombstones(before: Long): Int

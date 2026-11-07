@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <data-extraction-rules>
-    <!-- auris.db contains local library entities; auth credentials are held in Supabase secure storage, not Room -->
+    <!-- Both transfers include account IDs, email, library/history, progress and pending
+         uploads in auris.db. SDK tokens are not mirrored into Room. Table-level exclusions
+         are unavailable; see docs/security/local-data-privacy.md. -->
     <cloud-backup>
         <include domain="database" path="auris.db" />
     </cloud-backup>

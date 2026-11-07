@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <full-backup-content>
-    <!-- auris.db contains local library entities; auth credentials are held in Supabase secure storage, not Room -->
+    <!-- Intentional library recovery backup: auris.db includes account IDs, email,
+         titles, history, progress and pending uploads. Current SDK tokens are not mirrored
+         into Room. Android rules cannot exclude individual tables from this database.
+         See docs/security/local-data-privacy.md for retention and restore behavior. -->
     <include domain="database" path="auris.db" />
 </full-backup-content>

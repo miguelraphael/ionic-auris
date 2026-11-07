@@ -10,6 +10,9 @@ import com.auris.app.data.local.entity.SyncOp
 import com.auris.app.data.local.entity.SyncOutboxEntity
 import com.auris.app.data.local.entity.SyncSessionEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /** Result of one successful drain pass, surfaced in Settings → Sync. */
 data class SyncStats(
@@ -85,6 +88,12 @@ interface SyncDao {
     @Query("DELETE FROM sync_outbox WHERE entity_id IN (SELECT id FROM library_entries WHERE user_id = :userId)")
     suspend fun clearOutboxFor(userId: String)
 
+    @Query("DELETE FROM sync_outbox WHERE entity_id = :entryId AND entity_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1))")
+    suspend fun clearOutboxForEntry(entryId: String)
+
+    @Query("SELECT * FROM sync_outbox WHERE NOT EXISTS (SELECT 1 FROM library_entries WHERE id = sync_outbox.entity_id)")
+    suspend fun orphanedOutbox(): List<SyncOutboxEntity>
+
     // ---- Session -------------------------------------------------------------
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -99,9 +108,22 @@ interface SyncDao {
     @Query("DELETE FROM library_entries WHERE user_id = :userId")
     suspend fun deleteLibraryFor(userId: String)
 
+    @Query("DELETE FROM library_units WHERE entry_id IN (SELECT id FROM library_entries WHERE user_id = :userId)")
+    suspend fun deleteUnitsFor(userId: String)
+
     @Transaction
     suspend fun deleteAccountData(userId: String) {
         clearOutboxFor(userId)
+        // An orphan has no row to prove its owner. Only remove payloads that still
+        // identify this account; ownerless/malformed legacy work stays quarantined.
+        for (op in orphanedOutbox()) {
+            val owner = runCatching {
+                op.payload?.let { Json.parseToJsonElement(it).jsonObject["userId"]?.jsonPrimitive?.content }
+            }.getOrNull()
+            if (owner == userId) dequeue(op.id)
+        }
+        // Do not rely on a per-connection foreign-key setting for privacy cleanup.
+        deleteUnitsFor(userId)
         deleteLibraryFor(userId)
         clearSession()
     }
