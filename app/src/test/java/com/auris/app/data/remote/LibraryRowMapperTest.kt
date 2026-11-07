@@ -19,6 +19,7 @@ import org.junit.Test
 class LibraryRowMapperTest {
 
     private fun entry() = LibraryEntryEntity(
+        userId = "user-1",
         id = "entry-1",
         remoteId = "entry-1",
         mediaType = MediaType.ANIME,
@@ -28,6 +29,16 @@ class LibraryRowMapperTest {
         localArtworkPath = "/local/art.jpg",
         createdAt = 1_700_000_000_000L,
     )
+
+    @Test(expected = IllegalArgumentException::class)
+    fun refusesToReattributeAnotherAccountsEntry() {
+        entry().toRow("user-2", 1_700_000_000_000L)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun refusesOwnerlessUploads() {
+        entry().copy(userId = null).toRow("user-1", 1_700_000_000_000L)
+    }
 
     @Test
     fun timestampsCrossAsIsoStrings() {

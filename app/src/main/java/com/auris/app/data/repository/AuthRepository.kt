@@ -12,29 +12,33 @@ import io.github.jan.supabase.auth.user.UserSession
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
  * Email/password authentication against Supabase Auth, mirrored into Room.
  *
- * ### Two sources of truth, deliberately
+ * ### SDK session is authoritative
  * supabase-kt persists its own token pair and refreshes it (`Auth` owns
  * refresh, so no caller here ever handles a token). `sync_sessions` mirrors
  * the *identity* — user id and email — so the sync worker can
  * gate on "signed in" with a Room read and address rows to the right owner
  * without touching the network stack. Tokens are managed exclusively by
- * supabase-kt's secure storage and are never mirrored into Room or backup archives.
+ * supabase-kt's SDK-managed storage and are never mirrored into Room or backup archives.
  * The mirror is one-way: auth state flows from supabase-kt into Room, never back.
  *
  * ### Why sign-out always clears locally
  * A sign-out that needs the network strands the user signed in on airplane
  * mode. The server revocation is best-effort; the local row is always
- * dropped, which is what actually gates the app.
+ * dropped and the authenticated session flow is cleared.
  */
 class AuthRepository(
     private val auth: Auth,
@@ -46,28 +50,26 @@ class AuthRepository(
 ) {
 
     /** Null when signed out — this is what gates the app. */
-    val session: Flow<SyncSessionEntity?> = syncDao.observeSession()
+    private val authenticatedSession = MutableStateFlow<SyncSessionEntity?>(null)
+    private val initialized = CompletableDeferred<Unit>()
+    val session: Flow<SyncSessionEntity?> = flow {
+        initialized.await()
+        emitAll(authenticatedSession)
+    }
+
+    /** A restored Room mirror alone never authorizes network sync. */
+    fun currentAuthenticatedSession(): SyncSessionEntity? = authenticatedSession.value?.takeIf {
+        auth.currentSessionOrNull()?.user?.id == it.userId
+    }
 
     private val _sessionExpired = MutableStateFlow(false)
 
-    /**
-     * True when the stored session ended without the user asking.
-     *
-     * supabase-kt clears its own token pair when a refresh is rejected (revoked or expired
-     * refresh token), emitting [SessionStatus.NotAuthenticated]. The Room mirror is deliberately
-     * left alone on that path, so a non-null mirror at that moment is what distinguishes an
-     * involuntary end from an explicit sign-out.
-     *
-     * Not a sign-out: the local library stays readable and editable offline, and a user may
-     * choose to finish what they are doing before re-authenticating. The shell turns this into
-     * a dismissible dialog.
-     */
+    /** True when SDK authentication expires; the gate closes while owned local data is retained. */
     val sessionExpired: StateFlow<Boolean> = _sessionExpired.asStateFlow()
 
     init {
         // Token refreshes land here: supabase-kt emits a new Authenticated
-        // status after each rotation, and the mirror follows so the stored
-        // pair never goes stale. A RefreshFailure is transient by definition
+        // status after each rotation; only its identity is mirrored into Room. A RefreshFailure is transient by definition
         // (`NetworkError` or `InternalServerError`) and is left to the offline
         // and error states; signing out stays explicit, and local work must
         // survive.
@@ -76,17 +78,29 @@ class AuthRepository(
                 when (status) {
                     is SessionStatus.Authenticated -> {
                         _sessionExpired.value = false
-                        runCatching { persist(status.session) }
+                        AccountAccess.mutex.withLock { persist(status.session) }
+                        initialized.complete(Unit)
                     }
 
                     is SessionStatus.NotAuthenticated -> {
                         // Sign-out clears the Room mirror too, so a row that outlives
                         // NotAuthenticated means the session ended underneath the user.
-                        _sessionExpired.value = syncDao.currentSession() != null
+                        AccountAccess.mutex.withLock {
+                            if (auth.currentSessionOrNull() == null) {
+                                _sessionExpired.value = authenticatedSession.value != null
+                                authenticatedSession.value = null
+                                syncDao.clearSession()
+                                initialized.complete(Unit)
+                            }
+                        }
                     }
 
-                    // Initializing and RefreshFailure do not change the verdict: neither says
-                    // anything certain about the stored session.
+                    // A transient refresh failure may still carry a locally restored SDK
+                    // session. The Room mirror alone never grants access.
+                    is SessionStatus.RefreshFailure -> {
+                        AccountAccess.mutex.withLock { auth.currentSessionOrNull()?.let { persist(it) } }
+                        initialized.complete(Unit)
+                    }
                     else -> Unit
                 }
             }
@@ -96,7 +110,7 @@ class AuthRepository(
     /** Registers and signs in, unless the project requires email confirmation. */
     suspend fun signUp(email: String, password: String): Result<SignUpOutcome> =
         withContext(ioDispatcher) {
-            runCatching {
+            AccountAccess.mutex.withLock { runCatching {
                 auth.signUpWith(Email) {
                     this.email = email.trim()
                     this.password = password
@@ -109,23 +123,25 @@ class AuthRepository(
                 } else {
                     SignUpOutcome.ConfirmEmailRequired
                 }
-            }
+            } }
         }
 
     suspend fun signIn(email: String, password: String): Result<Unit> =
         withContext(ioDispatcher) {
-            runCatching {
+            AccountAccess.mutex.withLock { runCatching {
                 auth.signInWith(Email) {
                     this.email = email.trim()
                     this.password = password
                 }
                 persistCurrent()
-            }
+            } }
         }
 
-    suspend fun signOut() {
+    suspend fun signOut() = AccountAccess.mutex.withLock {
         runCatching { auth.signOut(SignOutScope.GLOBAL) }
-        withContext(ioDispatcher) { syncDao.clearSession() }
+        // A failed network revocation must still remove the SDK's local credentials.
+        auth.clearSession()
+        withContext(ioDispatcher) { syncDao.clearSession(); authenticatedSession.value = null }
         // Explicit sign-out is not an expiry. Reset after the clear so a collector that ran
         // between the auth status change and the Room delete cannot leave the flag set.
         _sessionExpired.value = false
@@ -149,15 +165,16 @@ class AuthRepository(
      * server data under a live account with no way back to it.
      */
     suspend fun deleteAccount(): Result<Unit> = withContext(ioDispatcher) {
-        runCatching {
+        AccountAccess.mutex.withLock { runCatching {
             val userId = auth.currentSessionOrNull()?.user?.id
-                ?: syncDao.currentSession()?.userId
                 ?: error("Not signed in")
             remote.deleteAllEntries(userId)
             runCatching { auth.signOut(SignOutScope.GLOBAL) }
-            syncDao.clearSession()
+            auth.clearSession()
+            syncDao.deleteAccountData(userId)
+            authenticatedSession.value = null
             _sessionExpired.value = false
-        }
+        } }
     }
 
     private suspend fun persistCurrent() {
@@ -170,15 +187,19 @@ class AuthRepository(
 
     private suspend fun persist(session: UserSession) {
         val user = session.user ?: return
-        syncDao.saveSession(
+        if (auth.currentSessionOrNull()?.user?.id != user.id) return
+        val previous = syncDao.currentSession()?.takeIf { it.userId == user.id }
+        syncDao.replaceSession(
             SyncSessionEntity(
                 userId = user.id,
                 email = user.email,
                 accessToken = null,
                 refreshToken = null,
+                lastPulledAt = previous?.lastPulledAt,
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+        authenticatedSession.value = syncDao.currentSession()
     }
 }
 

@@ -430,7 +430,7 @@ class MigrationsTest {
         // from its version to the current one and finds none.
         val versions = Migrations.ALL.map { it.startVersion to it.endVersion }
 
-        assertEquals(listOf(1 to 2, 2 to 3, 3 to 4), versions)
+        assertEquals(listOf(1 to 2, 2 to 3, 3 to 4, 4 to 5), versions)
         // Contiguous from 1 with no gaps.
         versions.zipWithNext().forEach { (first, second) ->
             assertEquals(

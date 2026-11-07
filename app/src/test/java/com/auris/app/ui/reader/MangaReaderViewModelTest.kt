@@ -51,6 +51,7 @@ class MangaReaderViewModelTest {
     private fun reader(index: Int = 1): MangaReaderViewModel {
         val dao = proxy<LibraryDao> { method, args -> when (method) {
             "observeById" -> MutableStateFlow(entry)
+            "findById" -> entry
             "observeUnits" -> units
             "updateUnitProgress" -> { lastProgressPage = args[3] as Long; Unit }
             "updateProgress" -> Unit

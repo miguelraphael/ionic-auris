@@ -20,7 +20,7 @@ import com.auris.app.data.local.entity.SyncSessionEntity
         SyncSessionEntity::class,
         ExtensionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -40,6 +40,7 @@ abstract class AurisDatabase : RoomDatabase() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
                         // Required for our ON DELETE CASCADE from library_entries to library_units.
                         db.execSQL("PRAGMA foreign_keys = ON")
+                        db.execSQL("UPDATE sync_sessions SET access_token = NULL, refresh_token = NULL")
                     }
                 })
                 // No fallbackToDestructiveMigration: the library is user data and a

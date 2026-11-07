@@ -345,7 +345,6 @@ private fun AuthGate(
             onPasswordChange = authViewModel::onPasswordChange,
             onToggleMode = authViewModel::toggleMode,
             onSubmit = authViewModel::submit,
-            onDemoAccount = authViewModel::useDemoAccount,
             modifier = Modifier.fillMaxSize(),
         )
     }

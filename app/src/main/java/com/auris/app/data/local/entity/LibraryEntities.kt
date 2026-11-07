@@ -26,8 +26,8 @@ import kotlinx.serialization.Serializable
 @Entity(
     tableName = "library_entries",
     indices = [
-        // Enforces one row per (type, source, sourceKey). Upserts use this conflict target.
-        Index(value = ["media_type", "source_id", "source_key"], unique = true),
+        // Each account has its own row for a source identity.
+        Index(value = ["user_id", "media_type", "source_id", "source_key"], unique = true),
         Index("media_type"),
         Index("sync_state"),
         Index("last_activity_at"),

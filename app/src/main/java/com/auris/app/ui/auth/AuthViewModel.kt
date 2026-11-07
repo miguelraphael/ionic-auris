@@ -59,26 +59,6 @@ class AuthViewModel(
     }
 
     /**
-     * Fills the form with the placeholder demo credentials for a UI walkthrough.
-     *
-     * Deliberately not a sign-in: nothing is sent and no session is forged, so the
-     * button cannot become a bypass. The user still presses Sign in, which runs the
-     * exact same path as a hand-typed login. Switches to sign-in mode so the prefilled
-     * pair matches the action the user is about to take.
-     */
-    fun useDemoAccount() {
-        _state.value = _state.value.copy(
-            isRegisterMode = false,
-            email = DEMO_EMAIL,
-            password = DEMO_PASSWORD,
-            error = null,
-            emailError = null,
-            passwordError = null,
-            notice = null,
-        )
-    }
-
-    /**
      * Clears the transient state when the gate becomes visible again.
      *
      * The gate ViewModel is Activity-scoped, so it outlives a successful sign-in. On success
@@ -89,6 +69,7 @@ class AuthViewModel(
     fun onGateShown() {
         _state.value = _state.value.copy(
             isLoading = false,
+            password = "",
             error = null,
             emailError = null,
             passwordError = null,
@@ -137,7 +118,7 @@ class AuthViewModel(
                     .onSuccess { outcome ->
                         _state.value = when (outcome) {
                             // The gate observes the session and proceeds by itself.
-                            SignUpOutcome.SignedIn -> _state.value.copy(isLoading = false)
+                            SignUpOutcome.SignedIn -> _state.value.copy(isLoading = false, password = "")
                             SignUpOutcome.ConfirmEmailRequired -> _state.value.copy(
                                 isLoading = false,
                                 isRegisterMode = false,
@@ -155,6 +136,7 @@ class AuthViewModel(
                     }
             } else {
                 authRepository.signIn(email, password)
+                    .onSuccess { _state.value = _state.value.copy(password = "") }
                     .onFailure { error ->
                         _state.value = _state.value.copy(
                             isLoading = false,
@@ -167,6 +149,11 @@ class AuthViewModel(
                 // be double-tapped during the handover.
             }
         }
+    }
+
+    override fun onCleared() {
+        _state.value = _state.value.copy(password = "")
+        super.onCleared()
     }
 
     class Factory(
@@ -186,15 +173,6 @@ class AuthViewModel(
          * authority on deliverability.
          */
         private val EMAIL_PATTERN = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
-
-        /**
-         * Placeholder credentials for the demo prefill. These are UI fixtures only —
-         * they are never sent anywhere until the user taps Sign in, and they are not
-         * a shipped account. Point them at a real Supabase user you have created if
-         * you want the demo path to actually authenticate.
-         */
-        const val DEMO_EMAIL = "demo@auris.app"
-        const val DEMO_PASSWORD = "demo123"
 
         fun factory(authRepository: AuthRepository): ViewModelProvider.Factory =
             Factory(authRepository)

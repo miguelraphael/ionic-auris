@@ -36,6 +36,7 @@ class LibrarySearchTest {
             AurisDatabase::class.java,
         ).allowMainThreadQueries().build()
         dao = db.libraryDao()
+        runBlocking { db.syncDao().saveSession(com.auris.app.data.local.entity.SyncSessionEntity("search-test")) }
     }
 
     @After
@@ -43,6 +44,7 @@ class LibrarySearchTest {
 
     private fun entry(title: String, key: String, author: String? = null) =
         LibraryEntryEntity(
+            userId = "search-test",
             mediaType = MediaType.ANIME,
             sourceId = "example.org",
             sourceKey = key,

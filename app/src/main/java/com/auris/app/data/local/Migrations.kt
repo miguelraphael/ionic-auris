@@ -121,6 +121,17 @@ object Migrations {
         }
     }
 
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Legacy local rows were not account-scoped. Even the old session mirror cannot
+            // establish their provenance after an account switch. Keep ownerless rows and
+            // pending work quarantined; never give them to whichever account signs in next.
+            db.execSQL("UPDATE sync_sessions SET access_token = NULL, refresh_token = NULL, last_pulled_at = NULL")
+            db.execSQL("DROP INDEX IF EXISTS index_library_entries_media_type_source_id_source_key")
+            db.execSQL("CREATE UNIQUE INDEX index_library_entries_user_id_media_type_source_id_source_key ON library_entries(user_id, media_type, source_id, source_key)")
+        }
+    }
+
     /** Every migration, in order. */
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 }

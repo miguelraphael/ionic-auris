@@ -14,6 +14,7 @@ import com.auris.app.data.sync.SyncScheduler
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 
 /**
@@ -32,6 +33,7 @@ class LibraryRepository(
     private val syncScheduler: SyncScheduler,
     private val ioDispatcher: CoroutineDispatcher,
     private val json: Json,
+    private val requestSync: () -> Unit = syncScheduler::requestSync,
 ) {
 
     // ---- Reads ---------------------------------------------------------------
@@ -55,18 +57,15 @@ class LibraryRepository(
      * Finds the existing row for a catalogue title, if any.
      *
      * `@Upsert` keys on the primary key `id`, not on the unique index
-     * (media_type, source_id, source_key), so re-upserting a freshly built entry
-     * with a new random id would violate the unique index instead of reusing the
-     * row. Callers therefore look up first and reuse the existing id.
-     * Implemented over the existing `findByRemoteMediaId` query — no schema change.
+     * (user_id, media_type, source_id, source_key), so use the active owner's exact
+     * source identity when finding an existing row.
      */
     suspend fun findBySource(
         mediaType: MediaType,
         sourceId: String,
         sourceKey: String,
     ): LibraryEntryEntity? = withContext(ioDispatcher) {
-        libraryDao.findByRemoteMediaId(mediaType, sourceKey)
-            .firstOrNull { it.sourceId == sourceId && it.sourceKey == sourceKey }
+        libraryDao.findBySourceIdentity(mediaType, sourceId, sourceKey)
     }
 
     fun observeUnits(entryId: String): Flow<List<LibraryUnitEntity>> =
@@ -83,33 +82,60 @@ class LibraryRepository(
     // ---- Writes --------------------------------------------------------------
 
     suspend fun upsert(entry: LibraryEntryEntity): LibraryEntryEntity = write {
+        val owner = syncDao.currentSession()?.userId ?: error("Not signed in")
+        require(entry.userId == null || entry.userId == owner) { "Entry belongs to another account" }
+        val existing = libraryDao.findBySourceIdentity(entry.mediaType, entry.sourceId, entry.sourceKey)
+        // Music mappers use device-wide deterministic ids. Namespace new source identities
+        // per account so saving the same title cannot replace another account's primary key.
+        val id = existing?.id ?: if (entry.userId == null) java.util.UUID.nameUUIDFromBytes(
+            listOf(owner, entry.mediaType.name, entry.sourceId, entry.sourceKey)
+                .joinToString("") { "${it.length}:$it" }.toByteArray(Charsets.UTF_8)
+        ).toString() else entry.id
+        require(!libraryDao.belongsToOtherOwner(id, owner)) { "Entry belongs to another account" }
         val stamped = entry.copy(
+            id = id,
+            remoteId = existing?.remoteId ?: if (entry.userId == null) id else entry.remoteId,
+            userId = owner,
             syncState = SyncState.PENDING_UPLOAD,
             updatedAt = System.currentTimeMillis(),
         )
         libraryDao.upsert(stamped)
         queue(stamped, SyncOp.UPSERT)
-        syncScheduler.requestSync()
+        requestSync()
         stamped
     }
 
     /** Bulk insert used by the Supabase pull and by extension/playlist imports. */
     suspend fun upsertAll(entries: List<LibraryEntryEntity>): Unit = write {
-        val now = System.currentTimeMillis()
-        val stamped = entries.map { it.copy(updatedAt = now) }
-        libraryDao.upsertAll(stamped)
-        // Rows that came *from* the server must not be re-queued for upload.
-        syncDao.markEntriesSynced(stamped.map { it.id }, now)
+        val owner = syncDao.currentSession()?.userId ?: return@write
+        mergeRemoteEntries(owner, entries)
+    }
+
+    /** Caller must hold AccountAccess.mutex, including the worker's complete network pass. */
+    internal suspend fun mergeRemoteEntries(owner: String, entries: List<LibraryEntryEntity>) {
+        require(entries.all { it.userId == owner }) { "Cannot import another account's entries" }
+        val mapped = entries.map { entry ->
+            val existing = libraryDao.findBySourceIdentity(entry.mediaType, entry.sourceId, entry.sourceKey)
+            val localId = existing?.id ?: if (libraryDao.belongsToOtherOwner(entry.id, owner)) {
+                java.util.UUID.nameUUIDFromBytes("$owner:remote:${entry.remoteId}".toByteArray(Charsets.UTF_8)).toString()
+            } else entry.id
+            require(!libraryDao.belongsToOtherOwner(localId, owner)) { "Conflicting account identity" }
+            entry.copy(id = localId)
+        }
+        libraryDao.upsertAll(mapped)
+        syncDao.markEntriesSynced(mapped.map { it.id }, System.currentTimeMillis())
     }
 
     suspend fun upsertUnits(entryId: String, units: List<LibraryUnitEntity>) = write {
+        if (libraryDao.findById(entryId) == null) return@write
+        require(units.all { it.entryId == entryId }) { "Units belong to another entry" }
         libraryDao.upsertUnits(units)
     }
 
     suspend fun setFavorite(entryId: String, favorite: Boolean): Unit = write {
         val updated = libraryDao.setFavorite(entryId, favorite, System.currentTimeMillis())
         if (updated > 0) {
-            syncScheduler.requestSync()
+            requestSync()
         }
     }
 
@@ -126,6 +152,7 @@ class LibraryRepository(
         status: EntryStatus?,
         mediaType: MediaType = MediaType.MUSIC,
     ) = write {
+        if (libraryDao.findById(entryId) == null) return@write
         val now = System.currentTimeMillis()
         libraryDao.updateProgress(entryId, progress, unitIndex, unitTitle, positionMs, status, now)
         syncDao.enqueue(
@@ -151,7 +178,7 @@ class LibraryRepository(
 
     /** Soft delete so the tombstone reaches Supabase before the row disappears locally. */
     suspend fun delete(entryId: String) = write {
-        libraryDao.softDelete(entryId)
+        if (libraryDao.softDelete(entryId) == 0) return@write
         syncDao.enqueue(
             SyncOutboxEntity(
                 entityId = entryId,
@@ -160,7 +187,7 @@ class LibraryRepository(
                 dedupeKey = "$entryId:delete",
             ),
         )
-        syncScheduler.requestSync()
+        requestSync()
     }
 
     // ---- Internal ------------------------------------------------------------
@@ -181,5 +208,5 @@ class LibraryRepository(
 
     /** Runs the write on the IO dispatcher; Room already forbids main-thread queries. */
     private suspend fun <T> write(block: suspend () -> T): T =
-        withContext(ioDispatcher) { block() }
+        withContext(ioDispatcher) { AccountAccess.mutex.withLock { block() } }
 }

@@ -11,6 +11,8 @@ import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.data.local.entity.SyncOp
 import com.auris.app.data.remote.SupabaseLibraryDataSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
+import com.auris.app.data.repository.AccountAccess
 import kotlinx.serialization.json.Json
 
 /**
@@ -34,14 +36,16 @@ class LibrarySyncWorker(
     private val remote: SupabaseLibraryDataSource get() = container.supabaseLibraryDataSource
     private val json: Json get() = container.json
 
-    override suspend fun doWork(): Result {
-        val session = syncDao.currentSession()
+    override suspend fun doWork(): Result = AccountAccess.mutex.withLock { doWorkForAccount() }
+
+    private suspend fun doWorkForAccount(): Result {
+        val session = container.authRepository.currentAuthenticatedSession()
             ?: return Result.success() // Signed out: nothing to push, and pulling would 401.
 
         return try {
             val pushed = push(session.userId)
             val pulled = pull(session.userId)
-            syncDao.purgeExhausted(MAX_ATTEMPTS)
+            syncDao.purgeExhaustedFor(session.userId, MAX_ATTEMPTS)
             Result.success(
                 workDataOf(
                     KEY_PUSHED to pushed,
@@ -60,12 +64,13 @@ class LibrarySyncWorker(
 
     /** Pushes pending outbox rows. Returns the number confirmed by the server. */
     private suspend fun push(userId: String): Int {
-        val pending = syncDao.nextPending(BATCH_SIZE)
+        val pending = syncDao.nextPendingFor(userId, BATCH_SIZE)
         if (pending.isEmpty()) return 0
 
         var confirmed = 0
         for (op in pending) {
             try {
+                if (container.authRepository.currentAuthenticatedSession()?.userId != userId) break
                 when (op.syncOp) {
                     SyncOp.UPSERT, SyncOp.PUSH_PROGRESS -> {
                         // The payload is written by the repository in the same transaction
@@ -79,11 +84,19 @@ class LibrarySyncWorker(
                         val entry = json.decodeFromString(
                             LibraryEntryEntity.serializer(), payload,
                         )
-                        remote.upsertEntry(userId, entry)
+                        // Old payloads may predate ownership stamping; use only the current,
+                        // owner-scoped Room row in that case, never adopt the payload's owner.
+                        val owned = if (entry.userId == userId) entry else
+                            container.libraryDao.findById(entry.id)?.takeIf { it.userId == userId }
+                                ?: continue
+                        remote.upsertEntry(userId, owned)
                         syncDao.markEntriesSynced(listOf(entry.id), System.currentTimeMillis())
                     }
 
-                    SyncOp.DELETE -> remote.deleteEntry(userId, op.entityId)
+                    SyncOp.DELETE -> {
+                        val entry = container.libraryDao.findById(op.entityId) ?: continue
+                        remote.deleteEntry(userId, entry.remoteId)
+                    }
 
                     else -> Unit // Unknown op from a newer app version: drop it.
                 }
@@ -107,11 +120,13 @@ class LibrarySyncWorker(
      * mark so restarts don't re-download the whole library.
      */
     private suspend fun pull(userId: String): Int {
+        if (container.authRepository.currentAuthenticatedSession()?.userId != userId) return 0
         val since = syncDao.currentSession()?.lastPulledAt
         val remoteEntries = remote.fetchEntries(userId, since)
         if (remoteEntries.isEmpty()) return 0
 
-        container.libraryDao.upsertAll(remoteEntries)
+        if (container.authRepository.currentAuthenticatedSession()?.userId != userId) return 0
+        container.libraryRepository.mergeRemoteEntries(userId, remoteEntries)
         syncDao.markPulled(userId, System.currentTimeMillis())
         return remoteEntries.size
     }

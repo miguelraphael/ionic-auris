@@ -23,12 +23,12 @@ class MusicPageLayoutTest {
 
     @Test fun albumPlayerFitsInsideWindow() = checkPage("album") { mini ->
         MusicAlbumPage("Album", List(12) { song.copy(id = "song-$it") }, false, null,
-            {}, {}, {}, {}, miniPlayer = mini)
+            {}, {}, {}, {}, bottomBar = mini)
     }
 
     @Test fun artistPlayerFitsInsideWindow() = checkPage("artist") { mini ->
         MusicArtistPage("Artist", null, "An artist biography.", listOf(song), false, null,
-            {}, {}, {}, {}, {}, miniPlayer = mini)
+            {}, {}, {}, {}, {}, bottomBar = mini)
     }
 
     private fun checkPage(name: String, content: @Composable (@Composable () -> Unit) -> Unit) {

@@ -33,7 +33,7 @@ interface LibraryDao {
     // ---- Reads ---------------------------------------------------------------
 
     @Transaction
-    @Query("SELECT * FROM library_entries WHERE is_deleted = 0 ORDER BY last_activity_at DESC")
+    @Query("SELECT * FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND is_deleted = 0 ORDER BY last_activity_at DESC")
     fun observeLibrary(): Flow<List<LibraryEntryEntity>>
 
     /** Filtered + sorted by a single CASE expression so the DB does the ranking. */
@@ -41,7 +41,7 @@ interface LibraryDao {
     @Query(
         """
         SELECT * FROM library_entries
-        WHERE is_deleted = 0
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND is_deleted = 0
           AND media_type = :mediaType
         ORDER BY
             CASE WHEN :category IS NULL THEN 0
@@ -68,7 +68,7 @@ interface LibraryDao {
     @Query(
         """
         SELECT * FROM library_entries
-        WHERE is_deleted = 0 AND status = 'IN_PROGRESS' AND progress > 0
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND is_deleted = 0 AND status = 'IN_PROGRESS' AND progress > 0
         ORDER BY last_activity_at DESC
         LIMIT :limit
         """
@@ -79,22 +79,22 @@ interface LibraryDao {
     @Query(
         """
         SELECT * FROM library_entries
-        WHERE is_deleted = 0 AND is_favorite = 1
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND is_deleted = 0 AND is_favorite = 1
         ORDER BY last_activity_at DESC
         """
     )
     fun observeFavorites(): Flow<List<LibraryEntryEntity>>
 
     @Transaction
-    @Query("SELECT * FROM library_entries WHERE id = :id")
+    @Query("SELECT * FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND id = :id")
     fun observeById(id: String): Flow<LibraryEntryEntity?>
 
     @Transaction
-    @Query("SELECT * FROM library_entries WHERE id = :id")
+    @Query("SELECT * FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND id = :id")
     suspend fun findById(id: String): LibraryEntryEntity?
 
     @Transaction
-    @Query("SELECT * FROM library_entries WHERE kitsu_id = :kitsuId LIMIT 1")
+    @Query("SELECT * FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND kitsu_id = :kitsuId LIMIT 1")
     suspend fun findByKitsuId(kitsuId: String): LibraryEntryEntity?
 
     /** Kitsu / extension reconciliation: all rows pointing at one remote media id. */
@@ -102,7 +102,7 @@ interface LibraryDao {
     @Query(
         """
         SELECT * FROM library_entries
-        WHERE media_type = :mediaType AND remote_media_id = :remoteMediaId AND is_deleted = 0
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND media_type = :mediaType AND remote_media_id = :remoteMediaId AND is_deleted = 0
         """
     )
     suspend fun findByRemoteMediaId(
@@ -113,30 +113,36 @@ interface LibraryDao {
     @Query(
         """
         SELECT COUNT(*) FROM library_entries
-        WHERE media_type = :mediaType AND is_deleted = 0 AND is_favorite = 1
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND media_type = :mediaType AND is_deleted = 0 AND is_favorite = 1
         """
     )
     fun observeFavoriteCount(mediaType: MediaType): Flow<Int>
 
     // ---- Units ---------------------------------------------------------------
 
-    @Query("SELECT * FROM library_units WHERE entry_id = :entryId ORDER BY unit_index ASC")
+    @Query("SELECT * FROM library_units WHERE entry_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1)) AND entry_id = :entryId ORDER BY unit_index ASC")
     fun observeUnits(entryId: String): Flow<List<LibraryUnitEntity>>
 
     @Query(
         """
         SELECT * FROM library_units
-        WHERE entry_id = :entryId AND is_watched = 1
+        WHERE entry_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1)) AND entry_id = :entryId AND is_watched = 1
         ORDER BY unit_index DESC
         """
     )
     fun observeWatchedUnits(entryId: String): Flow<List<LibraryUnitEntity>>
 
+    @Query("SELECT * FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND media_type = :mediaType AND source_id = :sourceId AND source_key = :sourceKey LIMIT 1")
+    suspend fun findBySourceIdentity(mediaType: MediaType, sourceId: String, sourceKey: String): LibraryEntryEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM library_entries WHERE id = :id AND (user_id IS NULL OR user_id != :userId))")
+    suspend fun belongsToOtherOwner(id: String, userId: String): Boolean
+
     // ---- Writes (local-first) -------------------------------------------------
 
     /**
      * Conflict strategy is ABORT so that the unique index on
-     * (media_type, source_id, source_key) surfaces duplicates as a bug rather than
+     * (user_id, media_type, source_id, source_key) surfaces duplicates as a bug rather than
      * silently overwriting one user's row with another.
      */
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -151,7 +157,7 @@ interface LibraryDao {
     @Upsert
     suspend fun upsertUnits(units: List<LibraryUnitEntity>)
 
-    @Query("DELETE FROM library_units WHERE entry_id = :entryId")
+    @Query("DELETE FROM library_units WHERE entry_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1)) AND entry_id = :entryId")
     suspend fun deleteUnitsFor(entryId: String)
 
     /**
@@ -165,7 +171,7 @@ interface LibraryDao {
             sync_state = 'PENDING_UPLOAD',
             updated_at = :now,
             last_activity_at = :now
-        WHERE id = :id
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND id = :id
         """
     )
     suspend fun setFavorite(id: String, favorite: Boolean, now: Long): Int
@@ -182,7 +188,7 @@ interface LibraryDao {
             updated_at = :now,
             last_activity_at = :now,
             sync_state = 'PENDING_UPLOAD'
-        WHERE id = :id
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND id = :id
         """
     )
     suspend fun updateProgress(
@@ -199,7 +205,7 @@ interface LibraryDao {
         """
         UPDATE library_units
         SET is_watched = :watched, last_position_ms = :positionMs, updated_at = :now
-        WHERE entry_id = :entryId AND unit_index = :unitIndex
+        WHERE entry_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1)) AND entry_id = :entryId AND unit_index = :unitIndex
         """
     )
     suspend fun updateUnitProgress(
@@ -215,7 +221,7 @@ interface LibraryDao {
         """
         UPDATE library_entries
         SET is_deleted = 1, sync_state = 'PENDING_UPLOAD', updated_at = :now
-        WHERE id = :id
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND id = :id
         """
     )
     suspend fun softDelete(id: String, now: Long = System.currentTimeMillis()): Int
@@ -227,7 +233,7 @@ interface LibraryDao {
      * Kept separate from [softDelete] on purpose: nothing in the UI path may hard-delete,
      * or a deleted item would reappear on the next pull.
      */
-    @Query("DELETE FROM library_entries WHERE id = :id AND is_deleted = 1")
+    @Query("DELETE FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND id = :id AND is_deleted = 1")
     suspend fun purgeTombstone(id: String): Int
 
     /**
@@ -242,7 +248,7 @@ interface LibraryDao {
     )
     suspend fun purgeSyncedTombstones(before: Long): Int
 
-    @Query("UPDATE library_entries SET sync_state = :state, remote_updated_at = :remoteAt WHERE id = :id")
+    @Query("UPDATE library_entries SET sync_state = :state, remote_updated_at = :remoteAt WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND id = :id")
     suspend fun markSyncState(id: String, state: SyncState, remoteAt: Long?)
 
     // ---- Search --------------------------------------------------------------
@@ -264,7 +270,7 @@ interface LibraryDao {
     @Query(
         """
         SELECT * FROM library_entries
-        WHERE is_deleted = 0
+        WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND is_deleted = 0
           AND (title LIKE '%' || :query || '%' OR author LIKE '%' || :query || '%')
         ORDER BY last_activity_at DESC
         LIMIT :limit

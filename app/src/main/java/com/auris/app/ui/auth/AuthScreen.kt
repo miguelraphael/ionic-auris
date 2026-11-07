@@ -2,7 +2,6 @@ package com.auris.app.ui.auth
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -78,7 +77,6 @@ fun AuthScreen(
     onToggleMode: () -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
-    onDemoAccount: () -> Unit = {},
 ) {
     AurisBackdrop(modifier = modifier) {
         Column(
@@ -185,24 +183,6 @@ fun AuthScreen(
                     isLoading = state.isLoading,
                     onClick = onSubmit,
                 )
-
-                Spacer(Modifier.height(12.dp))
-
-                GhostButton(
-                    text = "Use demo account",
-                    enabled = !state.isLoading,
-                    onClick = onDemoAccount,
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    text = "Prefills placeholder credentials for a UI preview — nothing is sent until you sign in.",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = AurisOnSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         }
     }
@@ -248,36 +228,6 @@ private fun PrimaryButton(
                 color = Color.White,
             )
         }
-    }
-}
-
-/** Secondary, quiet action: hairline outline, no fill. */
-@Composable
-private fun GhostButton(
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val shape = RoundedCornerShape(AurisRadii.button)
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .border(width = 1.dp, color = GlassEdge, shape = shape)
-            .clickable(
-                enabled = enabled,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = onClick,
-            )
-            .padding(vertical = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            color = AurisOnSurfaceVariant,
-        )
     }
 }
 

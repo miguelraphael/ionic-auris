@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.auris.app.core.model.SyncState
 import com.auris.app.data.local.entity.SyncOp
 import com.auris.app.data.local.entity.SyncOutboxEntity
@@ -48,12 +49,12 @@ interface SyncDao {
     @Query(
         """
         SELECT COUNT(*) FROM sync_outbox
-        WHERE sync_state = 'PENDING_UPLOAD'
+        WHERE sync_state = 'PENDING_UPLOAD' AND entity_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1))
         """
     )
     fun observePendingCount(): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM sync_outbox WHERE sync_state = 'PENDING_UPLOAD'")
+    @Query("SELECT COUNT(*) FROM sync_outbox WHERE sync_state = 'PENDING_UPLOAD' AND entity_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1))")
     suspend fun pendingCount(): Int
 
     @Query("DELETE FROM sync_outbox WHERE id = :id")
@@ -72,13 +73,38 @@ interface SyncDao {
     @Query("DELETE FROM sync_outbox WHERE attempts >= :maxAttempts")
     suspend fun purgeExhausted(maxAttempts: Int = 8): Int
 
+    @Query("DELETE FROM sync_outbox WHERE attempts >= :maxAttempts AND entity_id IN (SELECT id FROM library_entries WHERE user_id = :userId)")
+    suspend fun purgeExhaustedFor(userId: String, maxAttempts: Int = 8): Int
+
     @Query("DELETE FROM sync_outbox")
     suspend fun clearOutbox()
+
+    @Query("SELECT * FROM sync_outbox WHERE sync_state = 'PENDING_UPLOAD' AND entity_id IN (SELECT id FROM library_entries WHERE user_id = :userId) ORDER BY created_at ASC LIMIT :limit")
+    suspend fun nextPendingFor(userId: String, limit: Int = 200): List<SyncOutboxEntity>
+
+    @Query("DELETE FROM sync_outbox WHERE entity_id IN (SELECT id FROM library_entries WHERE user_id = :userId)")
+    suspend fun clearOutboxFor(userId: String)
 
     // ---- Session -------------------------------------------------------------
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveSession(session: SyncSessionEntity)
+
+    @Transaction
+    suspend fun replaceSession(session: SyncSessionEntity) {
+        clearSession()
+        saveSession(session)
+    }
+
+    @Query("DELETE FROM library_entries WHERE user_id = :userId")
+    suspend fun deleteLibraryFor(userId: String)
+
+    @Transaction
+    suspend fun deleteAccountData(userId: String) {
+        clearOutboxFor(userId)
+        deleteLibraryFor(userId)
+        clearSession()
+    }
 
     @Query("SELECT * FROM sync_sessions LIMIT 1")
     suspend fun currentSession(): SyncSessionEntity?

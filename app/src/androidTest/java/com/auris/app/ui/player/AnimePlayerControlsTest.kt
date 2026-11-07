@@ -57,6 +57,7 @@ class AnimePlayerControlsTest {
         val unit = LibraryUnitEntity(entry.id, 1, "episode", "Episode 1")
         val dao = proxy<LibraryDao> { name -> when (name) {
             "observeUnits" -> MutableStateFlow(listOf(unit))
+            "findById" -> entry
             "updateProgress", "updateUnitProgress" -> Unit
             else -> error("Unexpected library call: $name")
         } }

@@ -56,12 +56,11 @@ data class LibraryEntryRow(
 /**
  * Builds the row to upsert.
  *
- * `user_id` is always supplied by the worker from the stored session rather than the
- * entity: the device may hold rows queued under a previous account, and letting a stale
- * `userId` column win would write them under the wrong owner.
+ * Owner identity must agree with the active sync account; rows are never re-attributed.
  */
-fun LibraryEntryEntity.toRow(userId: String, now: InstantMillis): LibraryEntryRow =
-    LibraryEntryRow(
+fun LibraryEntryEntity.toRow(userId: String, now: InstantMillis): LibraryEntryRow {
+    require(this.userId == userId) { "Cannot upload an entry under another account" }
+    return LibraryEntryRow(
         id = remoteId,
         userId = userId,
         mediaType = mediaType.name,
@@ -90,6 +89,7 @@ fun LibraryEntryEntity.toRow(userId: String, now: InstantMillis): LibraryEntryRo
         createdAt = iso8601(createdAt),
         updatedAt = iso8601(now),
     )
+}
 
 /**
  * Row -> entity. Rows pulled from the server are marked [SyncState.SYNCED] so the pull does

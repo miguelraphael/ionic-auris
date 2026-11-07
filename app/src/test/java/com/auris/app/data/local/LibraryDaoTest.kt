@@ -48,6 +48,7 @@ class LibraryDaoTest {
             AurisDatabase::class.java,
         ).allowMainThreadQueries().build()
         dao = db.libraryDao()
+        kotlinx.coroutines.runBlocking { db.syncDao().saveSession(com.auris.app.data.local.entity.SyncSessionEntity("account-a")) }
     }
 
     @After
@@ -58,11 +59,145 @@ class LibraryDaoTest {
         sourceKey: String = "1",
         title: String = "Test",
     ) = LibraryEntryEntity(
+        userId = "account-a",
         mediaType = mediaType,
         sourceId = if (mediaType == MediaType.MUSIC) "innertube" else "example.org",
         sourceKey = sourceKey,
         title = title,
     )
+
+    @Test
+    fun accountSwitchHidesLibraryUnitsAndPendingUploadsWithoutDeletingThem() = runTest {
+        val first = entry(sourceKey = "shared-title")
+        val second = first.copy(id = "other-id", remoteId = "other-id", userId = "account-b")
+        dao.upsert(first)
+        dao.upsert(second)
+        dao.upsertUnits(listOf(LibraryUnitEntity(entryId = first.id, unitIndex = 1, title = "Private episode")))
+        db.syncDao().enqueue(com.auris.app.data.local.entity.SyncOutboxEntity(
+            entityId = first.id, mediaType = MediaType.ANIME, syncOp = "UPSERT", dedupeKey = first.id))
+        db.syncDao().clearSession()
+        db.syncDao().saveSession(com.auris.app.data.local.entity.SyncSessionEntity("account-b"))
+
+        assertEquals(listOf(second.id), dao.observeLibrary().first().map { it.id })
+        assertNull(dao.findById(first.id))
+        assertTrue(dao.observeUnits(first.id).first().isEmpty())
+        assertTrue(db.syncDao().nextPendingFor("account-b").isEmpty())
+        assertEquals(1, db.syncDao().nextPendingFor("account-a").size)
+
+        db.syncDao().clearSession()
+        assertTrue(dao.observeLibrary().first().isEmpty())
+        db.syncDao().saveSession(com.auris.app.data.local.entity.SyncSessionEntity("account-a"))
+        assertEquals(listOf(first.id), dao.observeLibrary().first().map { it.id })
+        assertEquals(1, dao.observeUnits(first.id).first().size)
+    }
+
+    @Test
+    fun migrationPreservesOwnedRowsUnitsAndOutboxAndErasesTokens() = runTest {
+        val legacy = entry()
+        dao.upsert(legacy)
+        dao.upsertUnits(listOf(LibraryUnitEntity(entryId = legacy.id, unitIndex = 1, title = "Saved progress")))
+        db.syncDao().enqueue(com.auris.app.data.local.entity.SyncOutboxEntity(
+            entityId = legacy.id, mediaType = MediaType.ANIME, syncOp = "UPSERT", dedupeKey = legacy.id))
+        db.syncDao().saveSession(com.auris.app.data.local.entity.SyncSessionEntity("account-a", accessToken = "old-access", refreshToken = "old-refresh"))
+        val sql = db.openHelper.writableDatabase
+        sql.execSQL("DROP INDEX index_library_entries_user_id_media_type_source_id_source_key")
+        sql.execSQL("CREATE UNIQUE INDEX index_library_entries_media_type_source_id_source_key ON library_entries(media_type, source_id, source_key)")
+
+        Migrations.MIGRATION_4_5.migrate(sql)
+
+        assertEquals("account-a", dao.findById(legacy.id)!!.userId)
+        assertEquals(1, dao.observeUnits(legacy.id).first().size)
+        assertEquals(1, db.syncDao().nextPendingFor("account-a").size)
+        assertNull(db.syncDao().currentSession()!!.accessToken)
+        assertNull(db.syncDao().currentSession()!!.refreshToken)
+    }
+
+    @Test
+    fun migrationDoesNotGiveUnattributedRowsToTheNextLogin() = runTest {
+        val legacy = entry().copy(userId = null)
+        dao.upsert(legacy)
+        db.syncDao().clearSession()
+        val sql = db.openHelper.writableDatabase
+        sql.execSQL("DROP INDEX index_library_entries_user_id_media_type_source_id_source_key")
+        sql.execSQL("CREATE UNIQUE INDEX index_library_entries_media_type_source_id_source_key ON library_entries(media_type, source_id, source_key)")
+
+        Migrations.MIGRATION_4_5.migrate(sql)
+        db.syncDao().saveSession(com.auris.app.data.local.entity.SyncSessionEntity("account-b"))
+
+        assertNull(dao.findById(legacy.id))
+        sql.query("SELECT COUNT(*) FROM library_entries WHERE user_id IS NULL").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(1, it.getInt(0))
+        }
+    }
+
+    @Test
+    fun savingSameMusicForTwoAccountsKeepsIndependentIdsAndUploads() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val repo = com.auris.app.data.repository.LibraryRepository(dao, db.syncDao(),
+            com.auris.app.data.sync.SyncScheduler(context), kotlinx.coroutines.Dispatchers.Unconfined,
+            kotlinx.serialization.json.Json, requestSync = {})
+        val mapped = com.auris.app.data.remote.music.MusicLibraryMapper.toEntry(
+            com.auris.app.data.remote.music.MusicTrack(videoId = "video-1", title = "Shared song",
+                artist = null, album = null, durationMs = null, artworkUrl = null,
+                largeArtworkUrl = null, playlistId = null, trackIndex = null))
+        val first = repo.upsert(mapped)
+        db.syncDao().clearSession()
+        db.syncDao().saveSession(com.auris.app.data.local.entity.SyncSessionEntity("account-b"))
+        val second = repo.upsert(mapped)
+
+        assertTrue(first.id != second.id)
+        assertTrue(first.remoteId != second.remoteId)
+        assertEquals("account-a", first.userId)
+        assertEquals("account-b", second.userId)
+        assertEquals(first.id, db.syncDao().nextPendingFor("account-a").single().entityId)
+        assertEquals(second.id, db.syncDao().nextPendingFor("account-b").single().entityId)
+        assertEquals(second.id, repo.findBySource(MediaType.MUSIC, "video-1", "innertube")!!.id)
+    }
+
+    @Test
+    fun staleProgressAndDeleteCannotReplaceAnotherAccountsPendingWork() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val repo = com.auris.app.data.repository.LibraryRepository(dao, db.syncDao(),
+            com.auris.app.data.sync.SyncScheduler(context), kotlinx.coroutines.Dispatchers.Unconfined,
+            kotlinx.serialization.json.Json, requestSync = {})
+        val first = repo.upsert(entry().copy(userId = null))
+        val original = db.syncDao().nextPendingFor("account-a")
+        db.syncDao().clearSession()
+        db.syncDao().saveSession(com.auris.app.data.local.entity.SyncSessionEntity("account-b"))
+
+        repo.updateProgress(first.id, 0.5f, 1, "Stale", 1000L, null)
+        repo.delete(first.id)
+
+        assertEquals(original, db.syncDao().nextPendingFor("account-a"))
+        assertTrue(db.syncDao().nextPendingFor("account-b").isEmpty())
+    }
+
+    @Test
+    fun cloudRestoreRemapsQuarantinedPrimaryKeysWithoutErasingUnsyncedData() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val repo = com.auris.app.data.repository.LibraryRepository(dao, db.syncDao(),
+            com.auris.app.data.sync.SyncScheduler(context), kotlinx.coroutines.Dispatchers.Unconfined,
+            kotlinx.serialization.json.Json, requestSync = {})
+        val legacy = entry().copy(userId = null, title = "Unsynced legacy text")
+        dao.upsert(legacy)
+        db.syncDao().enqueue(com.auris.app.data.local.entity.SyncOutboxEntity(
+            entityId = legacy.id, mediaType = MediaType.ANIME, syncOp = "UPSERT", dedupeKey = legacy.id))
+        val remote = legacy.copy(userId = "account-a", title = "Cloud snapshot")
+
+        repo.upsertAll(listOf(remote))
+        repo.upsertAll(listOf(remote))
+
+        val restored = dao.observeLibrary().first().single()
+        assertTrue(restored.id != legacy.id)
+        assertEquals(legacy.remoteId, restored.remoteId)
+        assertEquals("Cloud snapshot", restored.title)
+        db.openHelper.writableDatabase.query("SELECT title FROM library_entries WHERE id = ?", arrayOf(legacy.id)).use {
+            assertTrue(it.moveToFirst())
+            assertEquals("Unsynced legacy text", it.getString(0))
+        }
+        assertEquals(1, db.syncDao().nextPending().size)
+    }
 
     @Test
     fun allThreeMediaTypesShareOneTable() = runTest {
