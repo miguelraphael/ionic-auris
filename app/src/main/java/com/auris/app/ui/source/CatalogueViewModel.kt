@@ -78,6 +78,7 @@ class CatalogueViewModel(
                 popularLabel = if (resolved.id == "mangapill") "Trending" else "Popular",
                 sourceLanguage = when (resolved.id) {
                     MangaDexSource.ID -> "English chapters · MangaDex"
+                    com.auris.app.data.remote.manga.WeebCentralSource.ID -> "Official digital scans & volume rips · Weeb Central"
                     com.auris.app.data.remote.anime.HiAnimeSource.ID -> "Sub / Dub where available · HiAnime"
                     "mangapill" -> "English manga · MangaPill"
                     com.auris.app.data.remote.anime.AnimeggSource.ID -> "Japanese anime · Sub & Dub · High definition MP4 streams"

@@ -9,6 +9,7 @@ source outage does not force you to retype the title.
 | Anime | HiAnime | Existing sub/dub catalog; ZokoAnime servers |
 | Anime | Animegg | Japanese anime (sub/dub); high definition direct MP4 streams |
 | Manga | MangaDex | Existing English-chapter catalog |
+| Manga | Weeb Central | Official digital releases, volume rips, scanlations, and full chapter image strips |
 | Manga | MangaPill | Trending titles, latest chapter updates, search, and chapter images |
 
 These are built-in connectors, not new extension compatibility. Providers have different

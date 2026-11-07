@@ -1,6 +1,7 @@
 package com.auris.app.data.remote.anime
 
 import com.auris.app.data.remote.manga.MangaPillSource
+import com.auris.app.data.remote.manga.WeebCentralSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -50,5 +51,24 @@ class AlternativeSourcesLiveTest {
             assertTrue("Expected MP4 header", bytes.take(32).toByteArray().toString(Charsets.ISO_8859_1).contains("ftyp"))
         }
         println("PASS Animegg: popular, latest, search, ${episodes.size} episodes, stream resolution and real MP4 bytes")
+    }
+
+    @Test fun weebCentralBrowseToImageBytes() = runBlocking {
+        enabled()
+        val source = WeebCentralSource(http)
+        assertTrue(source.popular(1).items.isNotEmpty())
+        assertTrue(source.latest(1).items.isNotEmpty())
+        val entry = source.search(1, "Chainsaw Man", FilterList()).items.first { it.title.contains("Chainsaw Man") }
+        val units = source.units(entry)
+        assertTrue(units.isNotEmpty())
+        val page = source.pages(entry, units.last()).first()
+        val request = Request.Builder().url(page.imageUrl!!).header("Range", "bytes=0-1023")
+        page.headers.forEach { (name, value) -> request.header(name, value) }
+        http.newCall(request.build()).execute().use {
+            assertTrue("Image request failed: ${it.code}", it.isSuccessful)
+            assertTrue(it.header("Content-Type").orEmpty().startsWith("image/"))
+            assertEquals(1024, it.body!!.byteStream().use { stream -> stream.readNBytes(1024) }.size)
+        }
+        println("PASS WeebCentral: popular, latest, search, ${units.size} chapters, image resolution and bytes")
     }
 }

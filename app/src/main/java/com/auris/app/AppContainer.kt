@@ -297,6 +297,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             persistUnits = libraryRepository::upsertUnits,
             builtInSources = listOf(
                 com.auris.app.data.remote.manga.MangaDexSource(httpClient),
+                com.auris.app.data.remote.manga.WeebCentralSource(),
                 com.auris.app.data.remote.anime.HiAnimeSource(),
                 com.auris.app.data.remote.anime.AnimeggSource(),
                 com.auris.app.data.remote.manga.MangaPillSource(),
