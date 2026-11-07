@@ -235,9 +235,13 @@ interface LibraryDao {
      */
     @Transaction
     suspend fun purgeTombstone(id: String): Int {
+        deleteTombstoneOutbox(id)
         deleteTombstoneUnits(id)
         return deleteTombstone(id)
     }
+
+    @Query("DELETE FROM sync_outbox WHERE entity_id = :id AND entity_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND is_deleted = 1)")
+    suspend fun deleteTombstoneOutbox(id: String)
 
     @Query("DELETE FROM library_units WHERE entry_id = :id AND entry_id IN (SELECT id FROM library_entries WHERE user_id = (SELECT user_id FROM sync_sessions LIMIT 1) AND is_deleted = 1)")
     suspend fun deleteTombstoneUnits(id: String)

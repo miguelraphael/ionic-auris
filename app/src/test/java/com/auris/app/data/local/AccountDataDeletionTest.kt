@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -94,7 +95,6 @@ class AccountDataDeletionTest {
         db.libraryDao().softDelete(deleted.id)
         db.openHelper.writableDatabase.execSQL("PRAGMA foreign_keys = OFF")
 
-        db.syncDao().clearOutboxForEntry(deleted.id)
         assertEquals(1, db.libraryDao().purgeTombstone(deleted.id))
         assertEquals(0, db.libraryDao().purgeTombstone(live.id))
         assertEquals(0, db.libraryDao().purgeTombstone(other.id))
@@ -105,5 +105,33 @@ class AccountDataDeletionTest {
             assertEquals(1, count("library_units", "entry_id", id))
             assertEquals(1, count("sync_outbox", "entity_id", id))
         }
+    }
+
+    @Test fun failedTombstonePurgeRollsBackQueueAndUnitDeletion() = runTest {
+        db.syncDao().saveSession(SyncSessionEntity("account-a"))
+        val deleted = entry("deleted", "account-a").copy(isDeleted = true)
+        db.libraryDao().upsert(deleted)
+        db.libraryDao().upsertUnits(listOf(LibraryUnitEntity(
+            entryId = deleted.id, unitIndex = 1, title = deleted.title,
+        )))
+        enqueue(deleted.id, deleted.userId)
+        db.openHelper.writableDatabase.execSQL("""
+            CREATE TRIGGER abort_tombstone_delete BEFORE DELETE ON library_entries
+            BEGIN SELECT RAISE(ABORT, 'simulated deletion failure'); END
+        """.trimIndent())
+
+        try {
+            db.libraryDao().purgeTombstone(deleted.id)
+            fail("Expected the entry deletion to fail")
+        } catch (_: android.database.sqlite.SQLiteException) { }
+
+        assertEquals(1, count("library_entries", "id", deleted.id))
+        assertEquals(1, count("library_units", "entry_id", deleted.id))
+        assertEquals(1, count("sync_outbox", "entity_id", deleted.id))
+
+        db.openHelper.writableDatabase.execSQL("DROP TRIGGER abort_tombstone_delete")
+        assertEquals(1, db.libraryDao().purgeTombstone(deleted.id))
+        assertEquals(0, count("library_units", "entry_id", deleted.id))
+        assertEquals(0, count("sync_outbox", "entity_id", deleted.id))
     }
 }
