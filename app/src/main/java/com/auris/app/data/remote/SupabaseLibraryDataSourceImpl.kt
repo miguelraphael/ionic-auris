@@ -68,23 +68,49 @@ class SupabaseLibraryDataSourceImpl(
 
     override suspend fun fetchEntries(userId: String, since: Long?): List<LibraryEntryEntity> {
         return withContext(Dispatchers.IO) {
-            val rows: List<LibraryEntryRow> = call("pull") {
-                postgrest.from(TABLE).select {
-                    filter {
-                        eq("user_id", userId)
-                        if (since != null) {
-                            // High-water mark: only rows changed since the last
-                            // successful pull, so restarts don't re-download everything.
-                            gt("updated_at", iso8601(since))
+            val entries = mutableListOf<LibraryEntryEntity>()
+            var cursor: LibraryEntryRow? = null
+            while (true) {
+                val after = cursor
+                val rows: List<LibraryEntryRow> = call("pull") {
+                    postgrest.from(TABLE).select {
+                        filter {
+                            eq("user_id", userId)
+                            // Millisecond watermarks are inclusive so sub-millisecond rows
+                            // and ties at the previous boundary are not lost.
+                            if (since != null) gte("updated_at", iso8601(since))
+                            if (after != null) {
+                                or {
+                                    gt("updated_at", after.updatedAt!!)
+                                    and {
+                                        eq("updated_at", after.updatedAt)
+                                        gt("id", after.id)
+                                    }
+                                }
+                            }
                         }
-                    }
-                    order("updated_at", order = Order.DESCENDING)
-                    limit(PULL_PAGE)
-                }.decodeList()
+                        order("updated_at", order = Order.ASCENDING)
+                        order("id", order = Order.ASCENDING)
+                        limit(PULL_PAGE)
+                    }.decodeList()
+                }
+                if (rows.isEmpty()) break
+                // Never substitute wall-clock now for an invalid server timestamp: that
+                // would advance the watermark past rows this device has not imported.
+                for (row in rows) {
+                    val at = runCatching { Instant.parse(row.updatedAt).toEpochMilli() }
+                        .getOrElse { throw PermanentSyncException("Invalid remote updated_at", it) }
+                    entries += row.toEntity().copy(updatedAt = at, remoteUpdatedAt = at)
+                }
+                val last = rows.last()
+                check(after == null || last.updatedAt != after.updatedAt || last.id != after.id) {
+                    "Remote pull cursor did not advance"
+                }
+                cursor = last
+                // Even a short page may be a server-configured limit below PULL_PAGE.
+                // Continue until an empty page rather than silently truncating the pull.
             }
-            // A row this client can't decode (written by a newer app version) is skipped
-            // rather than failing the whole pull.
-            rows.mapNotNull { row -> runCatching { row.toEntity() }.getOrNull() }
+            entries
         }
     }
 

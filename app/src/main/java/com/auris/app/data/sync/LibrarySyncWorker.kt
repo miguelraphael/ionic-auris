@@ -6,14 +6,14 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.auris.app.AurisApplication
 import com.auris.app.core.model.SyncState
+import com.auris.app.data.local.LibraryDao
 import com.auris.app.data.local.SyncDao
-import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.data.local.entity.SyncOp
 import com.auris.app.data.remote.SupabaseLibraryDataSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.withLock
 import com.auris.app.data.repository.AccountAccess
-import kotlinx.serialization.json.Json
+import com.auris.app.data.repository.LibraryRepository
 
 /**
  * Drains the Room outbox to Supabase, then pulls remote changes back down.
@@ -33,8 +33,6 @@ class LibrarySyncWorker(
 
     private val container get() = (applicationContext as AurisApplication).container
     private val syncDao: SyncDao get() = container.syncDao
-    private val remote: SupabaseLibraryDataSource get() = container.supabaseLibraryDataSource
-    private val json: Json get() = container.json
 
     override suspend fun doWork(): Result = AccountAccess.mutex.withLock { doWorkForAccount() }
 
@@ -43,8 +41,13 @@ class LibrarySyncWorker(
             ?: return Result.success() // Signed out: nothing to push, and pulling would 401.
 
         return try {
-            val pushed = push(session.userId)
-            val pulled = pull(session.userId)
+            val pass = LibrarySyncPass(
+                container.libraryDao, syncDao, container.libraryRepository,
+                container.supabaseLibraryDataSource,
+                currentUserId = { container.authRepository.currentAuthenticatedSession()?.userId },
+            )
+            val pushed = pass.push(session.userId)
+            val pulled = pass.pull(session.userId)
             syncDao.purgeExhaustedFor(session.userId, MAX_ATTEMPTS)
             Result.success(
                 workDataOf(
@@ -62,46 +65,62 @@ class LibrarySyncWorker(
         }
     }
 
+    companion object {
+        const val KEY_PUSHED = "pushed"
+        const val KEY_PULLED = "pulled"
+        private const val MAX_ATTEMPTS = 8
+    }
+}
+
+/** The worker's account-scoped pass, separated from WorkManager for database/transport tests. */
+internal class LibrarySyncPass(
+    private val libraryDao: LibraryDao,
+    private val syncDao: SyncDao,
+    private val libraryRepository: LibraryRepository,
+    private val remote: SupabaseLibraryDataSource,
+    private val currentUserId: () -> String?,
+) {
     /** Pushes pending outbox rows. Returns the number confirmed by the server. */
-    private suspend fun push(userId: String): Int {
+    suspend fun push(userId: String): Int {
         val pending = syncDao.nextPendingFor(userId, BATCH_SIZE)
         if (pending.isEmpty()) return 0
 
         var confirmed = 0
         for (op in pending) {
             try {
-                if (container.authRepository.currentAuthenticatedSession()?.userId != userId) break
+                if (currentUserId() != userId) break
                 when (op.syncOp) {
                     SyncOp.UPSERT, SyncOp.PUSH_PROGRESS -> {
-                        // The payload is written by the repository in the same transaction
-                        // as the row. A missing payload means this op was superseded by a
-                        // newer deduped one, so it is safe to drop.
-                        val payload = op.payload
-                        if (payload == null) {
+                        // Read the current owned row: old progress ops had no payload, and a
+                        // queued snapshot may predate a newer progress update or local delete.
+                        val owned = libraryDao.findById(op.entityId)
+                        if (owned == null || owned.isDeleted) {
                             syncDao.dequeue(op.id)
                             continue
                         }
-                        val entry = json.decodeFromString(
-                            LibraryEntryEntity.serializer(), payload,
-                        )
-                        // Old payloads may predate ownership stamping; use only the current,
-                        // owner-scoped Room row in that case, never adopt the payload's owner.
-                        val owned = if (entry.userId == userId) entry else
-                            container.libraryDao.findById(entry.id)?.takeIf { it.userId == userId }
-                                ?: continue
+                        require(owned.userId == userId) { "Entry belongs to another account" }
                         remote.upsertEntry(userId, owned)
-                        syncDao.markEntriesSynced(listOf(entry.id), System.currentTimeMillis())
+                        syncDao.markEntriesSynced(listOf(owned.id), System.currentTimeMillis())
                     }
 
                     SyncOp.DELETE -> {
-                        val entry = container.libraryDao.findById(op.entityId) ?: continue
+                        val entry = libraryDao.findById(op.entityId)
+                        if (entry == null || !entry.isDeleted) {
+                            syncDao.dequeue(op.id)
+                            continue
+                        }
                         remote.deleteEntry(userId, entry.remoteId)
+                        // Clear every stale write for this title before removing its owner row.
+                        syncDao.clearOutboxForEntry(entry.id)
+                        libraryDao.purgeTombstone(entry.id)
                     }
 
                     else -> Unit // Unknown op from a newer app version: drop it.
                 }
                 syncDao.dequeue(op.id)
                 confirmed++
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: PermanentSyncException) {
                 syncDao.markAttempt(op.id, e.message, SyncState.CONFLICT)
             } catch (e: TransientSyncException) {
@@ -119,24 +138,23 @@ class LibrarySyncWorker(
      * Pulls rows the server has that this device doesn't, using `updated_at` as a high-water
      * mark so restarts don't re-download the whole library.
      */
-    private suspend fun pull(userId: String): Int {
-        if (container.authRepository.currentAuthenticatedSession()?.userId != userId) return 0
+    suspend fun pull(userId: String): Int {
+        if (currentUserId() != userId) return 0
         val since = syncDao.currentSession()?.lastPulledAt
         val remoteEntries = remote.fetchEntries(userId, since)
         if (remoteEntries.isEmpty()) return 0
 
-        if (container.authRepository.currentAuthenticatedSession()?.userId != userId) return 0
-        container.libraryRepository.mergeRemoteEntries(userId, remoteEntries)
-        syncDao.markPulled(userId, System.currentTimeMillis())
+        if (currentUserId() != userId) return 0
+        libraryRepository.mergeRemoteEntries(userId, remoteEntries)
+        // Re-query this millisecond inclusively on the next pass: Postgres timestamps may
+        // have sub-millisecond precision and multiple rows can share the boundary.
+        val watermark = remoteEntries.maxOf { it.remoteUpdatedAt ?: it.updatedAt }
+        syncDao.markPulled(userId, maxOf(since ?: Long.MIN_VALUE, watermark))
         return remoteEntries.size
     }
 
-    companion object {
-        const val KEY_PUSHED = "pushed"
-        const val KEY_PULLED = "pulled"
-
-        private const val BATCH_SIZE = 200
-        private const val MAX_ATTEMPTS = 8
+    private companion object {
+        const val BATCH_SIZE = 200
     }
 }
 

@@ -62,7 +62,7 @@ interface SupabaseLibraryDataSource {
 
     /**
      * @param since high-water mark in epoch millis, or null for a full pull.
-     * @return remote rows, newest first.
+     * @return all remote rows at or after the boundary, oldest first; transport pages internally.
      */
     suspend fun fetchEntries(userId: String, since: Long?): List<LibraryEntryEntity>
 }

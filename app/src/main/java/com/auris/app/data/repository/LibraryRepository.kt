@@ -114,8 +114,12 @@ class LibraryRepository(
     /** Caller must hold AccountAccess.mutex, including the worker's complete network pass. */
     internal suspend fun mergeRemoteEntries(owner: String, entries: List<LibraryEntryEntity>) {
         require(entries.all { it.userId == owner }) { "Cannot import another account's entries" }
-        val mapped = entries.map { entry ->
+        val mapped = entries.mapNotNull { entry ->
             val existing = libraryDao.findBySourceIdentity(entry.mediaType, entry.sourceId, entry.sourceKey)
+            // Never let a stale pull undo a pending local write, especially a delete.
+            if (existing != null && (existing.isDeleted || existing.syncState != SyncState.SYNCED)) {
+                return@mapNotNull null
+            }
             val localId = existing?.id ?: if (libraryDao.belongsToOtherOwner(entry.id, owner)) {
                 java.util.UUID.nameUUIDFromBytes("$owner:remote:${entry.remoteId}".toByteArray(Charsets.UTF_8)).toString()
             } else entry.id
@@ -135,6 +139,7 @@ class LibraryRepository(
     suspend fun setFavorite(entryId: String, favorite: Boolean): Unit = write {
         val updated = libraryDao.setFavorite(entryId, favorite, System.currentTimeMillis())
         if (updated > 0) {
+            libraryDao.findById(entryId)?.let { queue(it, SyncOp.UPSERT) }
             requestSync()
         }
     }
@@ -161,6 +166,9 @@ class LibraryRepository(
                 mediaType = mediaType,
                 syncOp = SyncOp.PUSH_PROGRESS,
                 dedupeKey = "$entryId:progress",
+                payload = json.encodeToString(
+                    LibraryEntryEntity.serializer(), libraryDao.findById(entryId)!!,
+                ),
             ),
         )
         // Deliberately no syncScheduler call: progress is throttled to a periodic
