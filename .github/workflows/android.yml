@@ -106,6 +106,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Ensure Android SDK 35
+        run: |
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+          fi
+
       - name: Build signed non-debuggable release
         env:
           ORG_GRADLE_PROJECT_SUPABASE_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL }}
@@ -136,6 +142,11 @@ jobs:
           apk=app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > "$RUNNER_TEMP/auris-badging.txt"
+          version_name=$(sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" "$RUNNER_TEMP/auris-badging.txt")
+          if [[ -z "$version_name" || "$RELEASE_TAG" != "v$version_name" ]]; then
+            echo "::error::Release tag does not match the APK versionName."
+            exit 1
+          fi
           if grep -q 'application-debuggable' "$RUNNER_TEMP/auris-badging.txt"; then
             echo '::error::Refusing to publish a debuggable APK.'
             exit 1
