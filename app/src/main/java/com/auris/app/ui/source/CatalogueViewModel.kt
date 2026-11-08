@@ -81,7 +81,6 @@ class CatalogueViewModel(
                     MangaDexSource.ID -> "English chapters · MangaDex"
                     com.auris.app.data.remote.manga.WeebCentralSource.ID -> "Official digital scans & volume rips · Weeb Central"
                     com.auris.app.data.remote.anime.AllAnimeSource.ID -> "Sub / Dub · Comprehensive anime library & HLS streams"
-                    com.auris.app.data.remote.anime.AnimepaheSource.ID -> "Fast airing releases & lightweight encodes · Animepahe"
                     "mangapill" -> "English manga · MangaPill"
                     else -> ""
                 },
