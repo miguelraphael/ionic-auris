@@ -5,6 +5,7 @@ import com.auris.app.source.*
 import eu.kanade.tachiyomi.source.model.FilterList
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
+import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -162,19 +163,22 @@ class AnimepaheSource(
             .addQueryParameter("session", epSession)
             .build()
 
-        val jsonStr = get(url)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
+        val jsonStr = runCatching { get(url) }.getOrNull() ?: return emptyList()
+        val root = runCatching { json.parseToJsonElement(jsonStr).jsonObject }.getOrNull() ?: return emptyList()
         val dataArray = root["data"]?.jsonArray ?: return emptyList()
 
         return coroutineScope {
             val deferredTargets = dataArray.flatMap { elem ->
-                elem.jsonObject.map { (key, value) ->
+                val obj = runCatching { elem.jsonObject }.getOrNull() ?: return@flatMap emptyList()
+                obj.map { (key, value) ->
                     async {
-                        val streamObj = value.jsonObject
-                        val kwikUrl = streamObj["kwik"]?.jsonPrimitive?.contentOrNull ?: return@async null
-                        val audio = streamObj["audio"]?.jsonPrimitive?.contentOrNull ?: "sub"
-                        val label = "Animepahe · $key ($audio)"
-                        resolveKwik(kwikUrl, label)
+                        runCatching {
+                            val streamObj = value.jsonObject
+                            val kwikUrl = streamObj["kwik"]?.jsonPrimitive?.contentOrNull ?: return@runCatching null
+                            val audio = streamObj["audio"]?.jsonPrimitive?.contentOrNull ?: "sub"
+                            val label = "Animepahe · $key ($audio)"
+                            resolveKwik(kwikUrl, label)
+                        }.getOrNull()
                     }
                 }
             }
@@ -183,60 +187,221 @@ class AnimepaheSource(
     }
 
     private suspend fun resolveKwik(kwikUrl: String, label: String): StreamTarget? {
+        return withContext(Dispatchers.IO) {
+            coroutineContext.ensureActive()
+            runCatching {
+                val kwikCandidates = mutableListOf(kwikUrl)
+                val parsedUri = runCatching { kwikUrl.toHttpUrl() }.getOrNull()
+                if (parsedUri != null && parsedUri.host in KWIK_DOMAINS) {
+                    for (domain in KWIK_DOMAINS) {
+                        if (domain != parsedUri.host) {
+                            kwikCandidates.add(parsedUri.newBuilder().host(domain).build().toString())
+                        }
+                    }
+                }
+
+                for (candidateUrl in kwikCandidates) {
+                    coroutineContext.ensureActive()
+                    val target = attemptResolveKwik(candidateUrl, label)
+                    if (target != null) return@runCatching target
+                }
+                null
+            }.getOrNull()
+        }
+    }
+
+    private fun attemptResolveKwik(kwikUrl: String, label: String): StreamTarget? {
         val request = Request.Builder()
             .url(kwikUrl)
             .header("Referer", site.toString())
             .header("User-Agent", USER_AGENT)
             .build()
 
-        return withContext(Dispatchers.IO) {
-            coroutineContext.ensureActive()
-            runCatching {
-                client.newCall(request).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use null
-                    val html = resp.body?.string() ?: return@use null
-                    val unpacked = JsUnpacker.unpack(html)
-                    val m3u8Match = Regex("""const\s+source\s*=\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(unpacked)
-                        ?: Regex("""source\s*=\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(unpacked)
-                        ?: Regex("""['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(unpacked)
-                    val rawUrl = m3u8Match?.groupValues?.get(1) ?: return@use null
-                    val directUrl = rawUrl.replace("\\", "").trim('\'', '"')
-                    StreamTarget(
-                        url = directUrl,
-                        headers = mapOf(
-                            "Referer" to "https://kwik.cx/",
-                            "User-Agent" to USER_AGENT,
-                        ),
-                        isAdaptive = true,
-                        label = label,
-                    )
+        val resp = runCatching { client.newCall(request).execute() }.getOrNull() ?: return null
+        resp.use { response ->
+            if (!response.isSuccessful) return null
+            val finalUrl = response.request.url.toString()
+            val kwikDomain = "${response.request.url.scheme}://${response.request.url.host}/"
+            val kwikReferer = if (response.request.url.host.contains("kwik")) kwikDomain else "https://kwik.cx/"
+            val html = response.body?.string() ?: return null
+            val unpacked = JsUnpacker.unpack(html)
+
+            // 1. Direct stream extract from unpacked JS or raw HTML
+            val directStreamUrl = extractStreamUrl(unpacked) ?: extractStreamUrl(html)
+            if (directStreamUrl != null) {
+                return StreamTarget(
+                    url = directStreamUrl,
+                    headers = mapOf(
+                        "Referer" to kwikReferer,
+                        "User-Agent" to USER_AGENT,
+                    ),
+                    isAdaptive = directStreamUrl.contains(".m3u8"),
+                    label = label,
+                )
+            }
+
+            // 2. Token POST form resolution if HLS/MP4 is not directly embedded
+            val formPair = extractFormActionAndToken(unpacked, html)
+            if (formPair != null) {
+                val (rawAction, token) = formPair
+                val actionUrl = response.request.url.resolve(rawAction)?.toString() ?: rawAction
+
+                val formBody = FormBody.Builder()
+                    .add("_token", token)
+                    .build()
+
+                val postRequest = Request.Builder()
+                    .url(actionUrl)
+                    .post(formBody)
+                    .header("Referer", finalUrl)
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+
+                val noRedirectClient = client.newBuilder()
+                    .followRedirects(false)
+                    .followSslRedirects(false)
+                    .build()
+
+                val postResp = runCatching { noRedirectClient.newCall(postRequest).execute() }.getOrNull()
+                postResp?.use { pResp ->
+                    val location = pResp.header("Location")
+                    if (!location.isNullOrBlank()) {
+                        val directUrl = pResp.request.url.resolve(location)?.toString() ?: location
+                        val cleanedDirectUrl = cleanUrl(directUrl)
+                        return StreamTarget(
+                            url = cleanedDirectUrl,
+                            headers = mapOf(
+                                "Referer" to kwikReferer,
+                                "User-Agent" to USER_AGENT,
+                            ),
+                            isAdaptive = cleanedDirectUrl.contains(".m3u8"),
+                            label = label,
+                        )
+                    }
+                    if (pResp.isSuccessful) {
+                        val postBody = pResp.body?.string() ?: return null
+                        val postUnpacked = JsUnpacker.unpack(postBody)
+                        val postStreamUrl = extractStreamUrl(postUnpacked) ?: extractStreamUrl(postBody)
+                        if (postStreamUrl != null) {
+                            return StreamTarget(
+                                url = postStreamUrl,
+                                headers = mapOf(
+                                    "Referer" to kwikReferer,
+                                    "User-Agent" to USER_AGENT,
+                                ),
+                                isAdaptive = postStreamUrl.contains(".m3u8"),
+                                label = label,
+                            )
+                        }
+                    }
                 }
-            }.getOrNull()
+            }
         }
+        return null
+    }
+
+    private fun extractStreamUrl(text: String): String? {
+        val sourceVarRegex = Regex(
+            """(?i)(?:const|var|let)?\s*source\s*=\s*\\?['"](https?:\\?/\\?/[^'"\s]+)"""
+        )
+        sourceVarRegex.find(text)?.groupValues?.get(1)?.let { return cleanUrl(it) }
+
+        val quotedMediaRegex = Regex(
+            """\\?['"](https?:\\?/\\?/[^'"\s]+\.(?:m3u8|mp4)[^'"\s]*?)\\?['"]""",
+            RegexOption.IGNORE_CASE
+        )
+        quotedMediaRegex.find(text)?.groupValues?.get(1)?.let { return cleanUrl(it) }
+
+        val rawMediaRegex = Regex(
+            """https?:\\?/\\?/[^\s'"<>]+\.(?:m3u8|mp4)[^\s'"<>]*""",
+            RegexOption.IGNORE_CASE
+        )
+        rawMediaRegex.find(text)?.value?.let { return cleanUrl(it) }
+
+        return null
+    }
+
+    private fun extractFormActionAndToken(vararg sources: String): Pair<String, String>? {
+        for (text in sources) {
+            val actionMatch = Regex("""<form[^>]+action\s*=\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE).find(text)
+                ?: Regex("""action\s*=\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE).find(text)
+            val action = actionMatch?.groupValues?.get(1) ?: continue
+
+            val tokenMatch = Regex("""<input[^>]+name\s*=\s*['"]_token['"][^>]*value\s*=\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE).find(text)
+                ?: Regex("""<input[^>]+value\s*=\s*['"]([^'"]+)['"][^>]*name\s*=\s*['"]_token['"]""", RegexOption.IGNORE_CASE).find(text)
+                ?: Regex("""name\s*=\s*['"]_token['"]\s+value\s*=\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE).find(text)
+                ?: Regex("""value\s*=\s*['"]([^'"]+)['"]\s+name\s*=\s*['"]_token['"]""", RegexOption.IGNORE_CASE).find(text)
+
+            val token = tokenMatch?.groupValues?.get(1)
+            if (token != null) {
+                return Pair(action, token)
+            }
+        }
+        return null
+    }
+
+    private fun cleanUrl(raw: String): String {
+        return raw.replace("\\/", "/").replace("\\", "").trim('\'', '"')
     }
 
     private suspend fun get(url: HttpUrl): String {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .header("Referer", site.toString())
-            .build()
-
         return withContext(Dispatchers.IO) {
             coroutineContext.ensureActive()
-            val resp = client.newCall(request).execute()
-            resp.use {
-                if (!it.isSuccessful) {
-                    throw IOException("Animepahe request failed: HTTP ${it.code}")
+
+            val urlsToTry = mutableListOf(url)
+            if (url.host in MIRROR_DOMAINS) {
+                for (mirror in MIRROR_DOMAINS) {
+                    if (mirror != url.host) {
+                        urlsToTry.add(url.newBuilder().host(mirror).build())
+                    }
                 }
-                it.body?.string() ?: throw IOException("Empty response from Animepahe")
             }
+
+            var lastException: Exception? = null
+            for (candidateUrl in urlsToTry) {
+                coroutineContext.ensureActive()
+                try {
+                    val request = Request.Builder()
+                        .url(candidateUrl)
+                        .header("User-Agent", USER_AGENT)
+                        .header("Referer", "${candidateUrl.scheme}://${candidateUrl.host}/")
+                        .build()
+
+                    val resp = client.newCall(request).execute()
+                    resp.use {
+                        if (it.isSuccessful) {
+                            return@withContext it.body?.string() ?: throw IOException("Empty response from Animepahe")
+                        } else {
+                            lastException = IOException("Animepahe request failed: HTTP ${it.code} on $candidateUrl")
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    lastException = e
+                }
+            }
+
+            throw lastException ?: IOException("Failed to fetch $url across Animepahe mirrors")
         }
     }
 
     companion object {
         const val ID = "animepahe"
         const val KEY = "builtin-animepahe"
+        val MIRROR_DOMAINS = listOf(
+            "animepahe.ru",
+            "animepahe.org",
+            "animepahe.com",
+            "animepahe.pw",
+            "animepahe.su",
+            "animepahe.si",
+        )
+        val KWIK_DOMAINS = listOf(
+            "kwik.cx",
+            "kwik.si",
+            "kwik.cz",
+            "kwik.pw",
+        )
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 }

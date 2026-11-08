@@ -176,4 +176,146 @@ class AnimepaheSourceTest {
         assertEquals("Animepahe · 720p (jpn)", targets[0].label)
         assertEquals("https://kwik.cx/", targets[0].headers["Referer"])
     }
+
+    @Test
+    fun streamsResolvesKwikFormPostToken() = runBlocking {
+        val kwikEmbedUrl = server.url("/e/kwik_post").toString()
+        val json = """
+            {
+              "data": [
+                {
+                  "1080p": {
+                    "kwik": "$kwikEmbedUrl",
+                    "audio": "eng"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val postActionPath = "/d/download_1080"
+        val kwikHtml = """
+            <html>
+            <body>
+            <form action="$postActionPath" method="POST">
+                <input type="hidden" name="_token" value="secret_csrf_token_abc" />
+                <button type="submit">Download</button>
+            </form>
+            </body>
+            </html>
+        """.trimIndent()
+
+        // 1. API links response
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+        // 2. Kwik embed HTML response containing form
+        server.enqueue(MockResponse().setResponseCode(200).setBody(kwikHtml))
+        // 3. POST action response with 302 Found and Location header
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(302)
+                .setHeader("Location", "https://kwik.example.com/stream1080.m3u8")
+        )
+
+        val entry = SourceItem("anime_123", "Anime", null)
+        val unit = SourceUnit("anime_123/ep_456", 1, "Episode 1")
+        val targets = source.streams(entry, unit)
+
+        assertEquals(1, targets.size)
+        assertEquals("https://kwik.example.com/stream1080.m3u8", targets[0].url)
+        assertTrue(targets[0].isAdaptive)
+        assertEquals("Animepahe · 1080p (eng)", targets[0].label)
+        assertEquals("https://kwik.cx/", targets[0].headers["Referer"])
+    }
+
+    @Test
+    fun streamsResolvesDirectMp4StreamAsNonAdaptive() = runBlocking {
+        val kwikEmbedUrl = server.url("/e/kwik_mp4").toString()
+        val json = """
+            {
+              "data": [
+                {
+                  "360p": {
+                    "kwik": "$kwikEmbedUrl",
+                    "audio": "jpn"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val kwikHtml = """
+            <html>
+            <body>
+            <script>
+            const source = "https://kwik.example.com/direct_video.mp4";
+            </script>
+            </body>
+            </html>
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(kwikHtml))
+
+        val entry = SourceItem("anime_123", "Anime", null)
+        val unit = SourceUnit("anime_123/ep_456", 1, "Episode 1")
+        val targets = source.streams(entry, unit)
+
+        assertEquals(1, targets.size)
+        assertEquals("https://kwik.example.com/direct_video.mp4", targets[0].url)
+        assertFalse(targets[0].isAdaptive)
+        assertEquals("Animepahe · 360p (jpn)", targets[0].label)
+    }
+
+    @Test
+    fun streamsHandlesPartialLinkFailuresGracefully() = runBlocking {
+        val kwikFailUrl = server.url("/e/fail").toString()
+        val kwikSuccessUrl = server.url("/e/success").toString()
+
+        val json = """
+            {
+              "data": [
+                {
+                  "720p": {
+                    "kwik": "$kwikFailUrl",
+                    "audio": "jpn"
+                  },
+                  "1080p": {
+                    "kwik": "$kwikSuccessUrl",
+                    "audio": "jpn"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val successHtml = """
+            <html>
+            <script>
+            const source = 'https://kwik.example.com/master1080.m3u8';
+            </script>
+            </html>
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+        // One link returns HTTP 500 error, other returns 200 with valid source
+        server.enqueue(MockResponse().setResponseCode(500).setBody("Server Error"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(successHtml))
+
+        val entry = SourceItem("anime_123", "Anime", null)
+        val unit = SourceUnit("anime_123/ep_456", 1, "Episode 1")
+        val targets = source.streams(entry, unit)
+
+        assertEquals(1, targets.size)
+        assertEquals("https://kwik.example.com/master1080.m3u8", targets[0].url)
+        assertEquals("Animepahe · 1080p (jpn)", targets[0].label)
+    }
+
+    @Test
+    fun mirrorDomainsIncludeStandardMirrors() {
+        assertTrue(AnimepaheSource.MIRROR_DOMAINS.contains("animepahe.ru"))
+        assertTrue(AnimepaheSource.MIRROR_DOMAINS.contains("animepahe.org"))
+        assertTrue(AnimepaheSource.MIRROR_DOMAINS.contains("animepahe.com"))
+        assertTrue(AnimepaheSource.MIRROR_DOMAINS.contains("animepahe.pw"))
+        assertTrue(AnimepaheSource.MIRROR_DOMAINS.contains("animepahe.su"))
+    }
 }
