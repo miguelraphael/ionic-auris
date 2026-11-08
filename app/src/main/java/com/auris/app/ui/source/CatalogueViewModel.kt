@@ -82,6 +82,7 @@ class CatalogueViewModel(
                     com.auris.app.data.remote.manga.WeebCentralSource.ID -> "Official digital scans & volume rips · Weeb Central"
                     com.auris.app.data.remote.anime.AllAnimeSource.ID -> "Sub / Dub · Comprehensive anime library & HLS streams"
                     "mangapill" -> "English manga · MangaPill"
+                    com.auris.app.data.remote.manga.AsuraScansSource.ID -> "English manhwa & comics · Asura Scans"
                     else -> ""
                 },
                 error = null,

@@ -38,6 +38,9 @@ class AurisApplication : Application(), Configuration.Provider, coil.ImageLoader
                 val imageRequest = if (request.url.host == "cdn.readdetectiveconan.com") {
                     request.newBuilder().header("Referer", "https://mangapill.com/")
                         .header("User-Agent", "Mozilla/5.0").build()
+                } else if (request.url.host == "cdn.asurascans.com" || request.url.host.endsWith(".asurascans.com")) {
+                    request.newBuilder().header("Referer", "https://asurascans.com/")
+                        .header("User-Agent", "Mozilla/5.0").build()
                 } else request
                 chain.proceed(imageRequest)
             }.build()
