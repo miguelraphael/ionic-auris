@@ -35,13 +35,20 @@ class AurisApplication : Application(), Configuration.Provider, coil.ImageLoader
                 val request = chain.request()
                 // MangaPill's public image CDN requires its page's Referer, including covers
                 // rendered from saved library entries outside the manga reader.
-                val imageRequest = if (request.url.host == "cdn.readdetectiveconan.com") {
-                    request.newBuilder().header("Referer", "https://mangapill.com/")
-                        .header("User-Agent", "Mozilla/5.0").build()
-                } else if (request.url.host == "cdn.asurascans.com" || request.url.host.endsWith(".asurascans.com")) {
-                    request.newBuilder().header("Referer", "https://asurascans.com/")
-                        .header("User-Agent", "Mozilla/5.0").build()
-                } else request
+                val imageRequest = when {
+                    request.url.host == "cdn.readdetectiveconan.com" -> {
+                        request.newBuilder().header("Referer", "https://mangapill.com/")
+                            .header("User-Agent", "Mozilla/5.0").build()
+                    }
+                    request.url.host == "cdn.asurascans.com" || request.url.host.endsWith(".asurascans.com") -> {
+                        request.newBuilder().header("Referer", "https://asurascans.com/")
+                            .header("User-Agent", "Mozilla/5.0").build()
+                    }
+                    request.url.host.contains("youtube-anime.com") -> {
+                        request.newBuilder().header("Referer", "https://allmanga.to/").build()
+                    }
+                    else -> request
+                }
                 chain.proceed(imageRequest)
             }.build()
         }.build()

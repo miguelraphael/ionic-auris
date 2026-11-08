@@ -81,6 +81,7 @@ class CatalogueViewModel(
                     MangaDexSource.ID -> "English chapters · MangaDex"
                     com.auris.app.data.remote.manga.WeebCentralSource.ID -> "Official digital scans & volume rips · Weeb Central"
                     com.auris.app.data.remote.anime.AllAnimeSource.ID -> "Sub / Dub · Comprehensive anime library & HLS streams"
+                    com.auris.app.data.remote.manga.AllMangaSource.ID -> "Comprehensive manga library · AllManga"
                     "mangapill" -> "English manga · MangaPill"
                     com.auris.app.data.remote.manga.AsuraScansSource.ID -> "English manhwa & comics · Asura Scans"
                     else -> ""
