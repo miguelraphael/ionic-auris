@@ -239,8 +239,9 @@ data class MusicCollectionItem(
     val tracks: List<MusicTrack> = emptyList(),
     val album: MusicAlbum? = null,
     val playlist: MusicPlaylist? = null,
+    val artist: MusicArtistDetails? = null,
 ) {
-    enum class Kind { TRACK, ALBUM, PLAYLIST, UNKNOWN }
+    enum class Kind { TRACK, ALBUM, PLAYLIST, ARTIST, UNKNOWN }
 }
 
 /**

@@ -164,6 +164,10 @@ class InnerTubeParser {
                 kind = MusicCollectionItem.Kind.ALBUM,
                 album = MusicAlbum(id, title, metadata.firstOrNull()?.cleanArtist(), renderer.thumbnailUrl(THUMB_LARGE), subtitle?.extractYear(), null),
             )
+            pageType == "MUSIC_PAGE_TYPE_ARTIST" || id.startsWith("UC") || subtitle?.startsWith("Artist", ignoreCase = true) == true || subtitle?.contains("Artist", ignoreCase = true) == true -> MusicCollectionItem(
+                kind = MusicCollectionItem.Kind.ARTIST,
+                artist = MusicArtistDetails(id = id, name = title.cleanArtist(), photoUrl = renderer.thumbnailUrl(THUMB_LARGE)),
+            )
             else -> MusicCollectionItem(MusicCollectionItem.Kind.UNKNOWN)
         }
     }

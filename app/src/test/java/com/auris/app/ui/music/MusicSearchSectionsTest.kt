@@ -18,6 +18,28 @@ class MusicSearchSectionsTest {
     }
 
     @Test
+    fun playlistTapOpensDetailsWithoutStartingPlayback() {
+        val opened = mutableListOf<MusicRow>()
+        val played = mutableListOf<MusicRow>()
+        val playlist = row(MusicRow.Kind.PLAYLIST, "VLplaylist")
+        selectMusicSearchResult(playlist, { played += it }, { opened += it })
+        assertEquals(listOf(playlist), opened)
+        assertTrue(played.isEmpty())
+    }
+
+    @Test
+    fun artistTapOpensArtistPage() {
+        val openedArtists = mutableListOf<MusicRow>()
+        val openedAlbums = mutableListOf<MusicRow>()
+        val played = mutableListOf<MusicRow>()
+        val artist = row(MusicRow.Kind.ARTIST, "UCartist")
+        selectMusicSearchResult(artist, { played += it }, { openedAlbums += it }, { openedArtists += it })
+        assertEquals(listOf(artist), openedArtists)
+        assertTrue(openedAlbums.isEmpty())
+        assertTrue(played.isEmpty())
+    }
+
+    @Test
     fun songTapStillStartsPlayback() {
         val song = row(MusicRow.Kind.TRACK, "song")
         val played = mutableListOf<MusicRow>()
@@ -38,11 +60,22 @@ class MusicSearchSectionsTest {
     }
 
     @Test
+    fun artistIsTopResultWhenPresent() {
+        val artist = row(MusicRow.Kind.ARTIST, "UCartist")
+        val song = row(MusicRow.Kind.TRACK, "song")
+        val album = row(MusicRow.Kind.ALBUM, "album")
+        val sections = MusicSearchSections(listOf(song, artist, album))
+        assertEquals(artist, sections.topResult)
+        assertEquals(listOf(artist), sections.artists)
+    }
+
+    @Test
     fun collectionCanBeTopResultWhenNoSongsMatch() {
         val playlist = row(MusicRow.Kind.PLAYLIST, "mix")
         assertEquals(playlist, MusicSearchSections(listOf(playlist)).topResult)
         assertNull(MusicSearchSections(emptyList()).topResult)
     }
+
     @Test
     fun promotesReleasesAboveProviderFeaturedVideoAndUnofficialUploads() {
         val upload = row(MusicRow.Kind.TRACK, "upload").copy(resultType = MusicResultType.USER_VIDEO)

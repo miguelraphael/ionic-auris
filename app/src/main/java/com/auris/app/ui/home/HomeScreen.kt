@@ -51,6 +51,17 @@ import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.AurisSurface
 import com.auris.app.ui.theme.AurisTrack
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.navigationBarsPadding
+import com.auris.app.data.remote.music.nowPlayingArtworkUrl
+import com.auris.app.ui.music.NowPlayingStrip
+import com.auris.app.ui.theme.AurisMotion
+import com.auris.app.ui.components.FloatingNavigationLayout
 
 /** How many titles a shelf shows before it becomes an archive. */
 private const val SHELF_LIMIT = 6
@@ -76,6 +87,19 @@ fun HomeScreen(
     onSeeAll: (MediaType) -> Unit,
     /** The first Room emission has not arrived yet. Distinguishable from a genuinely empty library. */
     isLoading: Boolean = false,
+    nowPlayingId: String? = null,
+    nowPlayingTitle: String? = null,
+    nowPlayingArtist: String? = null,
+    nowPlayingArtworkUrl: String? = null,
+    isPlaying: Boolean = false,
+    isResolving: Boolean = false,
+    isBuffering: Boolean = false,
+    canGoPrevious: Boolean = false,
+    canGoNext: Boolean = false,
+    onOpenPlayer: () -> Unit = {},
+    onTogglePlayPause: () -> Unit = {},
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // The library arrives ordered `last_activity_at DESC`, so taking the head of each filter
@@ -84,12 +108,18 @@ fun HomeScreen(
     val allAnime = remember(library) { library.filter { it.mediaType == MediaType.ANIME } }
     val allManga = remember(library) { library.filter { it.mediaType == MediaType.MANGA } }
     val allMusic = remember(library) { library.filter { it.mediaType == MediaType.MUSIC } }
+    val showNowPlaying = nowPlayingId != null
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        // Bottom padding clears the floating nav pill.
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 110.dp),
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            // Bottom padding clears the floating nav pill and now-playing strip when visible.
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                bottom = if (showNowPlaying) 190.dp else 110.dp,
+            ),
+        ) {
         item(key = "header", contentType = "header") {
             Row(
                 modifier = Modifier
@@ -174,11 +204,13 @@ fun HomeScreen(
                     },
                 ) {
                     items(allMusic.take(SHELF_LIMIT), key = { it.id }) { entry ->
+                        val art = entry.artworkUrl ?: entry.localArtworkPath
                         MediaGridCard(
-                            imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
+                            imageUrl = nowPlayingArtworkUrl(art) ?: art,
                             title = entry.title,
                             subtitle = entry.author,
                             progress = entry.progress.takeIf { it > 0f },
+                            aspectRatio = 1f,
                             // Width only: the card sizes to its content, so the 2-line title is never
                             // squeezed out by a fixed height.
                             modifier = Modifier.width(150.dp),
@@ -235,6 +267,35 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+    }
+
+    AnimatedVisibility(
+            visible = showNowPlaying,
+            enter = fadeIn(tween(AurisMotion.Standard)) +
+                slideInVertically(tween(AurisMotion.Standard, easing = AurisMotion.Ease)) { it / 2 },
+            exit = fadeOut(tween(AurisMotion.Quick)) +
+                slideOutVertically(tween(AurisMotion.Quick)) { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = FloatingNavigationLayout.playerBottom),
+        ) {
+            NowPlayingStrip(
+                title = nowPlayingTitle ?: "Now playing",
+                artist = nowPlayingArtist,
+                artworkUrl = nowPlayingArtworkUrl,
+                isPlaying = isPlaying,
+                isLoading = isResolving || isBuffering,
+                onClick = { if (!isResolving) onOpenPlayer() },
+                onTogglePlayPause = onTogglePlayPause,
+                onPrevious = onPrevious,
+                onNext = onNext,
+                canGoPrevious = !isResolving && canGoPrevious,
+                canGoNext = !isResolving && canGoNext,
+                modifier = Modifier,
+            )
         }
     }
 }

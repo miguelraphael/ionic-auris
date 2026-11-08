@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.components.MediaGridCard
+import com.auris.app.data.remote.music.nowPlayingArtworkUrl
 import com.auris.app.ui.components.SkeletonPosterGrid
 import com.auris.app.ui.components.StateEmpty
 import com.auris.app.ui.components.StateNoResults
@@ -265,11 +266,14 @@ fun LibraryScreen(
                 items = visible,
                 key = { it.id },
             ) { entry ->
+                val isMusic = entry.mediaType == MediaType.MUSIC
+                val rawArt = entry.artworkUrl ?: entry.localArtworkPath
                 MediaGridCard(
-                    imageUrl = entry.artworkUrl ?: entry.localArtworkPath,
+                    imageUrl = if (isMusic) nowPlayingArtworkUrl(rawArt) ?: rawArt else rawArt,
                     title = entry.title,
                     subtitle = entry.subtitle ?: entry.author,
                     progress = entry.progress.takeIf { it > 0f },
+                    aspectRatio = if (isMusic) 1f else 2f / 3f,
                     selected = entry.id in selectedIds,
                     onLongClick = {
                         // Long-press is the only way into selection, so it must also work when

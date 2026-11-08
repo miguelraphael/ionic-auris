@@ -139,6 +139,7 @@ fun MediaGridCard(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     progress: Float? = null,
+    aspectRatio: Float = 2f / 3f,
     /** Draws the selection scrim and check badge. */
     selected: Boolean = false,
     /** Long-press starts multi-select in the Library; null keeps the card a plain button. */
@@ -161,7 +162,7 @@ fun MediaGridCard(
                 contentDescription = title,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(2f / 3f),
+                    .aspectRatio(aspectRatio),
             )
             if (selected) {
                 Box(

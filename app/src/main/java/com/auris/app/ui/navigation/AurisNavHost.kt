@@ -220,6 +220,8 @@ fun AurisNavHost(
         },
     ) {
         composable(TopLevelDestination.HOME.route) {
+            val musicState by musicViewModel?.state?.collectAsStateWithLifecycle()
+                ?: remember { mutableStateOf(com.auris.app.ui.music.MusicBrowseUiState()) }
             HomeScreen(
                 library = library,
                 onEntryClick = openLibraryEntry,
@@ -236,6 +238,19 @@ fun AurisNavHost(
                     navController.navigate(destination.route)
                 },
                 isLoading = isLibraryLoading,
+                nowPlayingId = musicState.nowPlayingId,
+                nowPlayingTitle = musicState.nowPlayingTitle,
+                nowPlayingArtist = musicState.nowPlayingArtist,
+                nowPlayingArtworkUrl = musicState.nowPlayingArtworkUrl,
+                isPlaying = musicState.isPlaying,
+                isResolving = musicState.isResolving,
+                isBuffering = musicState.isBuffering,
+                canGoPrevious = musicState.canGoPrevious,
+                canGoNext = musicState.canGoNext,
+                onOpenPlayer = { if (!musicState.isResolving) navController.navigate(Routes.PLAYER) },
+                onTogglePlayPause = { musicViewModel?.togglePlayPause() },
+                onPrevious = { musicViewModel?.previous() },
+                onNext = { musicViewModel?.next() },
             )
         }
 
@@ -314,6 +329,69 @@ fun AurisNavHost(
             var homeSongOptions by remember { mutableStateOf<MusicRow?>(null) }
             homeSongOptions?.let { song -> com.auris.app.ui.music.MusicSongActions(song, music) { homeSongOptions = null } }
 
+            var selectedAlbum by remember { mutableStateOf<MusicRow?>(null) }
+            var albumTracks by remember { mutableStateOf(emptyList<MusicRow>()) }
+            var albumLoading by remember { mutableStateOf(false) }
+            var albumError by remember { mutableStateOf<String?>(null) }
+            val albumScope = rememberCoroutineScope()
+            fun playAlbum(index: Int = 0) {
+                val album = selectedAlbum
+                val albumArtist = album?.subtitle
+                albumScope.launch {
+                    try {
+                        val tracksToPlay = albumTracks.map { track ->
+                            if (track.artistHint().isNullOrBlank() && !albumArtist.isNullOrBlank()) {
+                                track.copy(subtitle = albumArtist)
+                            } else track
+                        }
+                        music.playPlaylist(tracksToPlay, index)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        albumError = "Could not start playback. Try another song."
+                    }
+                }
+            }
+            androidx.compose.runtime.LaunchedEffect(selectedAlbum) {
+                val album = selectedAlbum ?: return@LaunchedEffect
+                albumTracks = emptyList()
+                albumError = null
+                albumLoading = true
+                try {
+                    albumTracks = music.collectionRows(album.id).filter { it.kind == MusicRow.Kind.TRACK }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    albumError = "Could not load this album. Close it and try again."
+                } finally {
+                    albumLoading = false
+                }
+            }
+
+            var selectedArtist by remember { mutableStateOf<MusicRow?>(null) }
+            var artistDetails by remember { mutableStateOf<com.auris.app.data.remote.music.MusicArtistDetails?>(null) }
+            var artistRows by remember { mutableStateOf<List<MusicRow>>(emptyList()) }
+            var isArtistLoading by remember { mutableStateOf(false) }
+            val artistScope = rememberCoroutineScope()
+
+            androidx.compose.runtime.LaunchedEffect(selectedArtist) {
+                val artist = selectedArtist ?: return@LaunchedEffect
+                artistDetails = null
+                artistRows = emptyList()
+                isArtistLoading = true
+                try {
+                    val (details, rows) = music.loadArtist(artist)
+                    artistDetails = details
+                    artistRows = rows
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // best-effort
+                } finally {
+                    isArtistLoading = false
+                }
+            }
+
             MusicHomeScreen(
                 state = musicState,
                 savedMusic = library.filter { it.mediaType == MediaType.MUSIC },
@@ -326,7 +404,64 @@ fun AurisNavHost(
                 onNext = music::next,
                 onRetryHome = music::retryHome,
                 onOptions = { homeSongOptions = it },
+                onOpenAlbum = { selectedAlbum = it },
+                onOpenArtist = { selectedArtist = it },
             )
+            selectedAlbum?.let { album ->
+                com.auris.app.ui.music.MusicAlbumPage(
+                    title = album.title, tracks = albumTracks, loading = albumLoading, message = albumError ?: musicState.message,
+                    onBack = { selectedAlbum = null },
+                    onPlayAll = { playAlbum() },
+                    onPlay = { index -> playAlbum(index) },
+                    onOptions = { homeSongOptions = it },
+                    isPlaylist = album.kind == MusicRow.Kind.PLAYLIST,
+                    albumArtist = album.subtitle,
+                    bottomBar = {
+                        if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
+                            title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
+                            artworkUrl = musicState.nowPlayingArtworkUrl, isPlaying = musicState.isPlaying,
+                            isLoading = musicState.isResolving || musicState.isBuffering,
+                            onClick = { if (!musicState.isResolving) { selectedAlbum = null; navController.navigate(Routes.PLAYER) } },
+                            onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
+                            canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
+                            canGoNext = !musicState.isResolving && musicState.canGoNext,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    },
+                )
+            }
+            selectedArtist?.let { artistRow ->
+                MusicArtistPage(
+                    name = artistDetails?.name ?: artistRow.artistHint().orEmpty().ifBlank { artistRow.title },
+                    artwork = artistDetails?.photoUrl ?: artistRows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: artistRow.artworkUrl,
+                    bio = artistDetails?.bio,
+                    rows = artistRows.distinctBy { it.kind to it.id },
+                    loading = isArtistLoading,
+                    message = null,
+                    onBack = { selectedArtist = null },
+                    onPlay = { item -> music.play(item) },
+                    onPlayAll = {
+                        val tracks = artistRows.filter { it.kind == MusicRow.Kind.TRACK }
+                        if (tracks.isNotEmpty()) {
+                            artistScope.launch { music.playPlaylist(tracks) }
+                        }
+                    },
+                    onCollection = { item -> selectedAlbum = item },
+                    onOptions = { homeSongOptions = it },
+                    bottomBar = {
+                        if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
+                            title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
+                            artworkUrl = musicState.nowPlayingArtworkUrl, isPlaying = musicState.isPlaying,
+                            isLoading = musicState.isResolving || musicState.isBuffering,
+                            onClick = { if (!musicState.isResolving) { selectedArtist = null; navController.navigate(Routes.PLAYER) } },
+                            onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
+                            canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
+                            canGoNext = !musicState.isResolving && musicState.canGoNext,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    },
+                )
+            }
         }
 
         composable(TopLevelDestination.LIBRARY.route) {
@@ -525,6 +660,10 @@ fun AurisNavHost(
                 return@composable
             }
 
+            LaunchedEffect(Unit) {
+                musicViewModel?.pause()
+            }
+
             EpisodePlayerRoute(
                 entry = entry,
                 unitIndex = unitIndex,
@@ -551,9 +690,16 @@ fun AurisNavHost(
             var albumError by remember { mutableStateOf<String?>(null) }
             val albumScope = rememberCoroutineScope()
             fun playAlbum(index: Int = 0) {
+                val album = selectedAlbum
+                val albumArtist = album?.subtitle
                 albumScope.launch {
                     try {
-                        music.playPlaylist(albumTracks, index)
+                        val tracksToPlay = albumTracks.map { track ->
+                            if (track.artistHint().isNullOrBlank() && !albumArtist.isNullOrBlank()) {
+                                track.copy(subtitle = albumArtist)
+                            } else track
+                        }
+                        music.playPlaylist(tracksToPlay, index)
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
@@ -577,11 +723,36 @@ fun AurisNavHost(
                 }
             }
 
+            var selectedArtist by remember { mutableStateOf<MusicRow?>(null) }
+            var artistDetails by remember { mutableStateOf<com.auris.app.data.remote.music.MusicArtistDetails?>(null) }
+            var artistRows by remember { mutableStateOf<List<MusicRow>>(emptyList()) }
+            var isArtistLoading by remember { mutableStateOf(false) }
+            val artistScope = rememberCoroutineScope()
+
+            androidx.compose.runtime.LaunchedEffect(selectedArtist) {
+                val artist = selectedArtist ?: return@LaunchedEffect
+                artistDetails = null
+                artistRows = emptyList()
+                isArtistLoading = true
+                try {
+                    val (details, rows) = music.loadArtist(artist)
+                    artistDetails = details
+                    artistRows = rows
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // best-effort
+                } finally {
+                    isArtistLoading = false
+                }
+            }
+
             MusicBrowseScreen(
                 state = musicState,
                 onQueryChange = music::search,
                 onPlay = music::play,
                 onOpenAlbum = { selectedAlbum = it },
+                onOpenArtist = { selectedArtist = it },
                 onTogglePlayPause = music::togglePlayPause,
                 onPrevious = music::previous,
                 onNext = music::next,
@@ -595,6 +766,8 @@ fun AurisNavHost(
                     onPlayAll = { playAlbum() },
                     onPlay = { index -> playAlbum(index) },
                     onOptions = { optionsSong = it },
+                    isPlaylist = album.kind == MusicRow.Kind.PLAYLIST,
+                    albumArtist = album.subtitle,
                     bottomBar = {
                         if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
@@ -604,7 +777,39 @@ fun AurisNavHost(
                             onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
                             canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
                             canGoNext = !musicState.isResolving && musicState.canGoNext,
-                            modifier = Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    },
+                )
+            }
+            selectedArtist?.let { artistRow ->
+                MusicArtistPage(
+                    name = artistDetails?.name ?: artistRow.artistHint().orEmpty().ifBlank { artistRow.title },
+                    artwork = artistDetails?.photoUrl ?: artistRows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: artistRow.artworkUrl,
+                    bio = artistDetails?.bio,
+                    rows = artistRows.distinctBy { it.kind to it.id },
+                    loading = isArtistLoading,
+                    message = null,
+                    onBack = { selectedArtist = null },
+                    onPlay = { item -> music.play(item) },
+                    onPlayAll = {
+                        val tracks = artistRows.filter { it.kind == MusicRow.Kind.TRACK }
+                        if (tracks.isNotEmpty()) {
+                            artistScope.launch { music.playPlaylist(tracks) }
+                        }
+                    },
+                    onCollection = { item -> selectedAlbum = item },
+                    onOptions = { optionsSong = it },
+                    bottomBar = {
+                        if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
+                            title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
+                            artworkUrl = musicState.nowPlayingArtworkUrl, isPlaying = musicState.isPlaying,
+                            isLoading = musicState.isResolving || musicState.isBuffering,
+                            onClick = { if (!musicState.isResolving) { selectedArtist = null; navController.navigate(Routes.PLAYER) } },
+                            onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
+                            canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
+                            canGoNext = !musicState.isResolving && musicState.canGoNext,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                     },
                 )

@@ -205,6 +205,7 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
                                 MusicRow.Kind.TRACK -> "Songs"
                                 MusicRow.Kind.ALBUM -> "Albums"
                                 MusicRow.Kind.PLAYLIST -> "Playlists"
+                                MusicRow.Kind.ARTIST -> "Artists"
                             })
                             entries.forEach { item ->
                                 Row(Modifier.fillMaxWidth().combinedClickable(enabled = !busy, onLongClick = {

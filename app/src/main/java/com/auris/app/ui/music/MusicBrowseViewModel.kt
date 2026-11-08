@@ -50,7 +50,7 @@ data class MusicRow(
     val resultType: MusicResultType = MusicResultType.UNKNOWN,
     val albumArtworkUrl: String? = null,
 ) {
-    enum class Kind { TRACK, ALBUM, PLAYLIST }
+    enum class Kind { TRACK, ALBUM, PLAYLIST, ARTIST }
 }
 
 /** Extracts the clean artist name from a row's subtitle or metadata. */
@@ -365,6 +365,10 @@ class MusicBrowseViewModel(
                 }
             }
         }
+    }
+
+    fun pause() {
+        controller?.pause()
     }
 
     /** Pauses or resumes the current queue, for the home screen's now-playing strip. */
@@ -771,6 +775,17 @@ internal fun MusicCollectionItem.toRows(): List<MusicRow> = buildList {
                 subtitle = it.subtitle?.cleanArtist(),
                 artworkUrl = it.artworkUrl,
                 id = it.browseId,
+            ),
+        )
+    }
+    artist?.let {
+        add(
+            MusicRow(
+                kind = MusicRow.Kind.ARTIST,
+                title = it.name,
+                subtitle = "Artist",
+                artworkUrl = it.photoUrl,
+                id = it.id,
             ),
         )
     }

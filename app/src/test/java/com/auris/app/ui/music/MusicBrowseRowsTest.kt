@@ -125,4 +125,24 @@ class MusicBrowseRowsTest {
             MusicCollectionItem(kind = MusicCollectionItem.Kind.UNKNOWN).toRows(),
         )
     }
+
+    @Test
+    fun artistCollectionProducesArtistRow() {
+        val rows = MusicCollectionItem(
+            kind = MusicCollectionItem.Kind.ARTIST,
+            artist = com.auris.app.data.remote.music.MusicArtistDetails(
+                id = "UC123",
+                name = "Chase Atlantic",
+                photoUrl = "https://img/artist.jpg",
+            ),
+        ).toRows()
+
+        assertEquals(1, rows.size)
+        val artistRow = rows.single()
+        assertEquals(MusicRow.Kind.ARTIST, artistRow.kind)
+        assertEquals("Chase Atlantic", artistRow.title)
+        assertEquals("Artist", artistRow.subtitle)
+        assertEquals("UC123", artistRow.id)
+        assertEquals("https://img/artist.jpg", artistRow.artworkUrl)
+    }
 }

@@ -101,6 +101,8 @@ fun MusicHomeScreen(
     /** A failed home load is retryable; the ViewModel otherwise fetches it only once. */
     onRetryHome: () -> Unit = {},
     onOptions: (MusicRow) -> Unit = {},
+    onOpenAlbum: (MusicRow) -> Unit = {},
+    onOpenArtist: (MusicRow) -> Unit = {},
 ) {
     val heroArtwork = state.shelves.firstOrNull()?.rows?.firstOrNull()?.artworkUrl
     val palette = rememberArtworkPaletteValue(artworkKey = heroArtwork)
@@ -175,7 +177,13 @@ fun MusicHomeScreen(
                                 title = row.title,
                                 subtitle = row.subtitle,
                                 isNowPlaying = row.id == state.nowPlayingId,
-                                onClick = { onPlay(row) },
+                                onClick = {
+                                    when (row.kind) {
+                                        MusicRow.Kind.ARTIST -> onOpenArtist(row)
+                                        MusicRow.Kind.ALBUM, MusicRow.Kind.PLAYLIST -> onOpenAlbum(row)
+                                        else -> onPlay(row)
+                                    }
+                                },
                                 onLongClick = { if (row.kind == MusicRow.Kind.TRACK) onOptions(row) },
                             )
                         }

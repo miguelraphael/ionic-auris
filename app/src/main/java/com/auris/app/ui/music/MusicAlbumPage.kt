@@ -23,13 +23,23 @@ import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.theme.*
 
 @Composable
-internal fun MusicAlbumPage(title: String, tracks: List<MusicRow>, loading: Boolean,
-    message: String?, onBack: () -> Unit, onPlayAll: () -> Unit,
-    onPlay: (Int) -> Unit, onOptions: (MusicRow) -> Unit, bottomBar: @Composable () -> Unit = {}) {
+internal fun MusicAlbumPage(
+    title: String,
+    tracks: List<MusicRow>,
+    loading: Boolean,
+    message: String?,
+    onBack: () -> Unit,
+    onPlayAll: () -> Unit,
+    onPlay: (Int) -> Unit,
+    onOptions: (MusicRow) -> Unit,
+    isPlaylist: Boolean = false,
+    albumArtist: String? = null,
+    bottomBar: @Composable () -> Unit = {},
+) {
     val albumArt = tracks.firstNotNullOfOrNull { it.albumArtworkUrl }
         ?: tracks.firstOrNull()?.artworkUrl
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)), color = AurisBackground) {
+        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), color = AurisBackground) {
             Column(Modifier.fillMaxSize()) {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 40.dp)) {
                     item {
@@ -41,12 +51,17 @@ internal fun MusicAlbumPage(title: String, tracks: List<MusicRow>, loading: Bool
                                 Modifier.widthIn(max = 240.dp).fillMaxWidth().aspectRatio(1f),
                                 fallbackImageUrl = albumArt)
                             Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 20.dp))
-                            Text("Album · ${tracks.size} songs", color = AurisOnSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
-                            Button(onClick = onPlayAll, enabled = !loading && tracks.isNotEmpty(), shape = ArtworkShapeSmall, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp).height(48.dp)) { Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Play album") }
+                            val typeLabel = if (isPlaylist) "Playlist" else "Album"
+                            Text("$typeLabel · ${tracks.size} songs", color = AurisOnSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
+                            Button(onClick = onPlayAll, enabled = !loading && tracks.isNotEmpty(), shape = ArtworkShapeSmall, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp).height(48.dp)) {
+                                Icon(Icons.Filled.PlayArrow, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (isPlaylist) "Play playlist" else "Play album")
+                            }
                         }
                         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 16.dp))
                         message?.let { Text(it, Modifier.padding(20.dp)) }
-                        if (!loading && tracks.isEmpty()) Text("No tracks available for this album.", Modifier.padding(24.dp))
+                        if (!loading && tracks.isEmpty()) Text(if (isPlaylist) "No tracks available for this playlist." else "No tracks available for this album.", Modifier.padding(24.dp))
                     }
                     itemsIndexed(tracks, key = { index, track -> "$index-${track.id}" }) { index, track ->
                         Row(
@@ -64,8 +79,9 @@ internal fun MusicAlbumPage(title: String, tracks: List<MusicRow>, loading: Bool
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text(track.title, style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                track.artistHint()?.takeIf { it.isNotBlank() }?.let { artist ->
-                                    Text(artist, style = MaterialTheme.typography.bodySmall,
+                                val artist = track.artistHint()?.takeIf { it.isNotBlank() } ?: albumArtist
+                                artist?.takeIf { it.isNotBlank() }?.let {
+                                    Text(it, style = MaterialTheme.typography.bodySmall,
                                         color = AurisOnSurfaceVariant, maxLines = 1,
                                         overflow = TextOverflow.Ellipsis)
                                 }

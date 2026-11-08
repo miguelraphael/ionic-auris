@@ -25,8 +25,9 @@ class InnerTubeCollectionsTest {
         assertNotNull(playlist.artworkUrl)
         assertEquals("I Love You So", items.first().tracks.single().title)
         assertEquals("The Walters", items.first().tracks.single().artist)
-        // The artist result is not an album, playlist, or playable song.
-        assertEquals(4, items.size)
+        val artist = items.mapNotNull { it.artist }.single()
+        assertNotNull(artist)
+        assertEquals(5, items.size)
     }
 
     @Test

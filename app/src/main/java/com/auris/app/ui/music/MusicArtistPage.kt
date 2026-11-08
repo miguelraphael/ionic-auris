@@ -40,7 +40,7 @@ internal fun MusicArtistPage(
 ) {
     var showAllSongs by remember(name) { mutableStateOf(false) }
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)), color = AurisBackground) {
+        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), color = AurisBackground) {
             Column(Modifier.fillMaxSize()) {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 32.dp)) {
                     item {

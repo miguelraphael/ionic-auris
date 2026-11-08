@@ -30,20 +30,30 @@ import com.auris.app.ui.components.SkeletonListRows
 import com.auris.app.ui.theme.*
 
 internal enum class MusicSearchFilter(val label: String) {
-    TOP("Top Results"), SONGS("Songs"), ALBUMS("Albums"), PLAYLISTS("Playlists"),
+    TOP("Top Results"), SONGS("Songs"), ARTISTS("Artists"), ALBUMS("Albums"), PLAYLISTS("Playlists"),
 }
 
-internal fun selectMusicSearchResult(row: MusicRow, onPlay: (MusicRow) -> Unit, onOpenAlbum: (MusicRow) -> Unit) {
-    if (row.kind == MusicRow.Kind.ALBUM) onOpenAlbum(row) else onPlay(row)
+internal fun selectMusicSearchResult(
+    row: MusicRow,
+    onPlay: (MusicRow) -> Unit,
+    onOpenAlbum: (MusicRow) -> Unit,
+    onOpenArtist: (MusicRow) -> Unit = {},
+) {
+    when (row.kind) {
+        MusicRow.Kind.ARTIST -> onOpenArtist(row)
+        MusicRow.Kind.ALBUM, MusicRow.Kind.PLAYLIST -> onOpenAlbum(row)
+        else -> onPlay(row)
+    }
 }
 
 internal class MusicSearchSections(rows: List<MusicRow>) {
     private val unique = rows.filter { it.id.isNotBlank() }
         .sortedBy { it.resultType.searchPriority }.distinctBy { it.kind to it.id }
+    val artists = unique.filter { it.kind == MusicRow.Kind.ARTIST }
     val songs = unique.filter { it.kind == MusicRow.Kind.TRACK }
     val albums = unique.filter { it.kind == MusicRow.Kind.ALBUM }
     val playlists = unique.filter { it.kind == MusicRow.Kind.PLAYLIST }
-    val topResult = songs.firstOrNull() ?: albums.firstOrNull() ?: playlists.firstOrNull()
+    val topResult = artists.firstOrNull() ?: songs.firstOrNull() ?: albums.firstOrNull() ?: playlists.firstOrNull()
 }
 
 @Composable
@@ -70,11 +80,16 @@ internal fun MusicSearchResults(
     val empty = when (filter) {
         MusicSearchFilter.TOP -> sections.topResult == null
         MusicSearchFilter.SONGS -> sections.songs.isEmpty()
+        MusicSearchFilter.ARTISTS -> sections.artists.isEmpty()
         MusicSearchFilter.ALBUMS -> sections.albums.isEmpty()
         MusicSearchFilter.PLAYLISTS -> sections.playlists.isEmpty()
     }
-    if (filter in listOf(MusicSearchFilter.ALBUMS, MusicSearchFilter.PLAYLISTS) && !empty) {
-        val collections = if (filter == MusicSearchFilter.ALBUMS) sections.albums else sections.playlists
+    if (filter in listOf(MusicSearchFilter.ARTISTS, MusicSearchFilter.ALBUMS, MusicSearchFilter.PLAYLISTS) && !empty) {
+        val collections = when (filter) {
+            MusicSearchFilter.ARTISTS -> sections.artists
+            MusicSearchFilter.ALBUMS -> sections.albums
+            else -> sections.playlists
+        }
         LazyVerticalGrid(
             modifier = Modifier.navigationBarsPadding(),
             columns = GridCells.Adaptive(140.dp),
@@ -117,25 +132,27 @@ internal fun MusicSearchResults(
                         if (top.id == state.nowPlayingId) onOpenPlayer() else onPlay(top)
                     })) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        MediaArtwork(top.artworkUrl, null, Modifier.size(88.dp), shape = ArtworkShapeSmall)
+                        MediaArtwork(top.artworkUrl, null, Modifier.size(88.dp),
+                            shape = if (top.kind == MusicRow.Kind.ARTIST) CircleShape else ArtworkShapeSmall)
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                             Text(top.title, style = MaterialTheme.typography.titleLarge,
                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(listOfNotNull(when (top.kind) {
+                                MusicRow.Kind.ARTIST -> "Artist"
+                                MusicRow.Kind.ALBUM -> "Album"
+                                MusicRow.Kind.PLAYLIST -> "Playlist"
                                 MusicRow.Kind.TRACK -> when (top.resultType) {
                                     MusicResultType.OFFICIAL_VIDEO -> "Music video"
                                     MusicResultType.USER_VIDEO -> "Video"
                                     else -> "Song"
                                 }
-                                MusicRow.Kind.ALBUM -> "Album"
-                                MusicRow.Kind.PLAYLIST -> "Playlist"
                             }, top.subtitle).joinToString(" · "), color = AurisOnSurfaceVariant,
                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                         IconButton(onClick = { if (top.id == state.nowPlayingId) onOpenPlayer() else onPlay(top) },
                             modifier = Modifier.background(AurisAccent, CircleShape)) {
-                            Icon(if (top.kind == MusicRow.Kind.ALBUM) Icons.Filled.ChevronRight else Icons.Filled.PlayArrow,
-                                if (top.kind == MusicRow.Kind.ALBUM) "Open ${top.title}" else "Play ${top.title}", tint = AurisBackground)
+                            Icon(if (top.kind in listOf(MusicRow.Kind.ARTIST, MusicRow.Kind.ALBUM, MusicRow.Kind.PLAYLIST)) Icons.Filled.ChevronRight else Icons.Filled.PlayArrow,
+                                if (top.kind in listOf(MusicRow.Kind.ARTIST, MusicRow.Kind.ALBUM, MusicRow.Kind.PLAYLIST)) "Open ${top.title}" else "Play ${top.title}", tint = AurisBackground)
                         }
                     }
                 }
@@ -151,8 +168,11 @@ internal fun MusicSearchResults(
                     onOptions = { onOptions(song) })
             }
         }
-        listOf(Triple(MusicSearchFilter.ALBUMS, "Albums", sections.albums),
-            Triple(MusicSearchFilter.PLAYLISTS, "Playlists", sections.playlists)).forEach { (kind, title, rows) ->
+        listOf(
+            Triple(MusicSearchFilter.ARTISTS, "Artists", sections.artists),
+            Triple(MusicSearchFilter.ALBUMS, "Albums", sections.albums),
+            Triple(MusicSearchFilter.PLAYLISTS, "Playlists", sections.playlists),
+        ).forEach { (kind, title, rows) ->
             if (rows.isNotEmpty() && (filter == MusicSearchFilter.TOP || filter == kind)) {
                 item(key = "$title-header", contentType = "header") {
                     SearchSectionHeader(title, if (filter == MusicSearchFilter.TOP) ({ onFilter(kind) }) else null)
@@ -172,7 +192,12 @@ internal fun MusicSearchResults(
 @Composable
 private fun SearchCollectionCard(row: MusicRow, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.clickable(onClick = onClick)) {
-        MediaArtwork(row.artworkUrl, null, Modifier.fillMaxWidth().aspectRatio(1f))
+        MediaArtwork(
+            row.artworkUrl,
+            null,
+            Modifier.fillMaxWidth().aspectRatio(1f),
+            shape = if (row.kind == MusicRow.Kind.ARTIST) CircleShape else ArtworkShapeSmall,
+        )
         Text(row.title, style = MaterialTheme.typography.titleMedium,
             maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         row.subtitle?.let { Text(it, color = AurisOnSurfaceVariant,
