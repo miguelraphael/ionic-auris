@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -187,11 +188,11 @@ fun MediaGridCard(
                         .align(Alignment.BottomCenter)
                         .padding(8.dp),
                 ) {
-                    AurisSlider(
-                        progress = progress,
-                        onProgressChange = {},
-                        trackHeight = 4.dp,
-                        modifier = Modifier.fillMaxWidth(),
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { progress.coerceIn(0f, 1f) },
+                        color = AurisAccent,
+                        trackColor = Color.Black.copy(alpha = 0.55f),
+                        modifier = Modifier.fillMaxWidth().height(4.dp),
                     )
                 }
             }
@@ -275,13 +276,11 @@ fun EpisodeCard(
                 )
             }
             if (progress > 0f) {
-                AurisSlider(
-                    progress = progress,
-                    onProgressChange = {},
-                    trackHeight = 4.dp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progress.coerceIn(0f, 1f) },
+                    color = AurisAccent,
+                    trackColor = AurisOnSurfaceVariant.copy(alpha = 0.2f),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(4.dp),
                 )
             }
         }

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-08T12:57:10.697109+00:00",
+  "title": "Design System: Auris Dark",
+  "extensions": {
+    "motion": [
+      {
+        "name": "standard",
+        "value": "300ms cubic-bezier(0.05,0.7,0.1,1)",
+        "purpose": "Existing native state transitions"
+      },
+      {
+        "name": "press",
+        "value": "100ms press / 150ms release",
+        "purpose": "Shared touch feedback without bounce"
+      },
+      {
+        "name": "playback-artwork",
+        "value": "240ms, scale 0.96 to 1",
+        "purpose": "Playback state continuity"
+      },
+      {
+        "name": "transport-crossfade",
+        "value": "150ms",
+        "purpose": "Play, pause and buffering state changes"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Grouped button",
+      "kind": "button",
+      "description": "Web preview analogue of the native 12dp grouped button; production uses Compose.",
+      "html": "<button>Listen to music</button>",
+      "css": "button{background:#1c1c1e;color:#f5f5f7;border:0;border-radius:12px;min-height:48px;padding:12px 24px;font:600 15px system-ui}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Artwork first, quiet dark chrome",
+    "overview": "Apple Music-inspired presentation with Auris identity and Android behavior.",
+    "keyCharacteristics": [
+      "Black base",
+      "Neutral grouped surfaces",
+      "SF Pro titles",
+      "Off-white actions and sliders; muted sage playback modes"
+    ],
+    "rules": [],
+    "dos": [
+      "Preserve Android navigation and 48dp targets"
+    ],
+    "donts": [
+      "Do not imply fixture screenshots verify live playback"
+    ]
+  }
+}

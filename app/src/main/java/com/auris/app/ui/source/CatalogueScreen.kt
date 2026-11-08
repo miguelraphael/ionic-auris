@@ -63,6 +63,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.auris.app.R
+import com.auris.app.core.model.MediaType
 import coil.compose.AsyncImage
 import com.auris.app.source.SourceItem
 import com.auris.app.ui.components.MediaGridCard
@@ -202,12 +205,24 @@ private fun CatalogueHeader(state: CatalogueUiState, onBack: (() -> Unit)?, onSo
             Spacer(Modifier.height(12.dp))
         }
         Text(
-            text = state.sourceName.ifBlank { "Catalogue" },
+            text = stringResource(when (state.mediaType) {
+                MediaType.ANIME -> R.string.nav_anime
+                MediaType.MANGA -> R.string.nav_manga
+                MediaType.MUSIC -> R.string.nav_music
+                null -> R.string.catalogue_title
+            }),
             style = MaterialTheme.typography.displayLarge,
             color = AurisOnSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        if (state.sourceName.isNotBlank()) {
+            Text(
+                text = stringResource(R.string.catalogue_selected_source, state.sourceName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = AurisOnSurfaceVariant,
+            )
+        }
         if (state.sourceLanguage.isNotBlank()) {
             Text(
                 text = state.sourceLanguage,

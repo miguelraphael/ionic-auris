@@ -36,8 +36,9 @@ data class PlayerUiState(
     /** A transient message from a control that could not act, e.g. an unavailable feature. */
     val message: String? = null,
 
-    /** Set only when the playback service could not be reached at all. */
+    /** A connection or current-track playback failure, with an in-place recovery action. */
     val error: String? = null,
+    val isReconnecting: Boolean = false,
 ) {
     /** True when nothing has ever been queued, which is a different screen from a paused one. */
     val isEmpty: Boolean

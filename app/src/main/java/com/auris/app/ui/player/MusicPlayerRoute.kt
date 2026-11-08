@@ -102,6 +102,7 @@ fun MusicPlayerRoute(
         MusicPlayerScreen(
             state = state,
             onPlayPause = viewModel::togglePlayPause,
+            onRetry = viewModel::retryPlayback,
             onSeekFraction = viewModel::seekToFraction,
             onVolumeChange = viewModel::setVolume,
             onCycleRepeat = viewModel::cycleRepeat,

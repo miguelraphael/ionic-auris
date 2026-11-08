@@ -43,7 +43,7 @@ class CatalogueViewModel(
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
-        CatalogueUiState(sourceKey = sourceKey, sourceLanguage = "",
+        CatalogueUiState(sourceKey = sourceKey, sourceLanguage = "", mediaType = mediaType,
             sources = extensionContentRepository.builtInSources.filter { it.mediaType == mediaType }.map {
                 BrowsableSource("builtin-${it.id}", it.name, "", "builtin", it.mediaType)
             }),
@@ -75,6 +75,7 @@ class CatalogueViewModel(
             _state.value = _state.value.copy(
                 isSourceAvailable = true,
                 sourceName = resolved.name,
+                mediaType = resolved.mediaType,
                 popularLabel = if (resolved.id == "mangapill") "Trending" else "Popular",
                 sourceLanguage = when (resolved.id) {
                     MangaDexSource.ID -> "English chapters · MangaDex"

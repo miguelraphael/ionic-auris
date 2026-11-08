@@ -156,7 +156,7 @@ class InnerTubeParser {
         val pageType = endpoint?.get("browseEndpointContextSupportedConfigs")?.asObject()
             ?.get("browseEndpointContextMusicConfig")?.asObject()?.string("pageType")
         return when {
-            pageType == "MUSIC_PAGE_TYPE_PLAYLIST" || id.startsWith("VL") || id.startsWith("MPSP") || id.startsWith("RDCLAK5uy_") -> MusicCollectionItem(
+            pageType == "MUSIC_PAGE_TYPE_PLAYLIST" || id.startsWith("VL") || id.startsWith("PL") || id.startsWith("MPSP") || id.startsWith("RDCLAK5uy_") -> MusicCollectionItem(
                 kind = MusicCollectionItem.Kind.PLAYLIST,
                 playlist = MusicPlaylist(id, title, metadata.joinToString(" · ").takeIf { it.isNotBlank() }, renderer.thumbnailUrl(THUMB_LARGE), null),
             )

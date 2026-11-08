@@ -146,7 +146,7 @@ internal fun MusicSearchResults(
                                     MusicResultType.USER_VIDEO -> "Video"
                                     else -> "Song"
                                 }
-                            }, top.subtitle).joinToString(" · "), color = AurisOnSurfaceVariant,
+                            }, top.subtitle.takeUnless { top.kind == MusicRow.Kind.ARTIST && it.equals("Artist", ignoreCase = true) }).joinToString(" · "), color = AurisOnSurfaceVariant,
                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                         IconButton(onClick = { if (top.id == state.nowPlayingId) onOpenPlayer() else onPlay(top) },

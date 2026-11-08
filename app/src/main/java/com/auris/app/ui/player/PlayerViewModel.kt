@@ -13,6 +13,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.auris.app.music.MusicPlaybackService
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -62,6 +63,7 @@ class PlayerViewModel(context: Context) : ViewModel() {
 
     private var controller: MediaController? = null
     private var ticker: Job? = null
+    private var connection: ListenableFuture<MediaController>? = null
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -74,20 +76,37 @@ class PlayerViewModel(context: Context) : ViewModel() {
     }
 
     private fun connect() {
+        if (connection != null) return
+        _state.value = _state.value.copy(error = null, isReconnecting = true)
         val token = SessionToken(
             appContext,
             ComponentName(appContext, MusicPlaybackService::class.java),
         )
         val future = MediaController.Builder(appContext, token)
             .setListener(object : MediaController.Listener {
+                override fun onDisconnected(controller: MediaController) {
+                    if (this@PlayerViewModel.controller !== controller) return
+                    ticker?.cancel()
+                    this@PlayerViewModel.controller = null
+                    val disconnected = connection
+                    connection = null
+                    disconnected?.let { MediaController.releaseFuture(it) }
+                    _state.value = _state.value.copy(
+                        error = "The playback connection was lost. Reconnect to continue.",
+                        isReconnecting = false,
+                    )
+                }
                 override fun onExtrasChanged(controller: MediaController, extras: Bundle) { publish() }
             }).buildAsync()
+        connection = future
         future.addListener(
             {
                 val connected = runCatching { future.get() }.getOrNull()
                 if (connected == null) {
+                    connection = null
                     _state.value = _state.value.copy(
-                        error = "Could not connect to the playback service",
+                        isReconnecting = false,
+                        error = "Could not connect to playback. Try reconnecting.",
                     )
                     return@addListener
                 }
@@ -135,6 +154,9 @@ class PlayerViewModel(context: Context) : ViewModel() {
             eqMax = player.sessionExtras.getInt("eqMax", 1500),
             sleepRemainingMs = player.sessionExtras.getLong(MusicPlaybackService.SLEEP_DEADLINE)
                 .let { if (it == 0L) 0L else (it - SystemClock.elapsedRealtime()).coerceAtLeast(0L) },
+            error = if (player.playerError != null) {
+                "This track could not play. Check your connection and try again."
+            } else null,
             queueSize = player.mediaItemCount,
             queuePosition = player.currentMediaItemIndex,
         )
@@ -168,6 +190,19 @@ class PlayerViewModel(context: Context) : ViewModel() {
     }
 
     // ---- Transport ----------------------------------------------------------
+
+    /** Reconnects or retries the current item without replacing the queue or seeking. */
+    fun retryPlayback() {
+        if (_state.value.isReconnecting) return
+        val player = controller
+        if (player == null) {
+            connect()
+        } else {
+            player.prepare()
+            player.play()
+            publish()
+        }
+    }
 
     fun togglePlayPause() {
         val player = controller ?: return
@@ -309,8 +344,11 @@ class PlayerViewModel(context: Context) : ViewModel() {
     override fun onCleared() {
         ticker?.cancel()
         ticker = null
-        controller?.release()
+        controller?.removeListener(listener)
+        val pending = connection
+        connection = null
         controller = null
+        pending?.let { MediaController.releaseFuture(it) }
         super.onCleared()
     }
 

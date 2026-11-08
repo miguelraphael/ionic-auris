@@ -9,9 +9,9 @@ import androidx.compose.ui.graphics.Color
  */
 data class ArtworkPalette(
     /** Dominant / vibrant swatch. */
-    val primary: Color = AurisBlue,
+    val primary: Color = AurisSurfaceOpaque,
     /** Muted companion for secondary fills. */
-    val secondary: Color = AurisIndigo,
+    val secondary: Color = AurisBackground,
     /** Darkest swatch, used for the fade target. */
     val darkest: Color = AurisBackground,
     /** Lightest swatch, used for artwork scrims and on-colour text. */
@@ -19,12 +19,12 @@ data class ArtworkPalette(
     val isGenerated: Boolean = false,
 ) {
     companion object {
-        /** Used before Palette extraction completes, so gradients never flash grey. */
+        /** Used before Palette extraction completes, so screens stay neutral until artwork supplies color. */
         val Unspecified = ArtworkPalette()
 
         val Fallback = ArtworkPalette(
-            primary = AurisBlue,
-            secondary = AurisIndigo,
+            primary = AurisSurfaceOpaque,
+            secondary = AurisBackground,
             darkest = AurisBackground,
             light = AurisOnSurface,
         )

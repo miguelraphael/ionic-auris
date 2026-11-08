@@ -33,8 +33,8 @@ private val AurisColorScheme = darkColorScheme(
     surfaceContainerLowest = AurisBackground,
     surfaceContainerLow = AurisSurfaceOpaque,
     surfaceContainer = AurisSurfaceOpaque,
-    surfaceContainerHigh = AurisSurfaceOpaque,
-    surfaceContainerHighest = AurisSurfaceOpaque,
+    surfaceContainerHigh = Color(0xFF2C2C2E),
+    surfaceContainerHighest = Color(0xFF3A3A3C),
 
     tertiary = AurisOrange,
     onTertiary = Color.White,

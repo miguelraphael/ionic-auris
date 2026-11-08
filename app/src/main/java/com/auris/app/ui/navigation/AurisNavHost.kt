@@ -416,6 +416,7 @@ fun AurisNavHost(
                     onOptions = { homeSongOptions = it },
                     isPlaylist = album.kind == MusicRow.Kind.PLAYLIST,
                     albumArtist = album.subtitle,
+                    artworkUrl = album.artworkUrl,
                     bottomBar = {
                         if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
@@ -425,7 +426,7 @@ fun AurisNavHost(
                             onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
                             canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
                             canGoNext = !musicState.isResolving && musicState.canGoNext,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     },
                 )
@@ -768,6 +769,7 @@ fun AurisNavHost(
                     onOptions = { optionsSong = it },
                     isPlaylist = album.kind == MusicRow.Kind.PLAYLIST,
                     albumArtist = album.subtitle,
+                    artworkUrl = album.artworkUrl,
                     bottomBar = {
                         if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
@@ -777,7 +779,7 @@ fun AurisNavHost(
                             onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
                             canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
                             canGoNext = !musicState.isResolving && musicState.canGoNext,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     },
                 )

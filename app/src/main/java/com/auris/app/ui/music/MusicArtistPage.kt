@@ -39,14 +39,17 @@ internal fun MusicArtistPage(
     bottomBar: @Composable () -> Unit = {},
 ) {
     var showAllSongs by remember(name) { mutableStateOf(false) }
+    val navBottom = rememberDialogNavBottomPadding()
+    val statusTop = rememberDialogStatusBarTopPadding()
+
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), color = AurisBackground) {
+        Surface(Modifier.fillMaxSize(), color = AurisBackground) {
             Column(Modifier.fillMaxSize()) {
-                LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 32.dp)) {
+                LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp + navBottom)) {
                     item {
                         Box {
                             MediaArtwork(artwork, null, Modifier.fillMaxWidth().height(220.dp))
-                            FilledTonalIconButton(onClick = onBack, modifier = Modifier.padding(16.dp)) {
+                            FilledTonalIconButton(onClick = onBack, modifier = Modifier.padding(top = statusTop + 8.dp, start = 16.dp)) {
                                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back")
                             }
                         }
@@ -126,7 +129,9 @@ internal fun MusicArtistPage(
                     }
                     if (!loading && rows.isEmpty()) item { Text("No artist releases found. Try searching for the artist directly.", Modifier.padding(20.dp)) }
                 }
-                bottomBar()
+                Box(Modifier.padding(bottom = navBottom)) {
+                    bottomBar()
+                }
             }
         }
     }

@@ -118,6 +118,7 @@ data class CatalogueUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val hasNextPage: Boolean = false,
+    val mediaType: MediaType? = null,
 ) {
     enum class Mode { POPULAR, LATEST, SEARCH }
 

@@ -78,7 +78,7 @@ fun ArtworkGradientBackground(
  */
 private fun Color.attenuate(amount: Float): Color {
     val base = AurisBackground
-    val towardBase = (0.82f - 0.07f * amount).coerceIn(0.62f, 0.92f)
+    val towardBase = (0.93f - 0.05f * amount).coerceIn(0.62f, 0.92f)
     return Color(
         red = red + (base.red - red) * towardBase,
         green = green + (base.green - green) * towardBase,

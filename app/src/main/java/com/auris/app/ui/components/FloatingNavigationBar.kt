@@ -88,7 +88,7 @@ fun FloatingNavigationBar(
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 45.dp)
+                .padding(horizontal = 20.dp)
                 .padding(bottom = FloatingNavigationLayout.bottomMargin)
                 .widthIn(max = maxWidth)
                 .height(FloatingNavigationLayout.height)
@@ -171,7 +171,7 @@ private fun FloatingNavItem(
                 style = MaterialTheme.typography.labelMedium,
                 color = tint,
                 maxLines = 1,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
             )
         }
     }
@@ -179,7 +179,7 @@ private fun FloatingNavItem(
 
 /**
  * Compact icon button used in the player's secondary tier (device picker, sleep timer,
- * queue, cast). 40dp touch target, 24dp glyph, no background.
+ * queue, cast). 48dp touch target, 24dp glyph, no background.
  */
 @Composable
 fun PlayerGhostIcon(
@@ -197,7 +197,7 @@ fun PlayerGhostIcon(
     )
     Box(
         modifier = modifier.pressFeedback(interactionSource)
-            .size(40.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .clickable(
                 enabled = enabled,

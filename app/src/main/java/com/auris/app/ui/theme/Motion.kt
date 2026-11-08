@@ -34,15 +34,15 @@ object AurisMotion {
     )
 }
 
-/** Draw-only tactile feedback: spring physics provides organic, instantaneous feel. */
+/** Quick draw-only press feedback, respecting Compose’s system animation duration scale. */
 @Composable
 fun Modifier.pressFeedback(interactionSource: InteractionSource): Modifier {
     val pressed by interactionSource.collectIsPressedAsState()
     val scale = animateFloatAsState(
         targetValue = if (pressed) 0.96f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
+        animationSpec = tween(
+            durationMillis = if (pressed) 100 else 150,
+            easing = AurisMotion.Decelerate,
         ),
         label = "pressFeedback",
     )

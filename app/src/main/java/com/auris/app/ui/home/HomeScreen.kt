@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,6 +47,9 @@ import com.auris.app.ui.components.MediaGridCard
 import com.auris.app.ui.components.SectionHeader
 import com.auris.app.ui.components.SkeletonShelf
 import com.auris.app.ui.components.StateEmpty
+import com.auris.app.ui.components.StateActionButton
+import androidx.compose.ui.res.stringResource
+import com.auris.app.R
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
@@ -167,13 +171,35 @@ fun HomeScreen(
 
         if (library.isEmpty()) {
             item(key = "empty", contentType = "empty") {
-                StateEmpty(
-                    title = "Your library is empty",
-                    description = "Browse anime or manga, or search for music. Everything you open " +
-                        "or save lands here, ready to resume.",
-                    actionLabel = "Browse anime",
-                    onAction = { onSeeAll(MediaType.ANIME) },
-                )
+                Column {
+                    StateEmpty(
+                        title = stringResource(R.string.home_empty_title),
+                        description = stringResource(R.string.home_empty_description),
+                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        StateActionButton(
+                            label = stringResource(R.string.home_watch_anime),
+                            onClick = { onSeeAll(MediaType.ANIME) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            filled = false,
+                        )
+                        StateActionButton(
+                            label = stringResource(R.string.home_listen_music),
+                            onClick = { onSeeAll(MediaType.MUSIC) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            filled = false,
+                        )
+                        StateActionButton(
+                            label = stringResource(R.string.home_read_manga),
+                            onClick = { onSeeAll(MediaType.MANGA) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            filled = false,
+                        )
+                    }
+                }
             }
             return@LazyColumn
         }

@@ -1,5 +1,10 @@
 package com.auris.app.ui.player
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import com.auris.app.ui.theme.AurisMotion
 import com.auris.app.ui.theme.pressFeedback
 
 import androidx.compose.foundation.background
@@ -10,7 +15,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,6 +43,10 @@ import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,7 +56,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -55,9 +65,11 @@ import com.auris.app.data.remote.music.nowPlayingArtworkUrl
 import com.auris.app.ui.components.AurisSlider
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.components.PlayerGhostIcon
+import com.auris.app.ui.theme.AurisActive
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisOnSurface
+import com.auris.app.ui.theme.AurisSurfaceOpaque
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
 import com.auris.app.ui.theme.ArtworkGradientBackground
 import com.auris.app.ui.theme.ArtworkShapeLarge
@@ -98,9 +110,15 @@ fun MusicPlayerScreen(
     onOpenQueue: () -> Unit = {},
     onOpenSleepTimer: () -> Unit = {},
     onArtistClick: ((artist: String, trackId: String?) -> Unit)? = null,
+    onRetry: () -> Unit = {},
 ) {
     // The screen's gradient tracks the current album art.
     val palette = rememberArtworkPaletteValue(artworkKey = state.artworkUrl)
+    val artworkScale by animateFloatAsState(
+        targetValue = if (state.isPlaying) 1f else 0.96f,
+        animationSpec = tween(240, easing = AurisMotion.Ease),
+        label = "playbackArtworkScale",
+    )
 
     ArtworkGradientBackground(
         palette = palette,
@@ -112,10 +130,13 @@ fun MusicPlayerScreen(
         // Nothing queued is a real state — reached by opening the player from the pill before
         // anything has played. A full transport UI over blank metadata looked broken, so it
         // gets its own screen with the one action that helps: go back and pick something.
-        if (state.error != null) {
+        if (state.error != null || state.isReconnecting) {
             EmptyPlayer(
-                title = "Playback unavailable",
-                detail = state.error,
+                title = if (state.isReconnecting) "Connecting to playback" else "Playback unavailable",
+                detail = state.error ?: "Reconnecting to playback…",
+                trackTitle = state.title,
+                onRetry = onRetry,
+                isReconnecting = state.isReconnecting,
                 onBack = onBack,
             )
             return@ArtworkGradientBackground
@@ -130,233 +151,245 @@ fun MusicPlayerScreen(
             return@ArtworkGradientBackground
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-                .padding(horizontal = 20.5.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // The nav pill is hidden on this route, so the screen carries its own way out.
-            Row(
+        BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding()) {
+            val compact = maxHeight < 700.dp
+            val artworkSize = minOf(maxWidth - 41.dp, maxHeight * if (compact) 0.20f else 0.38f).coerceAtLeast(0.dp)
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(32.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .fillMaxSize()
+                    .padding(horizontal = 20.5.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                PlayerCloseButton(onBack)
-            }
+                // The nav pill is hidden on this route, so the screen carries its own way out.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PlayerCloseButton(onBack)
+                }
 
-            Spacer(Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Spacer(Modifier.height(8.dp))
 
-            // ---- Album art ------------------------------------------------------
-            MediaArtwork(
-                imageUrl = nowPlayingArtworkUrl(state.artworkUrl),
-                fallbackImageUrl = state.artworkUrl,
-                contentDescription = state.album.ifBlank { state.title },
-                shape = ArtworkShapeLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    // Lifts the square off the artwork-tinted background, the way the reference
-                    // art sits above the sheet. Shadow only: the art itself stays unclipped.
-                    .shadow(
-                        elevation = 24.dp,
+                    if (compact) { PlayerTrackTitle(state.title) }
+
+                // ---- Album art ------------------------------------------------------
+                    MediaArtwork(
+                        imageUrl = nowPlayingArtworkUrl(state.artworkUrl),
+                        fallbackImageUrl = state.artworkUrl,
+                        contentDescription = state.album.ifBlank { state.title },
                         shape = ArtworkShapeLarge,
-                        clip = false,
-                    ),
-                placeholderIcon = {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Filled.Album,
-                            contentDescription = null,
-                            tint = AurisOnSurfaceVariant.copy(alpha = 0.4f),
-                            modifier = Modifier.size(72.dp),
+                        modifier = Modifier
+                            .size(artworkSize)
+                            .graphicsLayer { scaleX = artworkScale; scaleY = artworkScale }
+                            // Lifts the square off the artwork-tinted background, the way the reference
+                            // art sits above the sheet. Shadow only: the art itself stays unclipped.
+                            .shadow(
+                                elevation = 24.dp,
+                                shape = ArtworkShapeLarge,
+                                clip = false,
+                            ),
+                        placeholderIcon = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Filled.Album,
+                                    contentDescription = null,
+                                    tint = AurisOnSurfaceVariant.copy(alpha = 0.4f),
+                                    modifier = Modifier.size(72.dp),
+                                )
+                            }
+                        },
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    // ---- Seek bar -------------------------------------------------------
+                    // 10.5dp extra inset on top of the 20.5dp column padding lands on the
+                    // measured 31dp.
+                    AurisSlider(
+                        progress = state.progress,
+                        onProgressChange = onSeekFraction,
+                        contentDescription = "Seek",
+                        modifier = Modifier.padding(horizontal = 10.5.dp),
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // ---- Timestamps -----------------------------------------------------
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.5.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = state.positionMs.toTimestamp(),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = AurisOnSurface,
+                        )
+                        Text(
+                            text = state.durationMs.toTimestamp(),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = AurisOnSurface,
                         )
                     }
-                },
-            )
 
-            Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(16.dp))
 
-            // ---- Seek bar -------------------------------------------------------
-            // 10.5dp extra inset on top of the 20.5dp column padding lands on the
-            // measured 31dp.
-            AurisSlider(
-                progress = state.progress,
-                onProgressChange = onSeekFraction,
-                contentDescription = "Seek",
-                modifier = Modifier.padding(horizontal = 10.5.dp),
-            )
+                    // ---- Track metadata, centred ---------------------------------------
+                    if (!compact) { PlayerTrackTitle(state.title) }
+                Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        if (state.artist.isNotBlank()) {
+                            Text(
+                                text = state.artist,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (onArtistClick != null) AurisAccent else AurisOnSurface,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable(enabled = onArtistClick != null) {
+                                        onArtistClick?.invoke(state.artist, state.entryId)
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                        if (state.album.isNotBlank()) {
+                            Text(
+                                text = state.album,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = AurisOnSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
 
-            Spacer(Modifier.height(10.dp))
+                }
 
-            // ---- Timestamps -----------------------------------------------------
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.5.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = state.positionMs.toTimestamp(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = AurisOnSurface,
+                Spacer(Modifier.height(18.dp))
+
+                // ---- Tier 1: secondary / utility controls --------------------------
+                // Sleep, repeat, shuffle, queue. The equalizer and cast buttons are gone: Auris
+                // has no equalizer and no remote playback target, so they were dead ends.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PlayerGhostIcon(
+                        modifier = Modifier.background(
+                            if (state.sleepRemainingMs > 0) AurisActive.copy(alpha = 0.16f) else AurisSurfaceOpaque, CircleShape),
+                        onClick = onOpenSleepTimer,
+                        icon = Icons.Filled.Bedtime,
+                        contentDescription = if (state.sleepRemainingMs > 0) "Sleep timer: ${state.sleepRemainingMs.toTimestamp()} remaining" else "Sleep timer",
+                        tint = if (state.sleepRemainingMs > 0) AurisActive else AurisOnSurfaceVariant,
+                    )
+                    PlayerGhostIcon(
+                        modifier = Modifier.background(
+                            if (state.repeatMode != RepeatMode.OFF) AurisActive.copy(alpha = 0.16f) else AurisSurfaceOpaque, CircleShape),
+                        onClick = onCycleRepeat,
+                        icon = if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                        contentDescription = when (state.repeatMode) {
+                            RepeatMode.OFF -> "Repeat off"
+                            RepeatMode.ALL -> "Repeat all"
+                            RepeatMode.ONE -> "Repeat one"
+                        },
+                        tint = if (state.repeatMode != RepeatMode.OFF) {
+                            AurisActive
+                        } else {
+                            AurisOnSurfaceVariant
+                        },
+                    )
+                    PlayerGhostIcon(
+                        modifier = Modifier.background(
+                            if (state.shuffleEnabled || state.smartShuffleEnabled) AurisActive.copy(alpha = 0.16f) else AurisSurfaceOpaque, CircleShape),
+                        onClick = onToggleShuffle,
+                        icon = if (state.smartShuffleEnabled) Icons.Filled.AutoAwesome else Icons.Filled.Shuffle,
+                        contentDescription = when {
+                            state.smartShuffleEnabled -> "Smart shuffle on"
+                            state.shuffleEnabled -> "Shuffle on"
+                            else -> "Shuffle off"
+                        },
+                        tint = if (state.shuffleEnabled || state.smartShuffleEnabled) AurisActive else AurisOnSurfaceVariant,
+                    )
+                    PlayerGhostIcon(
+                        modifier = Modifier.background(AurisSurfaceOpaque, CircleShape),
+                        onClick = onOpenQueue,
+                        icon = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Queue",
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // ---- Tier 2: transport ----------------------------------------------
+                TransportTier(
+                    state = state,
+                    onPlayPause = onPlayPause,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
                 )
-                Text(
-                    text = state.durationMs.toTimestamp(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = AurisOnSurface,
-                )
-            }
 
-            Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
 
-            // ---- Track metadata, centred ---------------------------------------
-            Text(
-                text = state.title,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 28.sp,
-                    lineHeight = 34.sp,
-                ),
-                color = AurisOnSurface,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (state.artist.isNotBlank()) {
-                    Text(
-                        text = state.artist,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (onArtistClick != null) AurisAccent else AurisOnSurface,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                Spacer(Modifier.height(12.dp))
+
+                // ---- Volume ---------------------------------------------------------
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.VolumeDown,
+                        contentDescription = null,
+                        tint = AurisOnSurfaceVariant,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    AurisSlider(
+                        progress = state.volume,
+                        onProgressChange = onVolumeChange,
+                        contentDescription = "Volume",
+                        trackHeight = 6.dp,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable(enabled = onArtistClick != null) {
-                                onArtistClick?.invoke(state.artist, state.entryId)
-                            }
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                            .weight(1f)
+                            .padding(horizontal = 14.dp),
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = null,
+                        tint = AurisOnSurfaceVariant,
+                        modifier = Modifier.size(22.dp),
                     )
                 }
-                if (state.artist.isNotBlank() && state.album.isNotBlank()) {
-                    Text(
-                        text = " – ",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = AurisOnSurfaceVariant,
-                    )
-                }
-                if (state.album.isNotBlank()) {
-                    Text(
-                        text = state.album,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = AurisOnSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+
+                Spacer(Modifier.height(12.dp))
             }
-
-            Spacer(Modifier.height(18.dp))
-
-            // ---- Tier 1: secondary / utility controls --------------------------
-            // Sleep, repeat, shuffle, queue. The equalizer and cast buttons are gone: Auris
-            // has no equalizer and no remote playback target, so they were dead ends.
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PlayerGhostIcon(
-                    onClick = onOpenSleepTimer,
-                    icon = Icons.Filled.Bedtime,
-                    contentDescription = if (state.sleepRemainingMs > 0) "Sleep timer: ${state.sleepRemainingMs.toTimestamp()} remaining" else "Sleep timer",
-                    tint = if (state.sleepRemainingMs > 0) AurisAccent else AurisOnSurfaceVariant,
-                )
-                PlayerGhostIcon(
-                    onClick = onCycleRepeat,
-                    icon = if (state.repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                    contentDescription = when (state.repeatMode) {
-                        RepeatMode.OFF -> "Repeat off"
-                        RepeatMode.ALL -> "Repeat all"
-                        RepeatMode.ONE -> "Repeat one"
-                    },
-                    tint = if (state.repeatMode != RepeatMode.OFF) {
-                        AurisAccent
-                    } else {
-                        AurisOnSurfaceVariant
-                    },
-                )
-                PlayerGhostIcon(
-                    onClick = onToggleShuffle,
-                    icon = if (state.smartShuffleEnabled) Icons.Filled.AutoAwesome else Icons.Filled.Shuffle,
-                    contentDescription = when {
-                        state.smartShuffleEnabled -> "Smart shuffle on"
-                        state.shuffleEnabled -> "Shuffle on"
-                        else -> "Shuffle off"
-                    },
-                    tint = if (state.shuffleEnabled) AurisAccent else AurisOnSurfaceVariant,
-                )
-                PlayerGhostIcon(
-                    onClick = onOpenQueue,
-                    icon = Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = "Queue",
-                )
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            // ---- Tier 2: transport ----------------------------------------------
-            TransportTier(
-                state = state,
-                onPlayPause = onPlayPause,
-                onPrevious = onPrevious,
-                onNext = onNext,
-            )
-
-            Spacer(Modifier.weight(1f))
-
-            Spacer(Modifier.height(12.dp))
-
-            // ---- Volume ---------------------------------------------------------
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.VolumeDown,
-                    contentDescription = null,
-                    tint = AurisOnSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-                AurisSlider(
-                    progress = state.volume,
-                    onProgressChange = onVolumeChange,
-                    contentDescription = "Volume",
-                    trackHeight = 6.dp,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 14.dp),
-                )
-                Icon(
-                    Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = null,
-                    tint = AurisOnSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
         }
     }
+}
+
+@Composable
+private fun PlayerTrackTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge.copy(fontSize = 28.sp, lineHeight = 34.sp),
+        color = AurisOnSurface,
+        textAlign = TextAlign.Center,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+    Spacer(Modifier.height(8.dp))
 }
 
 /**
@@ -376,13 +409,12 @@ private fun TransportTier(
 ) {
     Row(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DotMarker()
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TransportButton(
@@ -406,19 +438,7 @@ private fun TransportTier(
             )
         }
 
-        DotMarker()
     }
-}
-
-/** Decorative dot in the transport's outer slots, per the reference mock. */
-@Composable
-private fun DotMarker() {
-    Box(
-        modifier = Modifier
-            .size(6.dp)
-            .clip(CircleShape)
-            .background(AurisOnSurfaceVariant.copy(alpha = 0.5f)),
-    )
 }
 
 /** A 52dp hit target around a large transport glyph. */
@@ -429,23 +449,16 @@ private fun TransportButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .size(52.dp)
-            .clip(CircleShape)
-            .clickable(
-                enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(52.dp).background(AurisSurfaceOpaque, CircleShape),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = if (enabled) AurisOnSurface else AurisOnSurfaceVariant.copy(alpha = 0.4f),
-            modifier = Modifier.size(42.dp),
+            modifier = Modifier.size(30.dp),
         )
     }
 }
@@ -461,34 +474,42 @@ private fun PlayPauseButton(
         modifier = Modifier.pressFeedback(interactionSource)
             .size(76.dp)
             .clip(CircleShape)
-            .background(Color.White)
+            .background(AurisAccent)
+            .semantics { contentDescription = if (isPlaying) "Pause" else "Play" }
             .clickable(
+                role = Role.Button,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            isBuffering -> CircularProgressIndicator(
-                modifier = Modifier.size(30.dp),
-                color = AurisBackground,
-                strokeWidth = 3.dp,
-            )
+        Crossfade(
+            targetState = when { isBuffering -> 0; isPlaying -> 1; else -> 2 },
+            animationSpec = tween(150, easing = AurisMotion.Decelerate),
+            label = "transportState",
+        ) { transportState ->
+            when (transportState) {
+                0 -> CircularProgressIndicator(
+                    modifier = Modifier.size(30.dp),
+                    color = AurisBackground,
+                    strokeWidth = 3.dp,
+                )
 
-            isPlaying -> Icon(
-                Icons.Filled.Pause,
-                contentDescription = "Pause",
-                tint = AurisBackground,
-                modifier = Modifier.size(46.dp),
-            )
+                1 -> Icon(
+                    Icons.Filled.Pause,
+                    contentDescription = null,
+                    tint = AurisBackground,
+                    modifier = Modifier.size(36.dp),
+                )
 
-            else -> Icon(
-                Icons.Filled.PlayArrow,
-                contentDescription = "Play",
-                tint = AurisBackground,
-                modifier = Modifier.size(46.dp),
-            )
+                else -> Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = AurisBackground,
+                    modifier = Modifier.size(36.dp),
+                )
+            }
         }
     }
 }
@@ -496,19 +517,14 @@ private fun PlayPauseButton(
 /** The screen's own way back, since the navigation pill is not shown over the player. */
 @Composable
 private fun PlayerCloseButton(onClick: () -> Unit) {
-    Icon(
-        Icons.Filled.KeyboardArrowDown,
-        contentDescription = "Close player",
-        tint = AurisOnSurface,
-        modifier = Modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
-    )
+    androidx.compose.material3.IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = "Close player",
+            tint = AurisOnSurface,
+            modifier = Modifier.size(28.dp),
+        )
+    }
 }
 
 /**
@@ -522,6 +538,9 @@ private fun EmptyPlayer(
     title: String,
     detail: String,
     onBack: () -> Unit,
+    trackTitle: String = "",
+    onRetry: (() -> Unit)? = null,
+    isReconnecting: Boolean = false,
 ) {
     Column(
         modifier = Modifier
@@ -533,7 +552,7 @@ private fun EmptyPlayer(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(40.dp),
+                .height(48.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PlayerCloseButton(onBack)
@@ -562,6 +581,22 @@ private fun EmptyPlayer(
             textAlign = TextAlign.Center,
         )
 
+        if (trackTitle.isNotBlank()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = trackTitle,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (onRetry != null) {
+            Spacer(Modifier.height(20.dp))
+            androidx.compose.material3.Button(onClick = onRetry, enabled = !isReconnecting) {
+                Text(if (isReconnecting) "Reconnecting…" else "Try again")
+            }
+        }
         Spacer(Modifier.weight(1f))
     }
 }

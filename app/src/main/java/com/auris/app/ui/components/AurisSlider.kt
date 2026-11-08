@@ -63,7 +63,7 @@ fun AurisSlider(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(trackHeight)
+            .height(trackHeight.coerceAtLeast(48.dp))
             .semantics {
                 contentDescription?.let { this.contentDescription = it }
                 progressBarRangeInfo =
@@ -95,6 +95,7 @@ fun AurisSlider(
                     dragFraction = (dragFraction + dragAmount / size.width).coerceIn(0f, 1f)
                 }
             },
+        contentAlignment = androidx.compose.ui.Alignment.CenterStart,
     ) {
         Box(
             Modifier
@@ -130,7 +131,7 @@ fun AurisBufferedSlider(
     bufferedColor: Color = AurisOnSurfaceMuted,
     contentDescription: String? = null,
 ) {
-    Box(modifier = modifier) {
+    Box(modifier = modifier, contentAlignment = androidx.compose.ui.Alignment.CenterStart) {
         Box(
             Modifier
                 .fillMaxWidth(buffered.coerceIn(0f, 1f))

@@ -79,7 +79,6 @@ fun AurisBackdrop(
             .fillMaxSize()
             .background(AurisBackground),
     ) {
-        BrandGlow(Modifier.fillMaxSize())
         content()
     }
 }

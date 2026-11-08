@@ -167,7 +167,7 @@ class InnerTubeClient(
             pages++
         }
 
-        val isAlbum = !browseId.startsWith("VL")
+        val isAlbum = browseId.startsWith("MPRE")
         val albumCover = if (isAlbum) parser.albumArtwork(root) else null
         val albumMetadata = if (isAlbum) parser.albumMetadata(root) else null
         items.take(maxTracks.coerceAtLeast(0)).map { item ->

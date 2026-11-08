@@ -40,5 +40,9 @@ class AlbumBrowseArtworkTest {
             it.artworkUrl == "https://art/album-1200.jpg" && it.largeArtworkUrl == "https://art/album-1200.jpg" })
         val playlistTracks = client.collection("VL-test-playlist", 20).getOrThrow().flatMap { it.tracks }
         assertTrue(playlistTracks.all { it.albumArtworkUrl == null })
+        val plTracks = client.collection("PL-test-playlist", 20).getOrThrow().flatMap { it.tracks }
+        assertTrue(plTracks.all { it.albumArtworkUrl == null })
+        val rdTracks = client.collection("RDCLAK5uy_test", 20).getOrThrow().flatMap { it.tracks }
+        assertTrue(rdTracks.all { it.albumArtworkUrl == null })
     }
 }

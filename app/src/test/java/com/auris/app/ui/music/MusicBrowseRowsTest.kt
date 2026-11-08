@@ -144,5 +144,6 @@ class MusicBrowseRowsTest {
         assertEquals("Artist", artistRow.subtitle)
         assertEquals("UC123", artistRow.id)
         assertEquals("https://img/artist.jpg", artistRow.artworkUrl)
+        assertEquals("Chase Atlantic", artistRow.artistHint())
     }
 }

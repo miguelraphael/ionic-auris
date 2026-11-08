@@ -55,7 +55,8 @@ data class MusicRow(
 
 /** Extracts the clean artist name from a row's subtitle or metadata. */
 internal fun MusicRow.artistHint(): String? =
-    subtitle?.substringBefore("•")?.cleanArtist()?.takeIf { it.isNotEmpty() }
+    if (kind == MusicRow.Kind.ARTIST) title.cleanArtist().takeIf { it.isNotEmpty() }
+    else subtitle?.substringBefore("•")?.cleanArtist()?.takeIf { it.isNotEmpty() }
 
 /**
  * One titled row on the music home screen.
@@ -617,11 +618,15 @@ class MusicBrowseViewModel(
     }
 
     suspend fun loadArtist(row: MusicRow): Pair<MusicArtistDetails?, List<MusicRow>> {
-        val cleanName = row.artistHint().orEmpty().ifBlank { row.title }
-        val ctx = if (row.id.isNotBlank() && !row.id.startsWith("artist-")) {
+        val cleanName = if (row.kind == MusicRow.Kind.ARTIST) row.title.cleanArtist() else row.artistHint().orEmpty().ifBlank { row.title }
+        val ctx = if (row.id.isNotBlank() && !row.id.startsWith("artist-") && row.kind != MusicRow.Kind.ARTIST) {
             source.songContext(row.id).getOrNull()
         } else null
-        val artistId = ctx?.artistBrowseId
+        val artistId = if (row.kind == MusicRow.Kind.ARTIST && row.id.isNotBlank() && !row.id.startsWith("artist-")) {
+            row.id
+        } else {
+            ctx?.artistBrowseId
+        }
         if (!artistId.isNullOrBlank()) {
             val details = source.artistDetails(artistId, cleanName).getOrNull()
             val collection = source.collection(artistId, COLLECTION_TRACK_LIMIT).getOrNull().orEmpty()
@@ -630,9 +635,9 @@ class MusicBrowseViewModel(
                 return Pair(details ?: MusicArtistDetails(artistId, cleanName), rows)
             }
         }
-        val searchRows = explore(row.copy(subtitle = cleanName), false)
+        val searchRows = explore(row.copy(title = cleanName, subtitle = cleanName), false)
         val details = MusicArtistDetails(
-            id = "",
+            id = artistId ?: "",
             name = cleanName,
             bio = null,
             photoUrl = searchRows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: row.artworkUrl,

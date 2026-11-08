@@ -6,19 +6,19 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** Shared corner scale: 24dp surfaces, 12dp compact elements, fully rounded transport/pills. */
+/** Shared corner scale: 12–16dp artwork, 12dp controls, fully rounded transport/pills. */
 object AurisRadii {
     /** Grid thumbnails, episode cards, cover art. */
-    val artwork: Dp = 24.dp
-    val artworkLarge: Dp = 24.dp
-    val artworkSmall: Dp = 12.dp
+    val artwork: Dp = 12.dp
+    val artworkLarge: Dp = 16.dp
+    val artworkSmall: Dp = 8.dp
 
-    /** Floating nav pill: 50dp tall, fully rounded. */
+    /** Floating nav pill: 64dp tall, fully rounded. */
     val navPill: Dp = 24.dp
 
     /** Chips, badges, small control clusters. */
     val chip: Dp = 12.dp
-    val button: Dp = 24.dp
+    val button: Dp = 12.dp
     val sheet: Dp = 24.dp
 }
 

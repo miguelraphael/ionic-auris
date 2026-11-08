@@ -1,6 +1,8 @@
 @file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 package com.auris.app.ui.music
 
+import android.app.Activity
+import android.content.ContextWrapper
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,16 +13,63 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import com.auris.app.data.remote.music.nowPlayingArtworkUrl
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import com.auris.app.data.remote.music.nowPlayingArtworkUrl
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.theme.*
+
+@Composable
+internal fun rememberDialogNavBottomPadding(): androidx.compose.ui.unit.Dp {
+    val context = LocalContext.current
+    val activity = remember(context) {
+        var c = context
+        while (c is ContextWrapper) {
+            if (c is Activity) return@remember c
+            c = c.baseContext
+        }
+        null
+    }
+    val density = LocalDensity.current
+    val systemNavBottom = remember(activity, density) {
+        val insets = activity?.let { ViewCompat.getRootWindowInsets(it.window.decorView) }
+        val bottomPx = insets?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+        with(density) { bottomPx.toDp() }
+    }
+    val composeNavBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    return maxOf(systemNavBottom, composeNavBottom)
+}
+
+@Composable
+internal fun rememberDialogStatusBarTopPadding(): androidx.compose.ui.unit.Dp {
+    val context = LocalContext.current
+    val activity = remember(context) {
+        var c = context
+        while (c is ContextWrapper) {
+            if (c is Activity) return@remember c
+            c = c.baseContext
+        }
+        null
+    }
+    val density = LocalDensity.current
+    val systemStatusTop = remember(activity, density) {
+        val insets = activity?.let { ViewCompat.getRootWindowInsets(it.window.decorView) }
+        val topPx = insets?.getInsets(WindowInsetsCompat.Type.statusBars())?.top ?: 0
+        with(density) { topPx.toDp() }
+    }
+    val composeStatusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    return maxOf(systemStatusTop, composeStatusTop)
+}
 
 @Composable
 internal fun MusicAlbumPage(
@@ -34,16 +83,20 @@ internal fun MusicAlbumPage(
     onOptions: (MusicRow) -> Unit,
     isPlaylist: Boolean = false,
     albumArtist: String? = null,
+    artworkUrl: String? = null,
     bottomBar: @Composable () -> Unit = {},
 ) {
-    val albumArt = tracks.firstNotNullOfOrNull { it.albumArtworkUrl }
+    val albumArt = artworkUrl ?: tracks.firstNotNullOfOrNull { it.albumArtworkUrl }
         ?: tracks.firstOrNull()?.artworkUrl
+    val navBottom = rememberDialogNavBottomPadding()
+    val statusTop = rememberDialogStatusBarTopPadding()
+
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), color = AurisBackground) {
+        Surface(Modifier.fillMaxSize(), color = AurisBackground) {
             Column(Modifier.fillMaxSize()) {
-                LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 40.dp)) {
+                LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp + navBottom)) {
                     item {
-                        IconButton(onClick = onBack, modifier = Modifier.padding(12.dp)) {
+                        IconButton(onClick = onBack, modifier = Modifier.padding(top = statusTop + 4.dp, start = 12.dp, bottom = 4.dp)) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back")
                         }
                         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -75,7 +128,8 @@ internal fun MusicAlbumPage(
                             Text("${index + 1}", Modifier.width(24.dp),
                                 style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
                                 textAlign = TextAlign.End, color = AurisOnSurfaceVariant)
-                            MediaArtwork(albumArt, null, Modifier.size(48.dp), shape = ArtworkShapeSmall)
+                            val trackArtwork = if (isPlaylist) (track.artworkUrl ?: track.albumArtworkUrl ?: albumArt) else (albumArt ?: track.artworkUrl)
+                            MediaArtwork(trackArtwork, null, Modifier.size(48.dp), shape = ArtworkShapeSmall)
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text(track.title, style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -92,7 +146,9 @@ internal fun MusicAlbumPage(
                         }
                     }
                 }
-                bottomBar()
+                Box(Modifier.padding(bottom = navBottom)) {
+                    bottomBar()
+                }
             }
         }
     }
