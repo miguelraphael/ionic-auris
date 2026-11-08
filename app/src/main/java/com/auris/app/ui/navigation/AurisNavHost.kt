@@ -119,14 +119,6 @@ fun AurisNavHost(
      * Nullable so previews and the episode-only slices can omit it; the music route is guarded.
      */
     musicSource: MusicSource? = null,
-    /**
-     * The Invidious instance list, editable from Settings.
-     *
-     * Required rather than nullable on purpose: the audio source reads this list per track, so a
-     * second store built anywhere else would silently disagree with the resolver about which
-     * instances are configured.
-     */
-    invidiousInstanceStore: com.auris.app.data.repository.InvidiousInstanceStore,
     modifier: Modifier = Modifier,
 ) {
     val sourcePreferences = remember {
@@ -830,7 +822,6 @@ fun AurisNavHost(
                     extensionRepository = extensionRepository,
                     repoStore = extensionRepoStore,
                     authRepository = authRepository,
-                    invidiousInstanceStore = invidiousInstanceStore,
                 ),
             )
             val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
@@ -846,10 +837,6 @@ fun AurisNavHost(
                 onOpenDiagnostics = { navController.navigate(Routes.diagnostics) },
                 onSignOut = settingsViewModel::signOut,
                 onDeleteAccount = settingsViewModel::deleteAccount,
-                onInvidiousDraftChange = settingsViewModel::setInvidiousDraft,
-                onAddInvidiousInstance = settingsViewModel::addInvidiousInstance,
-                onRemoveInvidiousInstance = settingsViewModel::removeInvidiousInstance,
-                onResetInvidiousInstances = settingsViewModel::resetInvidiousInstances,
             )
         }
 

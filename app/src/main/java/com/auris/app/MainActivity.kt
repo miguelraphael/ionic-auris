@@ -35,7 +35,6 @@ class MainActivity : ComponentActivity() {
                         episodePlayer = container.episodePlayer,
                         appStateCollector = container.appStateCollector,
                         musicSource = container.musicSource,
-                        invidiousInstanceStore = container.invidiousInstanceStore,
                         extensionRepository = container.extensionRepository,
                         extensionRepoStore = container.extensionRepoStore,
                         extensionLoader = container.extensionLoader,

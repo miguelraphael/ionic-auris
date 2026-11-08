@@ -124,8 +124,8 @@ android {
             /**
              * Framework stubs return defaults instead of throwing "not mocked".
              *
-             * Needed because the Invidious resolver logs on the failure paths that its tests exist
-             * to exercise (failover, an unreachable instance, a refusal) — and an unstubbed
+             * Needed because stream resolvers log on the failure paths that tests exist
+             * to exercise (an unreachable source, a refusal) — and an unstubbed
              * `android.util.Log.w` would abort those tests for a reason that has nothing to do
              * with what they check.
              *

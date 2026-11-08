@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -24,15 +25,12 @@ import java.io.IOException
 /**
  * Resolves audio with [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor).
  *
- * ### Why this exists next to [InvidiousSource]
- * The instance route fails on roughly half a measured catalogue, and the failures are not random:
- * the instance returns stream URLs whose `n` parameter has not been descrambled, so the CDN
- * refuses them with `403` from *this* device. Fixing that needs a JavaScript engine and YouTube's
- * player script — which is precisely what NewPipeExtractor ships, and what a public instance does
- * not reliably do.
+ * ### Extraction
+ * The player needs stream URLs whose `n` parameter has been descrambled, so the CDN does not
+ * refuse them with `403` from this device. YouTube's player script provides this via NewPipeExtractor.
  *
- * Extraction therefore happens on the device, against the same network the player will use, so the
- * URLs it mints are addressed to this egress rather than to a volunteer's.
+ * Extraction happens on the device, against the same network the player will use, so the
+ * URLs it mints are addressed to this egress.
  *
  * ### Licence
  * NewPipeExtractor is **GPL-3.0-or-later**. Linking it makes the whole application a covered work
@@ -41,8 +39,8 @@ import java.io.IOException
  * ### Cost
  * Extraction is much heavier than calling an API: a cold resolve downloads and runs the player
  * script, which takes seconds on a phone. Successful results are therefore cached for their
- * lifetime, exactly like [InvidiousSource]'s — which also absorbs the fact that the ViewModel
- * resolves a tapped track twice (once to learn its title, once to build the queue).
+ * lifetime, which also absorbs the fact that the ViewModel resolves a tapped track twice (once
+ * to learn its title, once to build the queue).
  */
 class NewPipeStreamResolver(
     private val httpClient: OkHttpClient,
@@ -95,9 +93,9 @@ class NewPipeStreamResolver(
     /**
      * Turns one extractor answer into a result.
      *
-     * The stream is probed before it is returned for the same reason [InvidiousSource] probes:
-     * a URL that cannot be fetched is a player error the user has no way to act on, while a
-     * refusal with [StreamRefusalInfo.UNFETCHABLE] lets the fallback resolver try elsewhere.
+     * The stream is probed before it is returned: a URL that cannot be fetched is a player error
+     * the user has no way to act on, while a refusal with [StreamRefusalInfo.UNFETCHABLE] lets the
+     * caller report a clear delivery failure.
      */
     private fun StreamInfo.into(videoId: String): ResolvedAudio {
         val audio = chooseAudio()
@@ -141,9 +139,8 @@ class NewPipeStreamResolver(
      * Picks the stream to hand the player.
      *
      * AAC in MP4 is preferred over Opus in WebM even when the Opus stream is larger: it needs no
-     * container-specific extractor work on the playback side, and it is what [InvidiousSource]
-     * already plays on this device. Highest bitrate wins within that preference, so the choice is
-     * still the best available.
+     * container-specific extractor work on the playback side. Highest bitrate wins within that
+     * preference, so the choice is still the best available.
      */
     private fun StreamInfo.chooseAudio(): NewPipeAudioStream? {
         val usable = audioStreams.filter { !it.url.isNullOrBlank() }
@@ -268,3 +265,38 @@ internal class OkHttpDownloader(private val client: OkHttpClient) : Downloader()
         }
     }
 }
+
+private const val PROBE_USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+
+/**
+ * Whether [url] will actually serve audio.
+ *
+ * A ranged `GET` rather than a `HEAD`: the thing being tested is the request the player will make,
+ * and CDNs do not always treat the two the same. One byte is enough to tell a `200`/`206` from a
+ * `403`, and it is not a download.
+ */
+internal fun probeStreamUrl(client: OkHttpClient, url: String): Boolean = try {
+    val request = okhttp3.Request.Builder()
+        .url(url)
+        .header("Range", "bytes=0-0")
+        .header("User-Agent", PROBE_USER_AGENT)
+        .build()
+
+    client.newCall(request).execute().use { response ->
+        val usable = response.code == 206 || response.code == 200
+        if (!usable) Log.i("AurisMusic", "stream url rejected: HTTP ${response.code}")
+        usable
+    }
+} catch (error: IOException) {
+    Log.i("AurisMusic", "stream url unreachable: ${error.message}")
+    false
+}
+
+/**
+ * Reads `expire` (unix seconds) out of a stream URL.
+ *
+ * Null when absent, which [AudioStream] treats as "no known expiry" rather than "expired".
+ */
+internal fun expireEpochMs(url: String): Long? =
+    url.toHttpUrlOrNull()?.queryParameter("expire")?.toLongOrNull()?.times(1000)

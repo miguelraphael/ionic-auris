@@ -80,10 +80,6 @@ fun SettingsScreen(
     onNsfwVisibleChange: (Boolean) -> Unit = {},
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
-    onInvidiousDraftChange: (String) -> Unit = {},
-    onAddInvidiousInstance: () -> Unit = {},
-    onRemoveInvidiousInstance: (String) -> Unit = {},
-    onResetInvidiousInstances: () -> Unit = {},
 ) {
     AurisBackdrop(modifier = modifier) {
         LazyColumn(
@@ -166,18 +162,6 @@ fun SettingsScreen(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 item { SectionTitle("Notifications") }
                 item { NotificationsSection() }
-            }
-
-            item { SectionTitle("Music") }
-
-            item {
-                InvidiousInstancesSection(
-                    state = state,
-                    onDraftChange = onInvidiousDraftChange,
-                    onAdd = onAddInvidiousInstance,
-                    onRemove = onRemoveInvidiousInstance,
-                    onReset = onResetInvidiousInstances,
-                )
             }
 
             item { SectionTitle("Diagnostics") }
@@ -496,124 +480,6 @@ private fun ExtensionSecurityRow(extension: ExtensionSecurity) {
 }
 
 // ---- Music -------------------------------------------------------------------
-
-/**
- * The public Invidious instances used when on-device extraction cannot reach a track.
- *
- * ### Why this list is editable here
- * Audio is normally extracted on the device by NewPipeExtractor; these hosts are the fallback
- * for the tracks it cannot reach. That fallback is fragile in its own right — as of 2026-10
- * **exactly one** public instance had its API open, the others answering `403 Endpoint
- * disabled`, `401` or `forbidden` — so "the host I use closed its own" is a question of when,
- * not whether. Making the list a setting moves that event from waiting on a release to pasting
- * a new address.
- *
- * The order is the failover order: the first entry that answers is the one used, and one that
- * fails is deprioritised for a couple of minutes before being retried.
- */
-@Composable
-private fun InvidiousInstancesSection(
-    state: SettingsUiState,
-    onDraftChange: (String) -> Unit,
-    onAdd: () -> Unit,
-    onRemove: (String) -> Unit,
-    onReset: () -> Unit,
-) {
-    Column {
-        Text(
-            text = "Fallback audio source",
-            style = MaterialTheme.typography.bodyLarge,
-            color = AurisOnSurface,
-        )
-        Text(
-            text = "Used when audio cannot be extracted on the device. Tried in order; one that " +
-                "fails is skipped for a few minutes before being retried.",
-            style = MaterialTheme.typography.bodySmall,
-            color = AurisOnSurfaceVariant,
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        if (state.invidiousInstances.isEmpty()) {
-            // Stated as a warning rather than an empty list, because it is the difference
-            // between "music is slow" and "some tracks cannot play at all".
-            InfoBanner(
-                text = "No fallback instance is configured, so tracks the device cannot " +
-                    "extract will not play. Add one below.",
-                isWarning = true,
-            )
-        } else {
-            state.invidiousInstances.forEach { instance ->
-                InstanceRow(instance = instance, onRemove = { onRemove(instance) })
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        Text(
-            text = "Add an instance",
-            style = MaterialTheme.typography.bodySmall,
-            color = AurisOnSurfaceVariant,
-        )
-        Spacer(Modifier.height(6.dp))
-
-        Surface(
-            shape = RoundedCornerShape(AurisRadii.button),
-            color = AurisSurface,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            BasicTextField(
-                value = state.invidiousDraft,
-                onValueChange = onDraftChange,
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(color = AurisOnSurface),
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            )
-        }
-
-        state.invidiousError?.let { error ->
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = error,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SmallButton(text = "Add", onClick = onAdd)
-            SmallButton(text = "Reset to defaults", onClick = onReset)
-        }
-    }
-}
-
-/** One configured instance, with a remove control. */
-@Composable
-private fun InstanceRow(instance: String, onRemove: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = instance,
-            style = MaterialTheme.typography.bodyMedium,
-            color = AurisOnSurface,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = "Remove",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier
-                .clickable(onClick = onRemove)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-    }
-}
 
 // ---- Shared pieces -----------------------------------------------------------
 

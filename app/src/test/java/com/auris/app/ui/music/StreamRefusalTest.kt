@@ -126,16 +126,16 @@ class StreamRefusalTest {
 
     @Test
     fun noProviderAnsweringPointsAtTheSourceNotTheTrack() {
-        // Every configured instance was unreachable. Telling the user the track is unavailable
-        // would send them hunting for another song when the fix is in Settings.
+        // The audio source was unreachable. Telling the user the track is unavailable
+        // would send them hunting for another song when the fix is in the network or source.
         val message = StreamRefusal.describe(
             title = "Espresso",
             refusal = null,
-            error = "No Invidious instance could serve this track",
+            error = "No audio source could resolve this track",
         )
 
         assertTrue(message.startsWith("Could not reach an audio source"))
-        assertTrue(message.contains("No Invidious instance could serve this track"))
+        assertTrue(message.contains("No audio source could resolve this track"))
         assertFalse(message.contains("unavailable"))
     }
 

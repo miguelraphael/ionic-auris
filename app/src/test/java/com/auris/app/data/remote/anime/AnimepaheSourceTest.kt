@@ -296,10 +296,19 @@ class AnimepaheSourceTest {
             </html>
         """.trimIndent()
 
-        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
-        // One link returns HTTP 500 error, other returns 200 with valid source
-        server.enqueue(MockResponse().setResponseCode(500).setBody("Server Error"))
-        server.enqueue(MockResponse().setResponseCode(200).setBody(successHtml))
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                return when {
+                    request.path?.startsWith("/api?m=links") == true ->
+                        MockResponse().setResponseCode(200).setBody(json)
+                    request.path == "/e/fail" ->
+                        MockResponse().setResponseCode(500).setBody("Server Error")
+                    request.path == "/e/success" ->
+                        MockResponse().setResponseCode(200).setBody(successHtml)
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
 
         val entry = SourceItem("anime_123", "Anime", null)
         val unit = SourceUnit("anime_123/ep_456", 1, "Episode 1")

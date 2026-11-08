@@ -9,18 +9,15 @@ import com.auris.app.data.remote.SupabaseLibraryDataSource
 import com.auris.app.data.remote.SupabaseLibraryDataSourceImpl
 import com.auris.app.data.remote.kitsu.KitsuClient
 import com.auris.app.data.remote.music.DefaultMusicSource
-import com.auris.app.data.remote.music.FallbackStreamResolver
 import com.auris.app.data.remote.music.InnerTubeClient
 import com.auris.app.data.remote.music.InnerTubeParser
 import com.auris.app.data.remote.music.ITunesAlbumArtSource
-import com.auris.app.data.remote.music.InvidiousSource
 import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.data.remote.music.NewPipeStreamResolver
 import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.ExtensionContentRepository
-import com.auris.app.data.repository.InvidiousInstanceStore
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.source.ExtensionLoader
@@ -76,13 +73,10 @@ interface AppContainer {
     /**
      * The music surface the UI depends on.
      *
-     * Catalogue from YouTube Music's own API; audio extracted on the device, with public
-     * Invidious instances as a fallback. Screens talk to this, never to either provider, so the
-     * audio half can change without touching a ViewModel.
+     * Catalogue from YouTube Music's own API; audio extracted on the device. Screens talk to this,
+     * never to the provider directly, so the audio half can change without touching a ViewModel.
      */
     val musicSource: MusicSource
-    /** The Invidious instances audio is streamed through, persisted and user-editable. */
-    val invidiousInstanceStore: InvidiousInstanceStore
     val kitsuIdentifier: KitsuIdentifier
     val extensionContentRepository: ExtensionContentRepository
     val episodePlayer: EpisodePlayer
@@ -207,25 +201,6 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         InnerTubeClient(httpClient, json, InnerTubeParser())
     }
 
-    override val invidiousInstanceStore: InvidiousInstanceStore by lazy {
-        InvidiousInstanceStore(context.applicationContext)
-    }
-
-    /**
-     * HTTP client for audio resolution through public instances.
-     *
-     * Separate from [httpClient] because these are volunteer-run servers. The shared client's
-     * default 10-second read timeout would turn a merely-busy instance into a failure, and
-     * failover would then skip a host that was working.
-     */
-    private val invidiousHttpClient: okhttp3.OkHttpClient by lazy {
-        okhttp3.OkHttpClient.Builder()
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .callTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
-    }
-
     /**
      * HTTP client for NewPipeExtractor.
      *
@@ -258,24 +233,11 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     /**
      * The composed music source.
-     *
-     * The instance list is read through a lambda rather than captured, so an instance added in
-     * Settings takes effect on the next track instead of the next launch.
      */
     override val musicSource: MusicSource by lazy {
         DefaultMusicSource(
             catalogue = innerTubeClient,
-            resolver = FallbackStreamResolver(
-                // On-device extraction first: it descrambles the stream URL itself, so it does
-                // not inherit the instance's `403` problem. The instance remains as a fallback for
-                // the tracks the extractor cannot reach.
-                primary = NewPipeStreamResolver(newPipeHttpClient),
-                secondary = InvidiousSource(
-                    httpClient = invidiousHttpClient,
-                    json = json,
-                    instances = { invidiousInstanceStore.current() },
-                ),
-            ),
+            resolver = NewPipeStreamResolver(newPipeHttpClient),
             artwork = ITunesAlbumArtSource(artworkHttpClient),
         )
     }
