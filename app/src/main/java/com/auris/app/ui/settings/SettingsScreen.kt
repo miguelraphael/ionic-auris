@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -221,6 +222,14 @@ fun SettingsScreen(
                             title = "Auris is up to date (v${status.version})",
                             subtitle = "You are on the latest version",
                             onClick = null,
+                            trailing = {
+                                Icon(
+                                    imageVector = Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    tint = AurisAccent,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
                         )
                     }
                 }
@@ -557,7 +566,7 @@ private fun UpdateAvailableCard(
     onViewRelease: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(AurisRadii.artworkLarge),
+        shape = RoundedCornerShape(AurisRadii.button),
         color = AurisSurface,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -570,7 +579,7 @@ private fun UpdateAvailableCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Filled.CheckCircle,
+                    imageVector = Icons.Filled.SystemUpdate,
                     contentDescription = null,
                     tint = AurisAccent,
                     modifier = Modifier.size(20.dp),

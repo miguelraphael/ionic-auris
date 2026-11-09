@@ -2,13 +2,12 @@ package com.auris.app.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -16,7 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -97,20 +97,28 @@ fun AurisSlider(
             },
         contentAlignment = androidx.compose.ui.Alignment.CenterStart,
     ) {
-        Box(
-            Modifier
+        Canvas(
+            modifier = Modifier
                 .fillMaxWidth()
-                .height(trackHeight)
-                .clip(CircleShape)
-                .background(trackColor),
-        )
-        Box(
-            Modifier
-                .fillMaxWidth(animatedFraction.coerceIn(0f, 1f))
-                .height(trackHeight)
-                .clip(CircleShape)
-                .background(fill),
-        )
+                .height(trackHeight),
+        ) {
+            val cornerRadius = CornerRadius(size.height / 2f, size.height / 2f)
+            // Background track
+            drawRoundRect(
+                color = trackColor,
+                size = size,
+                cornerRadius = cornerRadius,
+            )
+            // Active track fill
+            val fillWidth = size.width * animatedFraction.coerceIn(0f, 1f)
+            if (fillWidth > 0f) {
+                drawRoundRect(
+                    color = fill,
+                    size = Size(width = fillWidth, height = size.height),
+                    cornerRadius = cornerRadius,
+                )
+            }
+        }
     }
 }
 
@@ -131,24 +139,86 @@ fun AurisBufferedSlider(
     bufferedColor: Color = AurisOnSurfaceMuted,
     contentDescription: String? = null,
 ) {
-    Box(modifier = modifier, contentAlignment = androidx.compose.ui.Alignment.CenterStart) {
-        Box(
-            Modifier
-                .fillMaxWidth(buffered.coerceIn(0f, 1f))
-                .height(trackHeight)
-                .clip(CircleShape)
-                .background(bufferedColor),
-        )
-        AurisSlider(
-            progress = progress,
-            onProgressChange = onProgressChange,
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
-            trackHeight = trackHeight,
-            fillColor = fillColor,
-            trackColor = trackColor,
-            contentDescription = contentDescription,
-        )
+    var dragFraction by remember { mutableFloatStateOf(progress) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    val target = if (isDragging) dragFraction else progress
+    val animatedFraction by animateFloatAsState(
+        targetValue = target.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = if (isDragging) 0 else 180),
+        label = "bufferedSliderFill",
+    )
+
+    val fill = if (enabled) fillColor else fillColor.copy(alpha = 0.35f)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(trackHeight.coerceAtLeast(48.dp))
+            .semantics {
+                contentDescription?.let { this.contentDescription = it }
+                progressBarRangeInfo =
+                    ProgressBarRangeInfo(animatedFraction.coerceIn(0f, 1f), 0f..1f)
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                detectTapGestures { offset ->
+                    onProgressChange((offset.x / size.width).coerceIn(0f, 1f))
+                }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
+                        isDragging = true
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                        onProgressChange(dragFraction)
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                        onProgressChange(dragFraction)
+                    },
+                ) { change, dragAmount ->
+                    change.consume()
+                    dragFraction = (dragFraction + dragAmount / size.width).coerceIn(0f, 1f)
+                }
+            },
+        contentAlignment = androidx.compose.ui.Alignment.CenterStart,
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(trackHeight),
+        ) {
+            val cornerRadius = CornerRadius(size.height / 2f, size.height / 2f)
+            // Background track
+            drawRoundRect(
+                color = trackColor,
+                size = size,
+                cornerRadius = cornerRadius,
+            )
+            // Buffered track
+            val bufferedWidth = size.width * buffered.coerceIn(0f, 1f)
+            if (bufferedWidth > 0f) {
+                drawRoundRect(
+                    color = bufferedColor,
+                    size = Size(width = bufferedWidth, height = size.height),
+                    cornerRadius = cornerRadius,
+                )
+            }
+            // Active track fill
+            val fillWidth = size.width * animatedFraction.coerceIn(0f, 1f)
+            if (fillWidth > 0f) {
+                drawRoundRect(
+                    color = fill,
+                    size = Size(width = fillWidth, height = size.height),
+                    cornerRadius = cornerRadius,
+                )
+            }
+        }
     }
 }
 

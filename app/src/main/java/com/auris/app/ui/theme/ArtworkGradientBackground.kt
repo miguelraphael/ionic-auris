@@ -9,8 +9,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 
 /**
  * The global background: the active artwork's dominant colour washed over the shared OLED +
@@ -36,7 +34,6 @@ fun ArtworkGradientBackground(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawBehind {
                     val top = palette.primary.attenuate(intensity)
                     val mid = palette.secondary.attenuate(intensity * 0.8f)
