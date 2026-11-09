@@ -1,10 +1,10 @@
-Auris 0.1.11 — Sharper album art, gapless queue playback, and sign-out stops music (Android 8.0 or newer).
+Auris 0.1.12 — Polished music pages (Android 8.0 or newer).
 
-- Fixes AllAnime search failures (e.g. "One Piece", "Naruto", "Dragon Ball Z") when a result has a null season or year; the catalogue and AllManga now tolerate null fields instead of crashing.
-- Upgrades Music home artwork to display-sized images, so album cards are no longer blurry.
-- Playback queue now advances to the next song, and every played track appears in Recently Played.
-- Signing out stops music playback and removes the playback notification; the same applies to account deletion and session expiry.
-- Keeps the Asura Scans and AllManga sources, on-device stream resolution, and the 0.1.10 playback/navigation improvements.
+- Now Playing now reads in order: artwork, track/artist/album, then seek, then transport; touch targets are at least 48dp.
+- Artist page plays songs from a button directly under the name; About sits below; back and "Show all" controls are at least 48dp.
+- Album and playlist details now use a left-aligned header that shares one axis with the track list — the name leads, not the cover.
+- Playlist sheet rows show artwork and titles with full-width 48dp targets.
+- Keeps the 0.1.11 sharper album art, automatic queue advance and Recently Played recording, stop-on-sign-out, and the JSON-null search fix.
 
 The security, authentication, navigation, and playback changes from previous previews remain included. Older debug previews (`com.auris.app.debug`) are a separate installation; local data is not automatically transferred between packages.
 
