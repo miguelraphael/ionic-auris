@@ -1,5 +1,6 @@
-Auris 1.0.0 — Unified Music, Anime, and Manga player for Android (Android 8.0 or newer).
+Auris 1.0.1 — Unified Music, Anime, and Manga player for Android (Android 8.0 or newer).
 
+- Dark Neutral Navigation Bar: Aligned floating dock tokens with DESIGN.md (neutral elevated surface pill indicator, subtle 1dp outline rim, and off-white selection tint).
 - Seamless Manga Reading: Read any chapter immediately from the catalogue preview without adding it to your Library, with automatic chapter persistence when saving to Library.
 - Apple Music-Inspired Now Playing: Expanded artwork proportion, fixed 48dp dismiss chevron, bold typography, tabular timestamps, and GPU-accelerated Canvas playback and volume sliders.
 - Multi-Source Manga Integration: Default Weeb Central catalogue browsing with source switching across MangaDex, Asura Scans, and AllManga.
