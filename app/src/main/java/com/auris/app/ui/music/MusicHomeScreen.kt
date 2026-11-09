@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.auris.app.data.local.entity.LibraryEntryEntity
+import com.auris.app.data.remote.music.nowPlayingArtworkUrl
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.components.SkeletonShelf
 import com.auris.app.ui.components.SlowNetworkHint
@@ -335,7 +336,8 @@ private fun MusicCard(
     ) {
         Box {
             MediaArtwork(
-                imageUrl = artworkUrl,
+                imageUrl = nowPlayingArtworkUrl(artworkUrl),
+                fallbackImageUrl = artworkUrl,
                 contentDescription = title,
                 modifier = Modifier.size(CARD_WIDTH),
                 shape = ArtworkShape,
@@ -438,7 +440,8 @@ internal fun NowPlayingStrip(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MediaArtwork(
-                imageUrl = artworkUrl,
+                imageUrl = nowPlayingArtworkUrl(artworkUrl),
+                fallbackImageUrl = artworkUrl,
                 contentDescription = null,
                 modifier = Modifier
                     .size(40.dp)
