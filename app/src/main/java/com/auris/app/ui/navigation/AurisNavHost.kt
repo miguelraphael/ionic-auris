@@ -181,6 +181,9 @@ fun AurisNavHost(
     val previewItems = remember { mutableStateMapOf<String, PreviewDetail>() }
     val previewUnits = remember { mutableStateMapOf<String, List<SourceUnit>>() }
 
+    var activePlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
+    var openedPlaylistFromLibrary by rememberSaveable { mutableStateOf(false) }
+
     NavHost(
         navController = navController,
         startDestination = TopLevelDestination.HOME.route,
@@ -420,6 +423,18 @@ fun AurisNavHost(
                 onOpenAlbum = { selectedAlbum = it },
                 onOpenArtist = { selectedArtist = it },
                 onPlayTracks = { rows, index -> albumScope.launch { music.playPlaylist(rows, index) } },
+                selectedPlaylistId = activePlaylistId,
+                onSelectPlaylist = { id ->
+                    activePlaylistId = id
+                    openedPlaylistFromLibrary = false
+                },
+                onPlaylistBack = {
+                    activePlaylistId = null
+                    if (openedPlaylistFromLibrary) {
+                        openedPlaylistFromLibrary = false
+                        navController.popBackStack()
+                    }
+                },
             )
             selectedAlbum?.takeIf { activeEntry.value?.destination?.route == TopLevelDestination.MUSIC.route }?.let { album ->
                 com.auris.app.ui.music.MusicAlbumPage(
@@ -500,7 +515,9 @@ fun AurisNavHost(
                 playlists = playlists,
                 // No playlist destination exists yet: the Music tab owns the local playlist
                 // detail, so a tap lands there (Back returns here).
-                onPlaylistClick = {
+                onPlaylistClick = { playlist ->
+                    activePlaylistId = playlist.id
+                    openedPlaylistFromLibrary = true
                     navController.navigate(TopLevelDestination.MUSIC.route) { launchSingleTop = true }
                 },
                 modifier = Modifier.fillMaxSize(),

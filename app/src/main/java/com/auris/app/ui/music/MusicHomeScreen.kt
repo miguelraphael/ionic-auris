@@ -53,7 +53,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
@@ -125,6 +124,9 @@ fun MusicHomeScreen(
      * (`playPlaylist`) for complete behavior.
      */
     onPlayTracks: (List<MusicRow>, Int) -> Unit = { rows, index -> rows.getOrNull(index)?.let { onPlay(it) } },
+    selectedPlaylistId: String? = null,
+    onSelectPlaylist: (String?) -> Unit = {},
+    onPlaylistBack: () -> Unit = { onSelectPlaylist(null) },
 ) {
     val heroArtwork = state.shelves.firstOrNull()?.rows?.firstOrNull()?.artworkUrl
     val palette = rememberArtworkPaletteValue(artworkKey = heroArtwork)
@@ -134,8 +136,6 @@ fun MusicHomeScreen(
         (context.applicationContext as AurisApplication).container.playlistRepository
     }
     val playlists by playlistRepository.observePlaylists().collectAsStateWithLifecycle(initialValue = emptyList())
-    // Saveable so the open playlist survives rotation; cleared on Back, restoring Home.
-    var selectedPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
     // Measured so the list clearance below tracks the strip's real height — which grows past
     // ~68dp at large font scales — instead of a fixed bottom padding that would clip it. 68dp
     // is only the pre-measure fallback; onGloballyPositioned corrects it on the first frame.
@@ -212,7 +212,7 @@ fun MusicHomeScreen(
                             YourPlaylistRow(
                                 playlist = playlist,
                                 repository = playlistRepository,
-                                onOpen = { selectedPlaylistId = playlist.id },
+                                onOpen = { onSelectPlaylist(playlist.id) },
                             )
                         }
                     }
@@ -321,7 +321,7 @@ fun MusicHomeScreen(
         LocalPlaylistDetail(
             playlist = playlist,
             repository = playlistRepository,
-            onBack = { selectedPlaylistId = null },
+            onBack = onPlaylistBack,
             onPlayTracks = onPlayTracks,
             onOptions = onOptions,
             bottomBar = {
