@@ -49,6 +49,7 @@ fun EpisodePlayerRoute(
     episodePlayer: EpisodePlayer,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    previewUnits: List<SourceUnit>? = null,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = LocalContext.current.findActivity()
@@ -101,10 +102,18 @@ fun EpisodePlayerRoute(
         message = null
         targets = emptyList()
         try {
-            units = libraryRepository.observeUnits(entry.id).first()
-            val chapter = units.firstOrNull { it.unitIndex == unitIndex }
-                ?: throw java.io.IOException("This episode is not saved. Go back and refresh the episode list.")
-            savedUnit = chapter
+            val chapter: LibraryUnitEntity
+            if (previewUnits != null) {
+                units = previewUnits.map { it.toPreviewEntity(entry.id) }
+                chapter = units.firstOrNull { it.unitIndex == unitIndex }
+                    ?: throw java.io.IOException("This episode is not available. Go back and refresh the episode list.")
+                savedUnit = chapter
+            } else {
+                units = libraryRepository.observeUnits(entry.id).first()
+                chapter = units.firstOrNull { it.unitIndex == unitIndex }
+                    ?: throw java.io.IOException("This episode is not saved. Go back and refresh the episode list.")
+                savedUnit = chapter
+            }
             val url = chapter.sourceUnitId?.takeIf { it.isNotBlank() }
                 ?: throw java.io.IOException("The source did not provide an episode link. Refresh the episode list.")
             val resolved = contentRepository.fetchStreams(entry, SourceUnit(url, chapter.unitIndex, chapter.title)).getOrThrow()
@@ -122,6 +131,7 @@ fun EpisodePlayerRoute(
 
     val player by episodePlayer.player.collectAsStateWithLifecycle()
     LaunchedEffect(player, savedUnit) {
+        if (previewUnits != null) return@LaunchedEffect
         val exo = player ?: return@LaunchedEffect
         val chapter = savedUnit ?: return@LaunchedEffect
         var previousPosition = -1L
@@ -197,6 +207,17 @@ fun EpisodePlayerRoute(
         }
     }
 }
+
+private fun SourceUnit.toPreviewEntity(entryId: String) = LibraryUnitEntity(
+    entryId = entryId,
+    unitIndex = index,
+    sourceUnitId = url,
+    title = title,
+    thumbnailUrl = thumbnailUrl,
+    durationMs = watchDurationMs,
+    isWatched = isWatched,
+    lastPositionMs = watchPositionMs,
+)
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this

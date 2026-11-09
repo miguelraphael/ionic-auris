@@ -187,7 +187,7 @@ fun AurisNavHost(
         modifier = modifier.fillMaxSize(),
         enterTransition = {
             val isTab = TopLevelDestination.entries.any { it.route == targetState.destination.route }
-            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER
+            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER || targetState.destination.route == Routes.EPISODE_PLAYER_PREVIEW
             if (isTab || isVideo) {
                 fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             } else {
@@ -197,7 +197,7 @@ fun AurisNavHost(
         },
         exitTransition = {
             val isTab = TopLevelDestination.entries.any { it.route == targetState.destination.route }
-            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER
+            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER || targetState.destination.route == Routes.EPISODE_PLAYER_PREVIEW
             if (isTab || isVideo) {
                 fadeOut(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             } else {
@@ -207,7 +207,7 @@ fun AurisNavHost(
         },
         popEnterTransition = {
             val isTab = TopLevelDestination.entries.any { it.route == targetState.destination.route }
-            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER
+            val isVideo = targetState.destination.route == Routes.EPISODE_PLAYER || targetState.destination.route == Routes.EPISODE_PLAYER_PREVIEW
             if (isTab || isVideo) {
                 fadeIn(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             } else {
@@ -217,7 +217,7 @@ fun AurisNavHost(
         },
         popExitTransition = {
             val isTab = TopLevelDestination.entries.any { it.route == initialState.destination.route }
-            val isVideo = initialState.destination.route == Routes.EPISODE_PLAYER
+            val isVideo = initialState.destination.route == Routes.EPISODE_PLAYER || initialState.destination.route == Routes.EPISODE_PLAYER_PREVIEW
             if (isTab || isVideo) {
                 fadeOut(tween(AurisMotion.Standard, easing = AurisMotion.Ease))
             } else {
@@ -754,6 +754,43 @@ fun AurisNavHost(
             )
         }
 
+        // Ephemeral episode playback from catalogue preview without adding to library.
+        composable(
+            route = Routes.EPISODE_PLAYER_PREVIEW,
+            arguments = listOf(
+                navArgument("previewId") { type = NavType.StringType },
+                navArgument("unitIndex") { type = NavType.StringType },
+            ),
+        ) { navEntry ->
+            val previewId = navEntry.arguments?.getString("previewId").orEmpty()
+            val unitIndex = navEntry.arguments?.getString("unitIndex")?.toIntOrNull() ?: 0
+            val preview = previewItems[previewId]
+            if (preview == null || episodePlayer == null) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                return@composable
+            }
+            val previewEntry = remember(previewId) {
+                extensionContentRepository.entryForSourceItem(
+                    sourceItem = preview.item,
+                    sourcePackageName = preview.sourcePackageName,
+                    sourceAniyomiId = preview.sourceAniyomiId,
+                    mediaType = preview.mediaType,
+                ).copy(sourceId = preview.sourceId)
+            }
+            LaunchedEffect(Unit) {
+                musicViewModel?.pause()
+            }
+            EpisodePlayerRoute(
+                entry = previewEntry,
+                unitIndex = unitIndex,
+                libraryRepository = libraryRepository,
+                contentRepository = extensionContentRepository,
+                episodePlayer = episodePlayer,
+                onBack = { navController.popBackStack() },
+                previewUnits = previewUnits[previewId].orEmpty(),
+            )
+        }
+
         // Music browse/search. Reached from the Music home's search field.
         composable(Routes.MUSIC_BROWSE) {
             val music = musicViewModel
@@ -1087,6 +1124,9 @@ fun AurisNavHost(
                     } else if (state.mediaType == MediaType.MANGA) {
                         previewUnits[previewId] = state.units
                         navController.navigate(Routes.mangaReaderPreview(previewId, unit.index))
+                    } else if (state.mediaType == MediaType.ANIME) {
+                        previewUnits[previewId] = state.units
+                        navController.navigate(Routes.episodePlayerPreview(previewId, unit.index))
                     }
                 },
                 onRetry = viewModel::retry,

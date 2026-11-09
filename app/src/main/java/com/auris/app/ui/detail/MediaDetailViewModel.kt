@@ -404,8 +404,19 @@ class MediaDetailViewModel(
         onNavigateToUnit: (Int) -> Unit,
         onPlay: (SourceUnit, List<StreamTarget>) -> Unit,
     ) {
-        // Playback and reading need the persisted row Save creates.
-        if (_state.value.isPreview && !_state.value.isSaved) return
+        // Manga and anime are transient-safe: units are fetch-only and preview
+        // reader/player work off PreviewDetail with no persisted row, so unsaved
+        // preview taps navigate without upserting. Music still requires Save.
+        if (_state.value.isPreview && !_state.value.isSaved) {
+            val transient = previewEntry ?: return
+            if (transient.mediaType == MediaType.MUSIC) return
+            if (transient.mediaType == MediaType.MANGA) {
+                onNavigateToUnit(unit.index)
+                return
+            }
+            onPlay(unit, emptyList())
+            return
+        }
         val entry = currentEntry ?: return
 
         if (entry.mediaType == MediaType.MANGA) {

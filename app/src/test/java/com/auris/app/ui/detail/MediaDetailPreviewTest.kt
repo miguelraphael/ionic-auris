@@ -38,6 +38,8 @@ class MediaDetailPreviewTest {
     private val upserts = mutableListOf<LibraryEntryEntity>()
     private val kitsuWrites = mutableListOf<LibraryEntryEntity>()
     private val persistedUnits = mutableListOf<List<LibraryUnitEntity>>()
+    private var updateProgressCalls = 0
+    private var updateUnitProgressCalls = 0
     private var sessionUserId: String? = "user-1"
     private var vm: MediaDetailViewModel? = null
 
@@ -96,29 +98,91 @@ class MediaDetailPreviewTest {
         assertTrue(upserts.isEmpty())
     }
 
-    @Test fun unitClickIsSaveGated() = runBlocking {
+    @Test fun previewAnimeUnitClickNavigatesWithoutSaving() = runBlocking {
         val model = createPreview()
         withTimeout(5000) { model.state.first { it.units.isNotEmpty() } }
 
         var played = false
-        var navigated = false
-        val unit = model.state.value.units.first()
+        var navigated: Int? = null
         model.onUnitClick(
-            unit = unit,
+            unit = model.state.value.units.first(),
+            onNavigateToUnit = { navigated = it },
+            onPlay = { _, _ -> played = true },
+        )
+        assertTrue("unsaved anime preview must navigate", played)
+        assertNull(navigated)
+        assertTrue("transient play must not upsert", upserts.isEmpty())
+        assertEquals(0, updateProgressCalls)
+        assertEquals(0, updateUnitProgressCalls)
+
+        model.savePreview()
+        withTimeout(5000) { model.state.first { it.isSaved } }
+        var playedAfterSave = false
+        model.onUnitClick(
+            unit = model.state.value.units.first(),
+            onNavigateToUnit = {},
+            onPlay = { _, _ -> playedAfterSave = true },
+        )
+        assertTrue(playedAfterSave)
+    }
+
+    @Test fun previewMangaUnitClickNavigatesWithoutSaving() = runBlocking {
+        val model = createPreview(mediaType = MediaType.MANGA)
+        withTimeout(5000) { model.state.first { it.units.isNotEmpty() } }
+        assertFalse(model.state.value.isSaved)
+
+        var navigatedIndex: Int? = null
+        var played = false
+        model.onUnitClick(
+            unit = model.state.value.units.first(),
+            onNavigateToUnit = { navigatedIndex = it },
+            onPlay = { _, _ -> played = true },
+        )
+        assertTrue("unsaved manga preview must navigate", navigatedIndex != null)
+        assertFalse(played)
+        assertTrue("transient read must not upsert", upserts.isEmpty())
+        assertEquals(0, updateProgressCalls)
+        assertEquals(0, updateUnitProgressCalls)
+    }
+
+    @Test fun previewMusicUnitClickRemainsSaveGated() = runBlocking {
+        val model = createPreview(mediaType = MediaType.MUSIC)
+        withTimeout(5000) { model.state.first { it.units.isNotEmpty() } }
+
+        var played = false
+        var navigated = false
+        model.onUnitClick(
+            unit = model.state.value.units.first(),
             onNavigateToUnit = { navigated = true },
             onPlay = { _, _ -> played = true },
         )
-        assertFalse("unsaved preview must be inert", played)
+        assertFalse("unsaved music preview must be inert", played)
         assertFalse(navigated)
 
         model.savePreview()
         withTimeout(5000) { model.state.first { it.isSaved } }
         model.onUnitClick(
-            unit = unit,
+            unit = model.state.value.units.first(),
             onNavigateToUnit = { navigated = true },
             onPlay = { _, _ -> played = true },
         )
         assertTrue(played)
+    }
+
+    @Test fun unsavedPreviewUnitClickMakesNoUpsertAndNoProgressWrite() = runBlocking {
+        val model = createPreview(mediaType = MediaType.MANGA)
+        withTimeout(5000) { model.state.first { it.units.isNotEmpty() } }
+
+        model.onUnitClick(
+            unit = model.state.value.units.first(),
+            onNavigateToUnit = {},
+            onPlay = { _, _ -> },
+        )
+        assertFalse(model.state.value.isSaved)
+        assertTrue(upserts.isEmpty())
+        assertTrue(persistedUnits.isEmpty())
+        assertEquals(0, updateProgressCalls)
+        assertEquals(0, updateUnitProgressCalls)
     }
 
     @Test fun previewOfAlreadySavedTitleShowsSavedState() = runTest {
@@ -337,9 +401,12 @@ class MediaDetailPreviewTest {
             when (method) {
                 "observeById" -> entryFlow
                 "observeUnits" -> MutableStateFlow(storedUnits)
+                "findById" -> entryFlow.value
                 "findBySourceIdentity" -> entryFlow.value
                 "belongsToOtherOwner" -> false
                 "upsert" -> { upserts += (args.first() as LibraryEntryEntity); Unit }
+                "updateProgress" -> { updateProgressCalls++; Unit }
+                "updateUnitProgress" -> { updateUnitProgressCalls++; Unit }
                 else -> error("Unexpected DAO call: $method")
             }
         }
@@ -393,15 +460,22 @@ class MediaDetailPreviewTest {
         ).also { vm = it }
     }
 
-    private fun createPreview(existing: LibraryEntryEntity? = null, kitsu: KitsuDataSource = FakeKitsu()): MediaDetailViewModel {
+    private fun createPreview(
+        existing: LibraryEntryEntity? = null,
+        kitsu: KitsuDataSource = FakeKitsu(),
+        mediaType: MediaType = MediaType.ANIME,
+    ): MediaDetailViewModel {
         // The proxy receives args with the continuation appended; upsert records its entity.
         val libraryDao = proxy<LibraryDao> { method, args ->
             when (method) {
                 "observeById" -> MutableStateFlow<LibraryEntryEntity?>(null)
                 "observeUnits" -> MutableStateFlow(emptyList<LibraryUnitEntity>())
+                "findById" -> null
                 "findBySourceIdentity" -> existing
                 "belongsToOtherOwner" -> false
                 "upsert" -> { upserts += (args.first() as LibraryEntryEntity); Unit }
+                "updateProgress" -> { updateProgressCalls++; Unit }
+                "updateUnitProgress" -> { updateUnitProgressCalls++; Unit }
                 else -> error("Unexpected DAO call: $method")
             }
         }
@@ -414,10 +488,15 @@ class MediaDetailPreviewTest {
         }
         val context = android.content.ContextWrapper(null)
         val library = LibraryRepository(libraryDao, syncDao, SyncScheduler(context), Dispatchers.Unconfined, Json, requestSync = {})
+        val sourceId = when (mediaType) {
+            MediaType.MANGA -> "test-manga"
+            MediaType.MUSIC -> "test-music"
+            MediaType.ANIME -> "test-anime"
+        }
         val source = object : MediaSource {
-            override val id = "test-anime"
-            override val name = "Test Anime"
-            override val mediaType = MediaType.ANIME
+            override val id = sourceId
+            override val name = "Test Source"
+            override val mediaType = mediaType
             override val baseUrl = "https://example.test"
             override suspend fun configuration() = emptyMap<String, String>()
             override suspend fun updateConfiguration(values: Map<String, String>) = Unit
@@ -445,10 +524,10 @@ class MediaDetailPreviewTest {
         )
         val preview = PreviewDetail(
             item = SourceItem(url = "/anime/frieren", title = "Frieren", thumbnailUrl = "https://img.test/old.jpg"),
-            sourceId = "test-anime",
+            sourceId = sourceId,
             sourcePackageName = "builtin",
             sourceAniyomiId = 0L,
-            mediaType = MediaType.ANIME,
+            mediaType = mediaType,
         )
         return MediaDetailViewModel(
             entryId = "",

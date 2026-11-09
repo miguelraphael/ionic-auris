@@ -181,6 +181,7 @@ class LibraryRepository(
         watched: Boolean,
         positionMs: Long,
     ) = write {
+        if (libraryDao.findById(entryId) == null) return@write
         libraryDao.updateUnitProgress(entryId, unitIndex, watched, positionMs)
     }
 
