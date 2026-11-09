@@ -85,6 +85,8 @@ internal fun MusicAlbumPage(
     albumArtist: String? = null,
     artworkUrl: String? = null,
     bottomBar: @Composable () -> Unit = {},
+    /** True when [bottomBar] shows the now-playing strip, so the last track scrolls clear of it. */
+    bottomStripVisible: Boolean = false,
 ) {
     val albumArt = artworkUrl ?: tracks.firstNotNullOfOrNull { it.albumArtworkUrl }
         ?: tracks.firstOrNull()?.artworkUrl
@@ -94,7 +96,7 @@ internal fun MusicAlbumPage(
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = AurisBackground) {
             Column(Modifier.fillMaxSize()) {
-                LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp + navBottom)) {
+                LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp + navBottom + if (bottomStripVisible) 76.dp else 0.dp)) {
                     item {
                         IconButton(onClick = onBack, modifier = Modifier.padding(top = statusTop + 4.dp, start = 20.dp, bottom = 4.dp)) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back")

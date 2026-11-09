@@ -307,6 +307,19 @@ fun MusicHomeScreen(
             onBack = { selectedPlaylistId = null },
             onPlayTracks = onPlayTracks,
             onOptions = onOptions,
+            bottomBar = {
+                if (state.nowPlayingId != null) NowPlayingStrip(
+                    title = state.nowPlayingTitle ?: "Now playing", artist = state.nowPlayingArtist,
+                    artworkUrl = state.nowPlayingArtworkUrl, isPlaying = state.isPlaying,
+                    isLoading = state.isResolving || state.isBuffering,
+                    onClick = { if (!state.isResolving) onOpenPlayer() },
+                    onTogglePlayPause = onTogglePlayPause, onPrevious = onPrevious, onNext = onNext,
+                    canGoPrevious = !state.isResolving && state.canGoPrevious,
+                    canGoNext = !state.isResolving && state.canGoNext,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            },
+            bottomStripVisible = state.nowPlayingId != null,
         )
     }
 }
@@ -627,6 +640,8 @@ private fun LocalPlaylistDetail(
     onBack: () -> Unit,
     onPlayTracks: (List<MusicRow>, Int) -> Unit,
     onOptions: (MusicRow) -> Unit,
+    bottomBar: @Composable () -> Unit = {},
+    bottomStripVisible: Boolean = false,
 ) {
     val tracks by repository.observeTracks(playlist.id).collectAsStateWithLifecycle(initialValue = emptyList())
     val rows = tracks.map { it.toMusicRow() }
@@ -641,6 +656,8 @@ private fun LocalPlaylistDetail(
         onOptions = onOptions,
         isPlaylist = true,
         artworkUrl = rows.firstOrNull()?.artworkUrl,
+        bottomBar = bottomBar,
+        bottomStripVisible = bottomStripVisible,
     )
 }
 

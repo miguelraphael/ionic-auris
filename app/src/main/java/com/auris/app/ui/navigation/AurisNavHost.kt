@@ -37,6 +37,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.auris.app.AurisApplication
 import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.ui.browse.BrowseScreen
@@ -417,6 +418,7 @@ fun AurisNavHost(
                 onOptions = { homeSongOptions = it },
                 onOpenAlbum = { selectedAlbum = it },
                 onOpenArtist = { selectedArtist = it },
+                onPlayTracks = { rows, index -> albumScope.launch { music.playPlaylist(rows, index) } },
             )
             selectedAlbum?.takeIf { activeEntry.value?.destination?.route == TopLevelDestination.MUSIC.route }?.let { album ->
                 com.auris.app.ui.music.MusicAlbumPage(
@@ -428,6 +430,7 @@ fun AurisNavHost(
                     isPlaylist = album.kind == MusicRow.Kind.PLAYLIST,
                     albumArtist = album.subtitle,
                     artworkUrl = album.artworkUrl,
+                    bottomStripVisible = musicState.nowPlayingId != null,
                     bottomBar = {
                         if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
@@ -483,10 +486,22 @@ fun AurisNavHost(
                 key = "library",
                 factory = LibraryViewModel.factory(libraryRepository),
             )
+            // Same container seam the Music home collects with: the Library shows created
+            // playlists next to saved rows, and their cards read track rows back off it.
+            val playlistRepository = remember {
+                (navController.context.applicationContext as AurisApplication).container.playlistRepository
+            }
+            val playlists by playlistRepository.observePlaylists().collectAsStateWithLifecycle(initialValue = emptyList())
             LibraryScreen(
                 entries = library,
                 onEntryClick = openLibraryEntry,
                 onDelete = libraryViewModel::delete,
+                playlists = playlists,
+                // No playlist destination exists yet: the Music tab owns the local playlist
+                // detail, so a tap lands there (Back returns here).
+                onPlaylistClick = {
+                    navController.navigate(TopLevelDestination.MUSIC.route) { launchSingleTop = true }
+                },
                 modifier = Modifier.fillMaxSize(),
                 isLoading = isLibraryLoading,
             )
@@ -781,6 +796,7 @@ fun AurisNavHost(
                     isPlaylist = album.kind == MusicRow.Kind.PLAYLIST,
                     albumArtist = album.subtitle,
                     artworkUrl = album.artworkUrl,
+                    bottomStripVisible = musicState.nowPlayingId != null,
                     bottomBar = {
                         if (musicState.nowPlayingId != null) com.auris.app.ui.music.NowPlayingStrip(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,

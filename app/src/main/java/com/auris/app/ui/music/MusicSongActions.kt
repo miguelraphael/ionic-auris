@@ -119,7 +119,7 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
                                     type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${row.title}\nhttps://music.youtube.com/watch?v=${row.id}")
                                 }, "Share song"))
                             }), Triple("Queue", Icons.AutoMirrored.Filled.QueueMusic, { open("Queue") }),
-                                Triple("Playlist", Icons.Filled.PlaylistAdd, { open("Playlists") })).forEach { (label, icon, action) ->
+                                Triple("Add to playlist", Icons.Filled.PlaylistAdd, { open("Playlists") })).forEach { (label, icon, action) ->
                                 Surface(onClick = action, shape = MaterialTheme.shapes.medium, color = AurisSurfaceOpaque, modifier = Modifier.weight(1f)) {
                                     Column(Modifier.heightIn(min = 64.dp).padding(horizontal = 4.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(icon, null, Modifier.size(22.dp)); Spacer(Modifier.height(4.dp)); Text(label, style = MaterialTheme.typography.labelLarge)
@@ -188,14 +188,19 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
                         TextButton(enabled = playlistName.isNotBlank(), onClick = {
                             val name = playlistName.trim()
                             playlistName = ""
-                            runAction("Playlist created") { playlistRepository.createPlaylist(name) }
+                            runAction("Playlist created and song added") {
+                                val created = playlistRepository.createPlaylist(name)
+                                playlistRepository.addTrack(created.id, row.id, row.title, row.subtitle, row.artworkUrl)
+                            }
                         }) { Text("Create playlist") }
                         playlists.forEach { playlist ->
                             SongPlaylistRow(
                                 playlist = playlist,
                                 repository = playlistRepository,
+                                songId = row.id,
                                 onOpen = { open("playlist:${playlist.id}") },
                                 onAdd = { runAction("Song added") { playlistRepository.addTrack(playlist.id, row.id, row.title, row.subtitle, row.artworkUrl) } },
+                                onAlreadyAdded = { message = "Already in playlist" },
                                 onRename = { renameTarget = playlist },
                                 onDelete = { deleteTarget = playlist },
                             )
@@ -366,22 +371,26 @@ private fun SongSection(title: String) {
 private fun SongPlaylistRow(
     playlist: PlaylistEntity,
     repository: PlaylistRepository,
+    songId: String,
     onOpen: () -> Unit,
     onAdd: () -> Unit,
+    onAlreadyAdded: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val tracks by repository.observeTracks(playlist.id).collectAsStateWithLifecycle(initialValue = emptyList())
+    val alreadyAdded = tracks.any { it.trackId == songId }
     Row(
-        Modifier.fillMaxWidth().combinedClickable(onClick = onOpen).padding(vertical = 12.dp),
+        Modifier.fillMaxWidth().combinedClickable(onClick = { if (alreadyAdded) onAlreadyAdded() else onAdd() }).padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MediaArtwork(tracks.firstOrNull()?.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(playlist.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${tracks.size} songs", color = AurisOnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (alreadyAdded) "Already in playlist" else "Tap to add", color = AurisOnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        TextButton(onClick = onAdd, modifier = Modifier.heightIn(min = 48.dp)) { Text("Add") }
+        IconButton(onClick = onOpen, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.KeyboardArrowRight, "Open ${playlist.name}") }
         IconButton(onClick = onRename, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Edit, "Rename ${playlist.name}") }
         IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Delete, "Delete ${playlist.name}") }
     }

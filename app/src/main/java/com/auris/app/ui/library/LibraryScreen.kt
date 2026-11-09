@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -42,12 +45,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.auris.app.AurisApplication
 import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.entity.LibraryEntryEntity
+import com.auris.app.data.local.entity.PlaylistEntity
+import com.auris.app.data.repository.PlaylistRepository
 import com.auris.app.ui.components.MediaGridCard
 import com.auris.app.data.remote.music.nowPlayingArtworkUrl
+import com.auris.app.ui.components.SectionHeader
 import com.auris.app.ui.components.SkeletonPosterGrid
 import com.auris.app.ui.components.StateEmpty
 import com.auris.app.ui.components.StateNoResults
@@ -77,12 +86,21 @@ import com.auris.app.ui.theme.rememberArtworkPaletteValue
  * ### Selection is local, deletion is not
  * The selection is a screen concern and resets with it. Removal goes through `onDelete`, which
  * reaches [LibraryViewModel] and the repository's soft delete, so the tombstone still syncs.
+ *
+ * ### Playlists live here too
+ * Created playlists are part of Music for filtering: in All mode they get their own shelf
+ * (per-type shelves, like Home); under the Music filter or a search query the layout collapses
+ * back to the flat grid with playlist cards matched by name. They have no library row of their
+ * own, so they never enter the delete selection.
  */
 @Composable
 fun LibraryScreen(
     entries: List<LibraryEntryEntity>,
     onEntryClick: (LibraryEntryEntity) -> Unit,
     onDelete: (List<LibraryEntryEntity>) -> Unit,
+    /** Created playlists; empty in previews and pinned-open tests that have none. */
+    playlists: List<PlaylistEntity> = emptyList(),
+    onPlaylistClick: (PlaylistEntity) -> Unit = {},
     modifier: Modifier = Modifier,
     /** The first Room emission has not arrived yet, as opposed to a genuinely empty library. */
     isLoading: Boolean = false,
@@ -133,8 +151,41 @@ fun LibraryScreen(
             .toList()
     }
 
+    // Same container seam as the Music home: the shelf/grid playlist cards need track counts
+    // and first-track art, which `playlists` alone does not carry.
+    val appContext = LocalContext.current.applicationContext
+    val playlistRepository = remember {
+        (appContext as AurisApplication).container.playlistRepository
+    }
+    val visiblePlaylists = remember(playlists, query, filter, newestFirst) {
+        playlists
+            .asSequence()
+            .filter { filter == null || filter == MediaType.MUSIC }
+            .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+            .let { rows ->
+                if (newestFirst) rows else rows.sortedBy { it.name.lowercase() }
+            }
+            .toList()
+    }
+
     val selectedEntries = entries.filter { it.id in selectedIds }
     val selectionActive = selectedIds.isNotEmpty()
+
+    // Shared by the shelves and the grid so selection/long-press behave the same in both.
+    // Long-press is the only way into selection, so it must also work when selection is
+    // already on (toggling the pressed card off).
+    fun toggleSelected(entry: LibraryEntryEntity) {
+        selectedIds = if (entry.id in selectedIds) selectedIds - entry.id else selectedIds + entry.id
+    }
+
+    fun onCardClick(entry: LibraryEntryEntity) {
+        if (selectionActive) {
+            toggleSelected(entry)
+        } else {
+            gradientArtwork = entry.artworkUrl ?: entry.localArtworkPath
+            onEntryClick(entry)
+        }
+    }
 
     // The shared loader inside rememberArtworkPalette handles the decode, so this is just
     // "track this artwork".
@@ -226,15 +277,15 @@ fun LibraryScreen(
                 }
             }
 
-            if (visible.isEmpty()) {
+            if (visible.isEmpty() && visiblePlaylists.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
                     when {
-                        entries.isEmpty() && isLoading -> {
+                        entries.isEmpty() && playlists.isEmpty() && isLoading -> {
                             // The grid's own geometry, so the real cards land in the same place.
                             SkeletonPosterGrid(rows = 2, columns = 2)
                         }
 
-                        entries.isEmpty() -> {
+                        entries.isEmpty() && playlists.isEmpty() -> {
                             StateEmpty(
                                 title = "Nothing saved yet",
                                 description = "Open something from Anime, Manga or Music and it " +
@@ -262,41 +313,71 @@ fun LibraryScreen(
                 }
             }
 
-            items(
-                items = visible,
-                key = { it.id },
-            ) { entry ->
-                val isMusic = entry.mediaType == MediaType.MUSIC
-                val rawArt = entry.artworkUrl ?: entry.localArtworkPath
-                MediaGridCard(
-                    imageUrl = if (isMusic) nowPlayingArtworkUrl(rawArt) ?: rawArt else rawArt,
-                    title = entry.title,
-                    subtitle = entry.subtitle ?: entry.author,
-                    progress = entry.progress.takeIf { it > 0f },
-                    aspectRatio = if (isMusic) 1f else 2f / 3f,
-                    selected = entry.id in selectedIds,
-                    onLongClick = {
-                        // Long-press is the only way into selection, so it must also work when
-                        // selection is already on (toggling the pressed card off).
-                        selectedIds = if (entry.id in selectedIds) {
-                            selectedIds - entry.id
-                        } else {
-                            selectedIds + entry.id
-                        }
-                    },
-                    onClick = {
-                        if (selectionActive) {
-                            selectedIds = if (entry.id in selectedIds) {
-                                selectedIds - entry.id
-                            } else {
-                                selectedIds + entry.id
+            if (filter == null && query.isBlank()) {
+                // All mode reframes the flat archive into per-type shelves, like Home: no cap
+                // here (the Library is the place to see everything), per-type filter pills are
+                // the "see all" grid. A filter or a query collapses back to the grid below.
+                MediaType.entries.forEach { type ->
+                    val rows = visible.filter { it.mediaType == type }
+                    if (rows.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "shelf-${type.name}") {
+                            val isMusic = type == MediaType.MUSIC
+                            LibraryShelf(
+                                title = type.name.lowercase().replaceFirstChar(Char::uppercase),
+                            ) {
+                                items(rows, key = { it.id }) { entry ->
+                                    LibraryEntryCard(
+                                        entry = entry,
+                                        selected = entry.id in selectedIds,
+                                        aspectRatio = if (isMusic) 1f else 2f / 3f,
+                                        // Width only, like the Home shelves: the card sizes to
+                                        // its content so a two-line title is never squeezed.
+                                        modifier = Modifier.width(if (isMusic) 150.dp else 120.dp),
+                                        onClick = { onCardClick(entry) },
+                                        onLongClick = { toggleSelected(entry) },
+                                    )
+                                }
                             }
-                        } else {
-                            gradientArtwork = entry.artworkUrl ?: entry.localArtworkPath
-                            onEntryClick(entry)
                         }
-                    },
-                )
+                    }
+                }
+                if (visiblePlaylists.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "shelf-playlists") {
+                        LibraryShelf(title = "Playlists") {
+                            items(visiblePlaylists, key = { it.id }) { playlist ->
+                                LibraryPlaylistCard(
+                                    playlist = playlist,
+                                    repository = playlistRepository,
+                                    modifier = Modifier.width(150.dp),
+                                    onClick = { onPlaylistClick(playlist) },
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                items(
+                    items = visible,
+                    key = { it.id },
+                ) { entry ->
+                    LibraryEntryCard(
+                        entry = entry,
+                        selected = entry.id in selectedIds,
+                        aspectRatio = if (entry.mediaType == MediaType.MUSIC) 1f else 2f / 3f,
+                        onClick = { onCardClick(entry) },
+                        onLongClick = { toggleSelected(entry) },
+                    )
+                }
+                items(
+                    items = visiblePlaylists,
+                    key = { "playlist-${it.id}" },
+                ) { playlist ->
+                    LibraryPlaylistCard(
+                        playlist = playlist,
+                        repository = playlistRepository,
+                        onClick = { onPlaylistClick(playlist) },
+                    )
+                }
             }
         }
     }
@@ -521,4 +602,73 @@ private fun SelectionBar(
             }
         }
     }
+}
+
+/**
+ * One horizontal shelf inside the library grid, mirroring the Home shelf: the shared
+ * [SectionHeader] over a [LazyRow] of 12dp-spaced cards. No "See all" action — the type
+ * filter pills above are the full grid for the shelf's type.
+ */
+@Composable
+private fun LibraryShelf(
+    title: String,
+    content: LazyListScope.() -> Unit,
+) {
+    Column {
+        SectionHeader(title = title)
+        LazyRow(
+            content = content,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(bottom = 8.dp),
+        )
+    }
+}
+
+/** One library entry, the grid's [MediaGridCard] with selection wiring factored out. */
+@Composable
+private fun LibraryEntryCard(
+    entry: LibraryEntryEntity,
+    selected: Boolean,
+    aspectRatio: Float,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val isMusic = entry.mediaType == MediaType.MUSIC
+    val rawArt = entry.artworkUrl ?: entry.localArtworkPath
+    MediaGridCard(
+        imageUrl = if (isMusic) nowPlayingArtworkUrl(rawArt) ?: rawArt else rawArt,
+        title = entry.title,
+        subtitle = entry.subtitle ?: entry.author,
+        progress = entry.progress.takeIf { it > 0f },
+        aspectRatio = aspectRatio,
+        selected = selected,
+        onLongClick = onLongClick,
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+/**
+ * A created playlist as a square card: first-track artwork and the "N songs" count both come
+ * from the repository's track flow, so the card fills in once the rows arrive instead of
+ * reading a cached count.
+ */
+@Composable
+private fun LibraryPlaylistCard(
+    playlist: PlaylistEntity,
+    repository: PlaylistRepository,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val tracks by repository.observeTracks(playlist.id)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    MediaGridCard(
+        imageUrl = tracks.firstOrNull()?.artworkUrl,
+        title = playlist.name,
+        subtitle = if (tracks.size == 1) "1 song" else "${tracks.size} songs",
+        aspectRatio = 1f,
+        modifier = modifier,
+        onClick = onClick,
+    )
 }
