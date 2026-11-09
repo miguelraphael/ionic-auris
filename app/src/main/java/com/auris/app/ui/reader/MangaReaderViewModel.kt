@@ -9,6 +9,8 @@ import com.auris.app.data.local.entity.LibraryUnitEntity
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.source.Page
+import com.auris.app.source.SourceUnit
+import com.auris.app.ui.source.PreviewDetail
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,8 +60,10 @@ data class MangaReaderUiState(
 class MangaReaderViewModel(
     private val entryId: String,
     private val unitIndex: Int,
-    private val libraryRepository: LibraryRepository,
+    private val libraryRepository: LibraryRepository? = null,
     private val contentRepository: ExtensionContentRepository,
+    private val preview: PreviewDetail? = null,
+    private val previewUnits: List<SourceUnit>? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MangaReaderUiState(isLoading = true))
@@ -70,13 +74,23 @@ class MangaReaderViewModel(
     private var pageLoadJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            // Entry and chapter metadata together, so the title never disagrees with the pages.
-            combine(
-                libraryRepository.observeEntry(entryId),
-                libraryRepository.observeUnits(entryId),
-            ) { entry, units -> entry to units }
-                .collect { (entry, units) -> applyMetadata(entry, units) }
+        if (preview != null) {
+            val entry = contentRepository.entryForSourceItem(
+                sourceItem = preview.item,
+                sourcePackageName = preview.sourcePackageName,
+                sourceAniyomiId = preview.sourceAniyomiId,
+                mediaType = preview.mediaType,
+            ).copy(sourceId = preview.sourceId)
+            applyPreviewMetadata(entry, previewUnits.orEmpty())
+        } else if (libraryRepository != null) {
+            viewModelScope.launch {
+                // Entry and chapter metadata together, so the title never disagrees with the pages.
+                combine(
+                    libraryRepository.observeEntry(entryId),
+                    libraryRepository.observeUnits(entryId),
+                ) { entry, units -> entry to units }
+                    .collect { (entry, units) -> applyMetadata(entry, units) }
+            }
         }
         pageLoadJob = viewModelScope.launch { loadPages() }
     }
@@ -102,18 +116,47 @@ class MangaReaderViewModel(
         )
     }
 
+    private fun applyPreviewMetadata(entry: LibraryEntryEntity, units: List<SourceUnit>) {
+        val chapter = units.firstOrNull { it.index == unitIndex }
+        val position = chapter?.let { units.indexOf(it) } ?: -1
+
+        _state.value = _state.value.copy(
+            title = entry.title,
+            chapterTitle = chapter?.title.orEmpty(),
+            previousChapter = position.takeIf { it > 0 }?.let { units[it - 1].index },
+            nextChapter = position.takeIf { it >= 0 && it < units.lastIndex }?.let { units[it + 1].index },
+        )
+    }
+
     /** Resolves the chapter's page images. Runs once per ViewModel. */
     private suspend fun loadPages() {
         if (pageLoadStarted) return
         pageLoadStarted = true
 
-        val entry = libraryRepository.observeEntry(entryId).first() ?: run {
+        if (preview != null) {
+            loadPreviewPages(preview)
+            return
+        }
+
+        val repo = libraryRepository ?: run {
             _state.value = _state.value.copy(isLoading = false, error = "Chapter not found")
             return
         }
 
-        val units = libraryRepository.observeUnits(entryId).first()
-        val chapter = units.firstOrNull { it.unitIndex == unitIndex }
+        val entry = repo.observeEntry(entryId).first() ?: run {
+            _state.value = _state.value.copy(isLoading = false, error = "Chapter not found")
+            return
+        }
+
+        var units = repo.observeUnits(entryId).first()
+        var chapter = units.firstOrNull { it.unitIndex == unitIndex }
+
+        if (chapter == null) {
+            // Self-healing fallback: if units haven't been synced to Room yet, attempt to refresh
+            contentRepository.refreshUnits(entry)
+            units = repo.observeUnits(entryId).first()
+            chapter = units.firstOrNull { it.unitIndex == unitIndex }
+        }
 
         if (chapter == null) {
             _state.value = _state.value.copy(
@@ -126,7 +169,7 @@ class MangaReaderViewModel(
 
         contentRepository.fetchPages(
             entry = entry,
-            unit = com.auris.app.source.SourceUnit(
+            unit = SourceUnit(
                 url = chapter.sourceUnitId.orEmpty(),
                 index = chapter.unitIndex,
                 title = chapter.title,
@@ -160,6 +203,55 @@ class MangaReaderViewModel(
             }
     }
 
+    private suspend fun loadPreviewPages(preview: PreviewDetail) {
+        val entry = contentRepository.entryForSourceItem(
+            sourceItem = preview.item,
+            sourcePackageName = preview.sourcePackageName,
+            sourceAniyomiId = preview.sourceAniyomiId,
+            mediaType = preview.mediaType,
+        ).copy(sourceId = preview.sourceId)
+
+        var units = previewUnits.orEmpty()
+        if (units.isEmpty()) {
+            units = contentRepository.fetchUnits(entry).getOrDefault(emptyList())
+        }
+        applyPreviewMetadata(entry, units)
+
+        val chapter = units.firstOrNull { it.index == unitIndex }
+        if (chapter == null) {
+            _state.value = _state.value.copy(
+                isLoading = false,
+                isEmpty = true,
+                error = "This chapter is no longer available. Go back and refresh the chapter list.",
+            )
+            return
+        }
+
+        contentRepository.fetchPages(entry = entry, unit = chapter)
+            .onSuccess { pages ->
+                _state.value = _state.value.copy(
+                    pages = pages,
+                    currentPage = 0,
+                    isLoading = false,
+                    isEmpty = pages.isEmpty(),
+                    error = if (pages.isEmpty()) "This chapter has no readable pages" else null,
+                )
+                currentPageComplete = false
+            }
+            .onFailure { error ->
+                if (error is CancellationException) throw error
+                Log.w(TAG, "Page load failed for preview/$unitIndex: ${error.message}")
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    error = if (error is ExtensionContentRepository.UnavailableException) {
+                        error.message
+                    } else {
+                        "Could not load this chapter. Check your connection and try again."
+                    },
+                )
+            }
+    }
+
     fun onPageChanged(index: Int) = onPageProgress(index, true)
 
     private var currentPageComplete = false
@@ -175,6 +267,7 @@ class MangaReaderViewModel(
     private var progressJob: Job? = null
 
     private fun saveProgress(index: Int, pageComplete: Boolean) {
+        if (preview != null || libraryRepository == null) return
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             val units = libraryRepository.observeUnits(entryId).first()
@@ -214,7 +307,30 @@ class MangaReaderViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            MangaReaderViewModel(entryId, unitIndex, libraryRepository, contentRepository) as T
+            MangaReaderViewModel(
+                entryId = entryId,
+                unitIndex = unitIndex,
+                libraryRepository = libraryRepository,
+                contentRepository = contentRepository,
+            ) as T
+    }
+
+    private class PreviewFactory(
+        private val preview: PreviewDetail,
+        private val previewUnits: List<SourceUnit>,
+        private val unitIndex: Int,
+        private val contentRepository: ExtensionContentRepository,
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            MangaReaderViewModel(
+                entryId = "",
+                unitIndex = unitIndex,
+                libraryRepository = null,
+                contentRepository = contentRepository,
+                preview = preview,
+                previewUnits = previewUnits,
+            ) as T
     }
 
     companion object {
@@ -227,5 +343,13 @@ class MangaReaderViewModel(
             contentRepository: ExtensionContentRepository,
         ): ViewModelProvider.Factory =
             Factory(entryId, unitIndex, libraryRepository, contentRepository)
+
+        fun previewFactory(
+            preview: PreviewDetail,
+            previewUnits: List<SourceUnit>,
+            unitIndex: Int,
+            contentRepository: ExtensionContentRepository,
+        ): ViewModelProvider.Factory =
+            PreviewFactory(preview, previewUnits, unitIndex, contentRepository)
     }
 }

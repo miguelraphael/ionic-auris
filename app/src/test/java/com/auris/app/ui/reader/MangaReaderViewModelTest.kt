@@ -173,4 +173,60 @@ class MangaReaderViewModelTest {
         assertEquals(com.auris.app.core.model.EntryStatus.COMPLETED, lastEntryStatus)
     }
 
+    @Test fun previewReaderLoadsPagesWithoutTouchingRoom() = runTest(dispatcher) {
+        val source = object : MediaSource, MangaReaderSource {
+            override val id = "test-manga"
+            override val name = "Test Manga"
+            override val mediaType = MediaType.MANGA
+            override val baseUrl = "https://example.test"
+            override suspend fun configuration() = emptyMap<String, String>()
+            override suspend fun updateConfiguration(values: Map<String, String>) = Unit
+            override suspend fun popular(page: Int) = SourcePage(emptyList(), false)
+            override suspend fun latest(page: Int) = popular(page)
+            override suspend fun search(page: Int, query: String, filters: FilterList) = popular(page)
+            override suspend fun details(entry: SourceItem) = entry
+            override suspend fun units(entry: SourceItem) = emptyList<SourceUnit>()
+            override suspend fun streams(entry: SourceItem, unit: SourceUnit) = emptyList<StreamTarget>()
+            override suspend fun pages(entry: SourceItem, unit: SourceUnit): List<Page> {
+                calls++
+                return List(5) { Page(it, "https://example.test/$it.jpg") }
+            }
+        }
+        val registry = object : ExtensionSourceRegistry { override val sources = emptyList<LoadedSource>() }
+        val content = ExtensionContentRepository(registry, { _, _ -> }, { _, _ -> }, listOf(source))
+        val preview = com.auris.app.ui.source.PreviewDetail(
+            item = SourceItem(url = "/manga/preview", title = "Preview Manga", thumbnailUrl = null),
+            sourceId = "test-manga",
+            sourcePackageName = "builtin",
+            sourceAniyomiId = 0L,
+            mediaType = MediaType.MANGA,
+        )
+        val previewUnits = listOf(
+            SourceUnit(url = "/manga/preview/c1", index = 1, title = "Chapter 1"),
+            SourceUnit(url = "/manga/preview/c2", index = 2, title = "Chapter 2"),
+        )
+        val previewReader = MangaReaderViewModel(
+            entryId = "",
+            unitIndex = 1,
+            libraryRepository = null,
+            contentRepository = content,
+            preview = preview,
+            previewUnits = previewUnits,
+        ).also { vm = it }
+
+        awaitLoad(previewReader)
+        assertEquals(1, calls)
+        assertFalse(previewReader.state.value.isLoading)
+        assertEquals(5, previewReader.state.value.totalPages)
+        assertEquals(0, previewReader.state.value.currentPage)
+        assertEquals("Preview Manga", previewReader.state.value.title)
+        assertEquals("Chapter 1", previewReader.state.value.chapterTitle)
+        assertEquals(2, previewReader.state.value.nextChapter)
+        assertNull(previewReader.state.value.previousChapter)
+
+        // Progress updates in preview mode must be no-ops for Room persistence
+        previewReader.onPageChanged(4)
+        advanceUntilIdle()
+        assertNull(lastProgressPage)
+    }
 }

@@ -240,6 +240,7 @@ class MediaDetailViewModel(
                         savedEntryId = existing.id,
                         message = "Saved to Library ✓",
                     )
+                    launch { contentRepository.refreshUnits(existing) }
                     return@launch
                 }
                 val saved = libraryRepository.upsert(row)
@@ -250,6 +251,7 @@ class MediaDetailViewModel(
                     savedEntryId = saved.id,
                     message = "Saved to Library ✓",
                 )
+                launch { contentRepository.refreshUnits(saved) }
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) {
                 _state.value = _state.value.copy(

@@ -179,6 +179,7 @@ fun AurisNavHost(
     // Unsaved catalogue previews, keyed by a per-tap id carried in the preview route.
     // A map (not a single slot) keeps each back-stack entry on its own title.
     val previewItems = remember { mutableStateMapOf<String, PreviewDetail>() }
+    val previewUnits = remember { mutableStateMapOf<String, List<SourceUnit>>() }
 
     NavHost(
         navController = navController,
@@ -669,6 +670,58 @@ fun AurisNavHost(
             )
         }
 
+        // Ephemeral manga reader. Reached from catalogue preview without adding to library.
+        composable(
+            route = Routes.MANGA_READER_PREVIEW,
+            arguments = listOf(
+                navArgument("previewId") { type = NavType.StringType },
+                navArgument("unitIndex") { type = NavType.StringType },
+            ),
+        ) { navEntry ->
+            val previewId = navEntry.arguments?.getString("previewId").orEmpty()
+            val unitIndex = navEntry.arguments?.getString("unitIndex")?.toIntOrNull() ?: 0
+            val preview = previewItems[previewId]
+
+            if (preview == null) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                return@composable
+            }
+
+            val viewModel: MangaReaderViewModel = viewModel(
+                key = "preview-$previewId-$unitIndex",
+                factory = MangaReaderViewModel.previewFactory(
+                    preview = preview,
+                    previewUnits = previewUnits[previewId].orEmpty(),
+                    unitIndex = unitIndex,
+                    contentRepository = extensionContentRepository,
+                ),
+            )
+            val readerState by viewModel.state.collectAsStateWithLifecycle()
+
+            val window = (LocalView.current.context as? Activity)?.window
+            DisposableEffect(Unit) {
+                val controller = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
+                controller?.hide(WindowInsetsCompat.Type.systemBars())
+                controller?.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+            }
+
+            MangaReaderScreen(
+                state = readerState,
+                onPageChanged = viewModel::onPageChanged,
+                onPageProgress = viewModel::onPageProgress,
+                onToggleOverlay = viewModel::toggleOverlay,
+                onRetry = viewModel::retry,
+                onBack = { navController.popBackStack() },
+                onChapterChange = { index ->
+                    navController.navigate(Routes.mangaReaderPreview(previewId, index)) {
+                        popUpTo(navEntry.destination.id) { inclusive = true }
+                    }
+                },
+            )
+        }
+
         // Episode player. Reached from the detail screen with a stream already resolved.
         composable(
             route = Routes.EPISODE_PLAYER,
@@ -1020,16 +1073,21 @@ fun AurisNavHost(
                     navController.navigate(Routes.animeDetail(id))
                 } },
                 onUnitClick = { unit ->
-                    val savedId = state.savedEntryId ?: return@MediaDetailScreen
-                    viewModel.onUnitClick(
-                        unit = unit,
-                        onNavigateToUnit = { index ->
-                            navController.navigate(Routes.mangaReader(savedId, index))
-                        },
-                        onPlay = { played, _ ->
-                            navController.navigate(Routes.episodePlayer(savedId, played.index))
-                        },
-                    )
+                    val savedId = state.savedEntryId
+                    if (savedId != null) {
+                        viewModel.onUnitClick(
+                            unit = unit,
+                            onNavigateToUnit = { index ->
+                                navController.navigate(Routes.mangaReader(savedId, index))
+                            },
+                            onPlay = { played, _ ->
+                                navController.navigate(Routes.episodePlayer(savedId, played.index))
+                            },
+                        )
+                    } else if (state.mediaType == MediaType.MANGA) {
+                        previewUnits[previewId] = state.units
+                        navController.navigate(Routes.mangaReaderPreview(previewId, unit.index))
+                    }
                 },
                 onRetry = viewModel::retry,
                 bottomPadding = 32.dp + WindowInsets.navigationBars

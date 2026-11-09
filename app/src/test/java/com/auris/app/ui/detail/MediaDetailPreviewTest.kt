@@ -80,6 +80,7 @@ class MediaDetailPreviewTest {
         val state = model.state.value
         assertTrue(state.isSaved)
         assertNotNull(state.savedEntryId)
+        assertTrue("units must be persisted on save", persistedUnits.isNotEmpty())
     }
 
     @Test fun savePreviewSurfacesNotSignedIn() = runBlocking {
