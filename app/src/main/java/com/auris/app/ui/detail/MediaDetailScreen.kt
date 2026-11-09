@@ -97,6 +97,8 @@ data class MediaDetailUiState(
     val seasonsError: String? = null,
     val mediaType: MediaType = MediaType.ANIME,
     val title: String = "",
+    /** English title from Kitsu when present; null shows no line (detail-level only). */
+    val englishTitle: String? = null,
     val originalTitle: String? = null,
     val synopsis: String? = null,
     val posterUrl: String? = null,
@@ -415,6 +417,17 @@ private fun DetailHero(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
+
+            if (!state.englishTitle.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = state.englishTitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AurisOnSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
 
             if (!state.originalTitle.isNullOrBlank()) {
                 Spacer(Modifier.height(4.dp))

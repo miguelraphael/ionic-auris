@@ -39,7 +39,17 @@ data class KitsuMetadata(
     val nsfw: Boolean,
     /** Episode count for anime, chapter count for manga. Null when the source omits it. */
     val unitCount: Int?,
-)
+) {
+    /**
+     * The English title (`en`, then `en_us`, then `en_jp`), or null when Kitsu has no English
+     * variant. Display-only: nothing persists this, so saved rows re-fetch it rather than
+     * storing it, and a title without English keeps null (no blank line in the UI).
+     */
+    val englishTitle: String?
+        get() = titles["en"]?.takeIf { it.isNotBlank() }
+            ?: titles["en_us"]?.takeIf { it.isNotBlank() }
+            ?: titles["en_jp"]?.takeIf { it.isNotBlank() }
+}
 
 /**
  * Kitsu's `status`, mapped onto Auris's vocabulary.

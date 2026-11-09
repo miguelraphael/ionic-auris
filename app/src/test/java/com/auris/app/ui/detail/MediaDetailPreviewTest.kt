@@ -176,6 +176,49 @@ class MediaDetailPreviewTest {
         assertEquals(87.3, model.state.value.averageRating!!, 0.001)
     }
 
+    @Test fun previewShowsEnglishTitleFromKitsu() = runBlocking {
+        val model = createPreview()
+        withTimeout(5000) { model.state.first { it.englishTitle != null } }
+
+        val state = model.state.value
+        assertEquals("Frieren: Beyond Journey's End", state.englishTitle)
+        assertEquals("フリーレン", state.originalTitle)
+    }
+
+    @Test fun previewWithoutEnglishTitleFallsBackToJapaneseOnly() = runBlocking {
+        val model = createPreview(
+            kitsu = FakeKitsu(
+                KitsuAnimeAttributes(
+                    canonicalTitle = "Sousou no Frieren",
+                    titles = KitsuTitles(jaJp = "フリーレン"),
+                    synopsis = "A synopsis.",
+                    status = "finished",
+                    subtype = "TV",
+                    ageRating = "PG",
+                    averageRating = 87.3,
+                    startDate = "2023-09-29",
+                    episodeCount = 28,
+                    posterImage = KitsuImage(large = "https://img.test/poster.jpeg"),
+                    coverImage = KitsuImage(large = "https://img.test/cover.jpeg"),
+                ),
+            ),
+        )
+        withTimeout(5000) { model.state.first { it.averageRating != null } }
+
+        val state = model.state.value
+        assertNull("no English locale means no English line", state.englishTitle)
+        assertEquals("フリーレン", state.originalTitle)
+    }
+
+    @Test fun savedRouteShowsEnglishTitleFetchOnly() = runBlocking {
+        val model = createSaved(savedEntry(kitsuRating = 92.5))
+        withTimeout(5000) { model.state.first { it.englishTitle != null } }
+
+        val state = model.state.value
+        assertEquals("Frieren: Beyond Journey's End", state.englishTitle)
+        assertTrue("English fetch must not persist", kitsuWrites.isEmpty())
+    }
+
     @Test fun unitClickEnabledForAlreadySavedPreview() = runTest {
         val existing = savedRow()
         val model = createPreview(existing = existing)
@@ -211,7 +254,7 @@ class MediaDetailPreviewTest {
         artworkUrl = "https://img.test/poster.jpeg",
     )
 
-    private fun createSaved(entry: LibraryEntryEntity): MediaDetailViewModel {
+    private fun createSaved(entry: LibraryEntryEntity, kitsu: KitsuDataSource = FakeKitsu()): MediaDetailViewModel {
         val entryFlow = MutableStateFlow<LibraryEntryEntity?>(entry)
         val libraryDao = proxy<LibraryDao> { method, args ->
             when (method) {
@@ -257,7 +300,7 @@ class MediaDetailPreviewTest {
             builtInSources = listOf(source),
         )
         val identifier = KitsuIdentifier(
-            client = FakeKitsu(),
+            client = kitsu,
             write = { enriched ->
                 kitsuWrites += enriched
                 // Simulate Room: the upsert re-emits via observeById.
@@ -273,7 +316,7 @@ class MediaDetailPreviewTest {
         ).also { vm = it }
     }
 
-    private fun createPreview(existing: LibraryEntryEntity? = null): MediaDetailViewModel {
+    private fun createPreview(existing: LibraryEntryEntity? = null, kitsu: KitsuDataSource = FakeKitsu()): MediaDetailViewModel {
         // The proxy receives args with the continuation appended; upsert records its entity.
         val libraryDao = proxy<LibraryDao> { method, args ->
             when (method) {
@@ -319,7 +362,7 @@ class MediaDetailPreviewTest {
             builtInSources = listOf(source),
         )
         val identifier = KitsuIdentifier(
-            client = FakeKitsu(),
+            client = kitsu,
             write = { error("Preview must not write Kitsu enrichment") },
             log = { _, _ -> },
         )
@@ -344,10 +387,10 @@ class MediaDetailPreviewTest {
             invoke(method.name, args ?: emptyArray())
         } as T
 
-    private class FakeKitsu : KitsuDataSource {
-        private val attributes = KitsuAnimeAttributes(
+    private class FakeKitsu(
+        private val attributes: KitsuAnimeAttributes = KitsuAnimeAttributes(
             canonicalTitle = "Frieren",
-            titles = KitsuTitles(en = "Frieren", jaJp = "フリーレン", enJp = "Frieren"),
+            titles = KitsuTitles(en = "Frieren: Beyond Journey's End", jaJp = "フリーレン", enJp = "Frieren"),
             synopsis = "A synopsis.",
             status = "finished",
             subtype = "TV",
@@ -357,7 +400,8 @@ class MediaDetailPreviewTest {
             episodeCount = 28,
             posterImage = KitsuImage(large = "https://img.test/poster.jpeg"),
             coverImage = KitsuImage(large = "https://img.test/cover.jpeg"),
-        )
+        ),
+    ) : KitsuDataSource {
 
         override suspend fun searchAnime(query: String, limit: Int, offset: Int) =
             Result.success(

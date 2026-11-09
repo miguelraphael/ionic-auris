@@ -186,6 +186,7 @@ class MediaDetailViewModel(
                     synopsis = meta.synopsis,
                     posterUrl = meta.posterUrl ?: _state.value.posterUrl,
                     coverUrl = meta.coverUrl,
+                    englishTitle = meta.englishTitle,
                     originalTitle = meta.originalTitle,
                     averageRating = meta.averageRating,
                     status = meta.status.name,
@@ -304,6 +305,9 @@ class MediaDetailViewModel(
         if (entry.kitsuId != null && !entry.description.isNullOrBlank() && entry.kitsuRating != null) {
             identificationDone = true
             _state.value = _state.value.copy(isMetadataLoading = false)
+            // English titles are never persisted (no column), so even a fully identified row
+            // still needs a fetch-only lookup to surface one. Never writes.
+            fetchSavedEnglishTitle(entry)
             return
         }
         if (entry.mediaType == MediaType.MUSIC) {
@@ -334,7 +338,21 @@ class MediaDetailViewModel(
                     isMetadataLoading = false,
                     metadataUnavailable = true,
                 )
+            } else {
+                // English is display-only (no persisted column): surface it from the match
+                // while the Room re-emission carries the persisted fields.
+                _state.value = _state.value.copy(englishTitle = match.metadata.englishTitle)
             }
+        }
+    }
+
+    /** Fetch-only English title for an already-identified saved row; never persists. */
+    private fun fetchSavedEnglishTitle(entry: LibraryEntryEntity) {
+        if (entry.mediaType == MediaType.MUSIC) return
+        viewModelScope.launch {
+            val match = runCatching { identifier.findBestMatch(entry) }.getOrNull() ?: return@launch
+            val english = match.metadata.englishTitle ?: return@launch
+            _state.value = _state.value.copy(englishTitle = english)
         }
     }
 
@@ -408,6 +426,8 @@ class MediaDetailViewModel(
             loadSeasons(entry)
             if ((entry.kitsuId == null || entry.kitsuRating == null) && entry.mediaType != MediaType.MUSIC) {
                 identifyIfNeeded(entry)
+            } else if (_state.value.englishTitle == null && entry.mediaType != MediaType.MUSIC) {
+                fetchSavedEnglishTitle(entry)
             }
         }
         refreshUnits()
@@ -428,6 +448,8 @@ class MediaDetailViewModel(
         entry: LibraryEntryEntity,
         units: List<LibraryUnitEntity>,
     ) = copy(
+        // englishTitle is deliberately not projected: no persisted column holds it, so the
+        // fetch-only value on state survives Room re-emissions.
         mediaType = entry.mediaType,
         title = entry.title,
         originalTitle = entry.kitsuOriginalTitle,
