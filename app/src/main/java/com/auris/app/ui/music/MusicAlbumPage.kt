@@ -96,21 +96,27 @@ internal fun MusicAlbumPage(
             Column(Modifier.fillMaxSize()) {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp + navBottom)) {
                     item {
-                        IconButton(onClick = onBack, modifier = Modifier.padding(top = statusTop + 4.dp, start = 12.dp, bottom = 4.dp)) {
+                        IconButton(onClick = onBack, modifier = Modifier.padding(top = statusTop + 4.dp, start = 20.dp, bottom = 4.dp)) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back")
                         }
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        val typeLabel = if (isPlaylist) "Playlist" else "Album"
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
                             MediaArtwork(nowPlayingArtworkUrl(albumArt), "Cover for $title",
-                                Modifier.widthIn(max = 240.dp).fillMaxWidth().aspectRatio(1f),
+                                Modifier.weight(1f, fill = false).widthIn(max = 240.dp).aspectRatio(1f),
                                 fallbackImageUrl = albumArt)
-                            Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 20.dp))
-                            val typeLabel = if (isPlaylist) "Playlist" else "Album"
-                            Text("$typeLabel · ${tracks.size} songs", color = AurisOnSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
-                            Button(onClick = onPlayAll, enabled = !loading && tracks.isNotEmpty(), shape = ArtworkShapeSmall, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp).height(48.dp)) {
-                                Icon(Icons.Filled.PlayArrow, null)
-                                Spacer(Modifier.width(6.dp))
-                                Text(if (isPlaylist) "Play playlist" else "Play album")
+                            Column(Modifier.weight(1f)) {
+                                Text(title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text("$typeLabel · ${tracks.size} songs", color = AurisOnSurfaceVariant)
                             }
+                        }
+                        Button(onClick = onPlayAll, enabled = !loading && tracks.isNotEmpty(), shape = ArtworkShapeSmall, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp).height(48.dp)) {
+                            Icon(Icons.Filled.PlayArrow, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (isPlaylist) "Play playlist" else "Play album")
                         }
                         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 16.dp))
                         message?.let { Text(it, Modifier.padding(20.dp)) }

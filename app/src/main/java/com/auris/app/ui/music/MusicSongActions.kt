@@ -181,9 +181,21 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
                             local.add(playlistName.trim(), row); playlists = local.playlists(); playlistName = ""
                         }) { Text("Create playlist and add song") }
                         playlists.forEach { list ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { open("playlist:${list.name}"); rows = list.tracks }, modifier = Modifier.weight(1f)) { Text("${list.name} · ${list.tracks.size} songs") }
-                                TextButton(onClick = { local.add(list.name, row, list.id); playlists = local.playlists(); message = "Song added" }) { Text("Add") }
+                            Row(
+                                Modifier.fillMaxWidth().combinedClickable {
+                                    open("playlist:${list.name}"); rows = list.tracks
+                                }.padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                MediaArtwork(list.tracks.firstOrNull()?.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
+                                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                    Text(list.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${list.tracks.size} songs", color = AurisOnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                TextButton(
+                                    onClick = { local.add(list.name, row, list.id); playlists = local.playlists(); message = "Song added" },
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                ) { Text("Add") }
                             }
                         }
                     }
