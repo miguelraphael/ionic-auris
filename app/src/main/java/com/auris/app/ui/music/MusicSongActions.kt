@@ -23,7 +23,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.auris.app.music.MusicLocalCollections
+import com.auris.app.AurisApplication
+import com.auris.app.data.local.entity.PlaylistEntity
+import com.auris.app.data.local.entity.PlaylistTrackEntity
+import com.auris.app.data.repository.PlaylistRepository
 import com.auris.app.data.remote.music.MusicArtistDetails
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.player.CustomSleepTimerDialog
@@ -45,7 +48,8 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
     val playback by player.state.collectAsStateWithLifecycle()
     val queue by player.queue.collectAsStateWithLifecycle()
     val browse by music.state.collectAsStateWithLifecycle()
-    val local = remember { MusicLocalCollections(context.applicationContext) }
+    val playlistRepository = remember { (context.applicationContext as AurisApplication).container.playlistRepository }
+    val playlists by playlistRepository.observePlaylists().collectAsStateWithLifecycle(initialValue = emptyList())
     val scope = rememberCoroutineScope()
     var pages by remember(row.id) { mutableStateOf(listOf("Song options")) }
     val page = pages.last()
@@ -64,7 +68,8 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
         rowHistory = rowHistory.dropLast(1)
         pages = pages.dropLast(1)
     }
-    var playlists by remember { mutableStateOf(local.playlists()) }
+    var renameTarget by remember { mutableStateOf<PlaylistEntity?>(null) }
+    var deleteTarget by remember { mutableStateOf<PlaylistEntity?>(null) }
     var playlistName by remember { mutableStateOf("") }
     var customTimer by remember { mutableStateOf(false) }
     fun runAction(success: String? = null, action: suspend () -> Unit) {
@@ -87,9 +92,12 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
         containerColor = AurisBackground) {
         BackHandler(pages.size > 1) { back() }
         Column(Modifier.fillMaxWidth()) {
+            val playlistHeader = page.takeIf { it.startsWith("playlist:") }?.substringAfter("playlist:")
+                ?.let { id -> playlists.firstOrNull { it.id == id } }
+            val headerTitle = playlistHeader?.name ?: if (page.startsWith("playlist:")) "Playlist" else page.substringAfter(":")
             if (pages.size > 1) Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                Text(page.substringAfter(":"), style = MaterialTheme.typography.titleLarge)
+                Text(headerTitle, style = MaterialTheme.typography.titleLarge)
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             message?.let { Text(it, Modifier.padding(20.dp), color = AurisAccent) }
@@ -178,30 +186,36 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
                     "Playlists" -> {
                         OutlinedTextField(playlistName, { playlistName = it }, label = { Text("New playlist name") })
                         TextButton(enabled = playlistName.isNotBlank(), onClick = {
-                            local.add(playlistName.trim(), row); playlists = local.playlists(); playlistName = ""
-                        }) { Text("Create playlist and add song") }
-                        playlists.forEach { list ->
-                            Row(
-                                Modifier.fillMaxWidth().combinedClickable {
-                                    open("playlist:${list.name}"); rows = list.tracks
-                                }.padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                MediaArtwork(list.tracks.firstOrNull()?.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
-                                Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                                    Text(list.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("${list.tracks.size} songs", color = AurisOnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                TextButton(
-                                    onClick = { local.add(list.name, row, list.id); playlists = local.playlists(); message = "Song added" },
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                ) { Text("Add") }
-                            }
+                            val name = playlistName.trim()
+                            playlistName = ""
+                            runAction("Playlist created") { playlistRepository.createPlaylist(name) }
+                        }) { Text("Create playlist") }
+                        playlists.forEach { playlist ->
+                            SongPlaylistRow(
+                                playlist = playlist,
+                                repository = playlistRepository,
+                                onOpen = { open("playlist:${playlist.id}") },
+                                onAdd = { runAction("Song added") { playlistRepository.addTrack(playlist.id, row.id, row.title, row.subtitle, row.artworkUrl) } },
+                                onRename = { renameTarget = playlist },
+                                onDelete = { deleteTarget = playlist },
+                            )
                         }
                     }
                     else -> {
+                        val playlistId = page.takeIf { it.startsWith("playlist:") }?.substringAfter("playlist:")
+                        if (playlistId != null) {
+                            PlaylistDetailSection(
+                                playlistId = playlistId,
+                                repository = playlistRepository,
+                                busy = busy,
+                                onPlayAll = { items -> runAction { music.playPlaylist(items) } },
+                                onPlay = { music.play(it) },
+                                onOptions = { artistOptions = it },
+                                onRemove = { trackId -> runAction("Removed from playlist") { playlistRepository.removeTrack(playlistId, trackId) } },
+                            )
+                        }
                         val cleanArtist = row.artistHint().orEmpty()
-                        if (rows.isNotEmpty() && (page.startsWith("playlist:") || page.startsWith("collection:"))) {
+                        if (rows.isNotEmpty() && page.startsWith("collection:")) {
                             SongAction("Play all", Icons.Filled.PlayArrow, !busy) { runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) } }
                         }
                         if (page == "Artist") {
@@ -212,8 +226,8 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
                                 runAction { music.playPlaylist(rows.filter { it.kind == MusicRow.Kind.TRACK }) }
                             }) { Text("Play songs") }
                         }
-                        if (!busy && rows.isEmpty()) Text("No results found.")
-                        val groups = if (page == "Artist") rows.groupBy { it.kind } else mapOf(MusicRow.Kind.TRACK to rows)
+                        if (playlistId == null && !busy && rows.isEmpty()) Text("No results found.")
+                        val groups = if (playlistId != null) emptyMap() else if (page == "Artist") rows.groupBy { it.kind } else mapOf(MusicRow.Kind.TRACK to rows)
                         groups.forEach { (kind, entries) ->
                             if (page == "Artist") SongSection(when (kind) {
                                 MusicRow.Kind.TRACK -> "Songs"
@@ -238,6 +252,41 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
                 }
             }
         }
+    }
+    renameTarget?.let { target ->
+        var newName by remember(target.id) { mutableStateOf(target.name) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("Rename playlist") },
+            text = { OutlinedTextField(newName, { newName = it }, label = { Text("Playlist name") }, singleLine = true) },
+            confirmButton = {
+                TextButton(
+                    enabled = newName.isNotBlank() && newName.trim() != target.name,
+                    onClick = {
+                        val name = newName.trim()
+                        renameTarget = null
+                        runAction("Playlist renamed") { playlistRepository.renamePlaylist(target.id, name) }
+                    },
+                ) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("Cancel") } },
+        )
+    }
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete playlist?") },
+            text = { Text("\"${target.name}\" and all of its songs will be removed.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deleteTarget = null
+                        runAction("Playlist deleted") { playlistRepository.deletePlaylist(target.id) }
+                    },
+                ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } },
+        )
     }
     if (customTimer) CustomSleepTimerDialog({ customTimer = false }) { player.setSleepTimerDuration(it); customTimer = false }
     val pageMiniPlayer: @Composable () -> Unit = {
@@ -312,3 +361,71 @@ private fun SongSection(title: String) {
     Text(title, style = MaterialTheme.typography.labelLarge, color = AurisOnSurfaceVariant,
         modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
 }
+
+@Composable
+private fun SongPlaylistRow(
+    playlist: PlaylistEntity,
+    repository: PlaylistRepository,
+    onOpen: () -> Unit,
+    onAdd: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val tracks by repository.observeTracks(playlist.id).collectAsStateWithLifecycle(initialValue = emptyList())
+    Row(
+        Modifier.fillMaxWidth().combinedClickable(onClick = onOpen).padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MediaArtwork(tracks.firstOrNull()?.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(playlist.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${tracks.size} songs", color = AurisOnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        TextButton(onClick = onAdd, modifier = Modifier.heightIn(min = 48.dp)) { Text("Add") }
+        IconButton(onClick = onRename, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Edit, "Rename ${playlist.name}") }
+        IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Delete, "Delete ${playlist.name}") }
+    }
+}
+
+@Composable
+private fun PlaylistDetailSection(
+    playlistId: String,
+    repository: PlaylistRepository,
+    busy: Boolean,
+    onPlayAll: (List<MusicRow>) -> Unit,
+    onPlay: (MusicRow) -> Unit,
+    onOptions: (MusicRow) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    val tracks by repository.observeTracks(playlistId).collectAsStateWithLifecycle(initialValue = emptyList())
+    if (tracks.isNotEmpty()) SongAction("Play all", Icons.Filled.PlayArrow, !busy) { onPlayAll(tracks.map { it.toMusicRow() }) }
+    if (tracks.isEmpty() && !busy) Text("This playlist is empty.")
+    tracks.forEach { track ->
+        val item = track.toMusicRow()
+        Row(
+            Modifier.fillMaxWidth()
+                .combinedClickable(
+                    enabled = !busy,
+                    onLongClick = { onOptions(item) },
+                    onClick = { onPlay(item) },
+                )
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MediaArtwork(track.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                track.artist?.let { Text(it, color = AurisOnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+            TextButton(onClick = { onRemove(track.trackId) }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Remove") }
+        }
+    }
+}
+
+private fun PlaylistTrackEntity.toMusicRow(): MusicRow = MusicRow(
+    kind = MusicRow.Kind.TRACK,
+    title = title,
+    subtitle = artist,
+    artworkUrl = artworkUrl,
+    id = trackId,
+)

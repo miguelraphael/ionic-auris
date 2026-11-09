@@ -145,6 +145,10 @@ private fun FloatingNavItem(
                 selected = selected,
                 onClick = onClick,
                 interactionSource = interactionSource,
+                // Press feedback is the app-wide indication: `pressFeedback` compresses the
+                // item over 100ms / releases over 150ms (see DESIGN.md), and every other
+                // clickable surface in the app pairs it with `indication = null` — restoring
+                // a bare ripple here would read as a double indication next to the scale.
                 indication = null,
                 role = Role.Tab,
             )
@@ -158,20 +162,28 @@ private fun FloatingNavItem(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.scale(scale),
         ) {
-            Icon(
-                imageVector = destination.icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(22.dp),
-            )
+            // Selected pill behind the icon: neutral elevated fill matching the mini-player
+            // treatment on MusicHomeScreen, so the active destination reads off the dock fill.
+            Box(
+                modifier = Modifier.size(width = 40.dp, height = 32.dp)
+                    .clip(NavPillShape)
+                    .background(if (selected) AurisOnSurfaceVariant.copy(alpha = 0.15f) else Color.Transparent),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = destination.icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(22.dp).scale(scale),
+                )
+            }
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
                 color = tint,
                 maxLines = 1,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
             )
         }
     }

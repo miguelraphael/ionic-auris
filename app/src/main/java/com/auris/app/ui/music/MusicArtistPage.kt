@@ -3,12 +3,14 @@ package com.auris.app.ui.music
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -16,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -48,8 +51,12 @@ internal fun MusicArtistPage(
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp + navBottom)) {
                     item {
                         Box {
-                            MediaArtwork(artwork, null, Modifier.fillMaxWidth().height(220.dp))
-                            FilledTonalIconButton(onClick = onBack, modifier = Modifier.padding(top = statusTop + 8.dp, start = 16.dp).size(48.dp)) {
+                            MediaArtwork(artwork, null, Modifier.fillMaxWidth().aspectRatio(16f / 9f), shape = RectangleShape, scrim = 0.30f)
+                            FilledTonalIconButton(
+                                onClick = onBack,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AurisSurfaceOpaque),
+                                modifier = Modifier.padding(top = statusTop + 12.dp, start = 20.dp).size(48.dp).border(1.dp, AurisOutline, CircleShape),
+                            ) {
                                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back")
                             }
                         }

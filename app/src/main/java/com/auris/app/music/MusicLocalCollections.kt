@@ -6,7 +6,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** Device-local playlists. */
+/**
+ * Device-local playlists.
+ *
+ * @deprecated Playlists now live in Room via `PlaylistRepository`, which imports this
+ * store's JSON once and deletes the key. This class remains only because the UI still
+ * calls it synchronously (`MusicSongActions`); cut the UI over to collecting
+ * `PlaylistRepository.observePlaylists()` and then delete this file. Until then its
+ * writes are absorbed by the repository's IGNORE dedupe on the next import, but it does
+ * not emit updates and its shelf goes stale.
+ */
 internal class MusicLocalCollections(private val context: Context) {
     private val prefs = context.getSharedPreferences("music_collections", Context.MODE_PRIVATE)
     data class Playlist(val id: String, val name: String, val tracks: List<MusicRow>)

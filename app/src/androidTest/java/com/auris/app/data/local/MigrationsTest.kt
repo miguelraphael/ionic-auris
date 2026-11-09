@@ -424,13 +424,53 @@ class MigrationsTest {
         }
     }
 
+    // ---- v5 -> v6 -----------------------------------------------------------
+
+    @Test
+    fun migrates5To6CreatingEmptyPlaylistTablesAndKeepingLibraryRows() {
+        val db = databaseAt(5)
+        db.execSQL(
+            """
+            INSERT INTO library_entries (
+                id, remote_id, media_type, source_id, source_key, title, genres, status,
+                progress, total_units, current_unit_index, score, is_favorite, categories,
+                last_position_ms, is_deleted, sync_state, created_at, updated_at, last_activity_at
+            ) VALUES (
+                'keep-me', 'remote-9', 'MUSIC', 'video-1', 'innertube', 'Keep Me',
+                '[]', 'PLANNED', 0.0, 0, 0, 0, 0, '[]', 0, 0, 'LOCAL_ONLY',
+                111, 222, 333
+            )
+            """.trimIndent(),
+        )
+        helper.closeWhenFinished(db)
+
+        val migrated = helper.runMigrationsAndValidate(
+            AurisDatabase.NAME, 6, true, Migrations.MIGRATION_5_6,
+        )
+
+        // `runMigrationsAndValidate(validateDroppedTables = true)` re-reads the exported
+        // v6 schema, so the migration's CREATE TABLEs must match the entity definitions.
+        migrated.query("SELECT title FROM library_entries WHERE id = 'keep-me'").use { c ->
+            assertTrue("row disappeared during migration", c.moveToFirst())
+            assertEquals("Keep Me", c.getString(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM playlists").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM playlist_tracks").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+    }
+
     @Test
     fun migrationChainIsOrderedAndComplete() {
         // A gap in the chain means an installed database cannot open: Room looks for a path
         // from its version to the current one and finds none.
         val versions = Migrations.ALL.map { it.startVersion to it.endVersion }
 
-        assertEquals(listOf(1 to 2, 2 to 3, 3 to 4, 4 to 5), versions)
+        assertEquals(listOf(1 to 2, 2 to 3, 3 to 4, 4 to 5, 5 to 6), versions)
         // Contiguous from 1 with no gaps.
         versions.zipWithNext().forEach { (first, second) ->
             assertEquals(

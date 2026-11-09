@@ -4,6 +4,7 @@ import android.content.Context
 import com.auris.app.data.local.AurisDatabase
 import com.auris.app.data.local.ExtensionDao
 import com.auris.app.data.local.LibraryDao
+import com.auris.app.data.local.PlaylistDao
 import com.auris.app.data.local.SyncDao
 import com.auris.app.data.remote.SupabaseLibraryDataSource
 import com.auris.app.data.remote.SupabaseLibraryDataSourceImpl
@@ -20,6 +21,7 @@ import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
+import com.auris.app.data.repository.PlaylistRepository
 import com.auris.app.source.ExtensionLoader
 import com.auris.app.source.repo.ExtensionRepositoryClient
 import com.auris.app.data.sync.SyncScheduler
@@ -52,7 +54,9 @@ interface AppContainer {
     val database: AurisDatabase
     val libraryDao: LibraryDao
     val syncDao: SyncDao
+    val playlistDao: PlaylistDao
     val libraryRepository: LibraryRepository
+    val playlistRepository: PlaylistRepository
     /** Process-wide connectivity, so the shell can show the offline strip without polling. */
     val networkMonitor: com.auris.app.core.network.NetworkMonitor
     val extensionDao: ExtensionDao
@@ -111,6 +115,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val libraryDao: LibraryDao by lazy { database.libraryDao() }
 
     override val syncDao: SyncDao by lazy { database.syncDao() }
+
+    override val playlistDao: PlaylistDao by lazy { database.playlistDao() }
 
     override val syncScheduler: SyncScheduler by lazy { SyncScheduler(context) }
 
@@ -305,6 +311,19 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
      */
     override val extensionsDir: java.io.File by lazy {
         java.io.File(context.filesDir, "extensions").apply { mkdirs() }
+    }
+
+    /**
+     * One-time import of the legacy `music_collections` prefs runs on the first playlist
+     * read (see `PlaylistRepository`), so no eager import is needed here.
+     */
+    override val playlistRepository: PlaylistRepository by lazy {
+        PlaylistRepository(
+            playlistDao = playlistDao,
+            syncDao = syncDao,
+            context = context.applicationContext,
+            ioDispatcher = ioDispatcher,
+        )
     }
 
     override val libraryRepository: LibraryRepository by lazy {

@@ -132,6 +132,63 @@ object Migrations {
         }
     }
 
+    /**
+     * v5 -> v6: device-local playlists, replacing the `music_collections` SharedPreferences
+     * store. The content is one-time imported into the new tables (see `PlaylistRepository`)
+     * and the prefs key is then deleted; this migration only creates the empty tables.
+     *
+     * The DDL mirrors what Room generates from the two entity definitions, including the
+     * CASCADE foreign key and both unique indices, so post-migration schema validation
+     * passes on device.
+     */
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `playlists` (
+                    `id` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `user_id` TEXT,
+                    `created_at` INTEGER NOT NULL,
+                    `updated_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playlists_user_id` " +
+                    "ON `playlists` (`user_id`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playlists_updated_at` " +
+                    "ON `playlists` (`updated_at`)",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `playlist_tracks` (
+                    `playlist_id` TEXT NOT NULL,
+                    `position` INTEGER NOT NULL,
+                    `track_id` TEXT NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `artist` TEXT,
+                    `artwork_url` TEXT,
+                    `updated_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`playlist_id`, `position`),
+                    FOREIGN KEY(`playlist_id`) REFERENCES `playlists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playlist_tracks_playlist_id` " +
+                    "ON `playlist_tracks` (`playlist_id`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_playlist_tracks_playlist_id_track_id` " +
+                    "ON `playlist_tracks` (`playlist_id`, `track_id`)",
+            )
+        }
+    }
+
     /** Every migration, in order. */
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 }

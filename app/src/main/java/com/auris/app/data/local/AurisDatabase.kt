@@ -9,6 +9,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.auris.app.data.local.entity.ExtensionEntity
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.data.local.entity.LibraryUnitEntity
+import com.auris.app.data.local.entity.PlaylistEntity
+import com.auris.app.data.local.entity.PlaylistTrackEntity
 import com.auris.app.data.local.entity.SyncOutboxEntity
 import com.auris.app.data.local.entity.SyncSessionEntity
 
@@ -19,8 +21,10 @@ import com.auris.app.data.local.entity.SyncSessionEntity
         SyncOutboxEntity::class,
         SyncSessionEntity::class,
         ExtensionEntity::class,
+        PlaylistEntity::class,
+        PlaylistTrackEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -29,6 +33,7 @@ abstract class AurisDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
     abstract fun syncDao(): SyncDao
     abstract fun extensionDao(): ExtensionDao
+    abstract fun playlistDao(): PlaylistDao
 
     companion object {
         const val NAME = "auris.db"
