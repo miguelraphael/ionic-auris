@@ -71,13 +71,35 @@ class ProductClarityTest {
                     onCycleRepeat = {}, onToggleShuffle = {},
                 )
             }
-            capture("music-player")
             fun control(n: android.view.accessibility.AccessibilityNodeInfo?, label: String, clickable: Boolean = true): android.view.accessibility.AccessibilityNodeInfo? {
                 n ?: return null
                 if (n.contentDescription?.toString()?.contains(label) == true && (!clickable || n.isClickable)) return n
                 for (i in 0 until n.childCount) control(n.getChild(i), label, clickable)?.let { return it }
                 return null
             }
+            fun scrollable(n: android.view.accessibility.AccessibilityNodeInfo?): android.view.accessibility.AccessibilityNodeInfo? {
+                n ?: return null
+                if (n.isScrollable) return n
+                for (i in 0 until n.childCount) scrollable(n.getChild(i))?.let { return it }
+                return null
+            }
+            fun artworkBounds(): android.graphics.Rect {
+                val deadline = SystemClock.uptimeMillis() + 12_000
+                var node = control(instrumentation.uiAutomation.rootInActiveWindow, "Album artwork", false)
+                while (node == null && SystemClock.uptimeMillis() < deadline) {
+                    SystemClock.sleep(100)
+                    node = control(instrumentation.uiAutomation.rootInActiveWindow, "Album artwork", false)
+                }
+                return android.graphics.Rect().also { (node ?: error("Artwork did not appear")).getBoundsInScreen(it) }
+            }
+            val artBefore = artworkBounds()
+            capture("music-player")
+            scrollable(instrumentation.uiAutomation.rootInActiveWindow)
+                ?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            instrumentation.waitForIdleSync()
+            SystemClock.sleep(400)
+            val artAfter = artworkBounds()
+            assertEquals("Artwork must stay fixed while details scroll", artBefore, artAfter)
             val screen = instrumentation.uiAutomation.takeScreenshot()
             val density = instrumentation.targetContext.resources.displayMetrics.density
             val bounds = mutableMapOf<String, android.graphics.Rect>()

@@ -44,6 +44,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
@@ -153,7 +154,7 @@ fun MusicPlayerScreen(
 
         BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding()) {
             val compact = maxHeight < 700.dp
-            val artworkSize = minOf(maxWidth - 41.dp, maxHeight * if (compact) 0.20f else 0.38f).coerceAtLeast(0.dp)
+            val artworkSize = minOf(maxWidth - 41.dp, maxHeight * if (compact) 0.20f else 0.30f).coerceAtLeast(0.dp)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -171,14 +172,14 @@ fun MusicPlayerScreen(
                 }
 
                 Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Spacer(Modifier.height(8.dp))
 
                     if (compact) { PlayerTrackTitle(state.title) }
 
-                // ---- Album art ------------------------------------------------------
+                    // ---- Album art ------------------------------------------------------
                     MediaArtwork(
                         imageUrl = nowPlayingArtworkUrl(state.artworkUrl),
                         fallbackImageUrl = state.artworkUrl,
@@ -186,6 +187,7 @@ fun MusicPlayerScreen(
                         shape = ArtworkShapeLarge,
                         modifier = Modifier
                             .size(artworkSize)
+                            .clearAndSetSemantics { contentDescription = "Album artwork" }
                             .graphicsLayer { scaleX = artworkScale; scaleY = artworkScale }
                             // Lifts the square off the artwork-tinted background, the way the reference
                             // art sits above the sheet. Shadow only: the art itself stays unclipped.
@@ -208,73 +210,78 @@ fun MusicPlayerScreen(
 
                     Spacer(Modifier.height(14.dp))
 
-                    // ---- Seek bar -------------------------------------------------------
-                    // 10.5dp extra inset on top of the 20.5dp column padding lands on the
-                    // measured 31dp.
-                    AurisSlider(
-                        progress = state.progress,
-                        onProgressChange = onSeekFraction,
-                        contentDescription = "Seek",
-                        modifier = Modifier.padding(horizontal = 10.5.dp),
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // ---- Timestamps -----------------------------------------------------
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.5.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = state.positionMs.toTimestamp(),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = AurisOnSurface,
-                        )
-                        Text(
-                            text = state.durationMs.toTimestamp(),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = AurisOnSurface,
-                        )
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    // ---- Track metadata, centred ---------------------------------------
-                    if (!compact) { PlayerTrackTitle(state.title) }
-                Column(
-                        modifier = Modifier.fillMaxWidth(),
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        if (state.artist.isNotBlank()) {
-                            Text(
-                                text = state.artist,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = if (onArtistClick != null) AurisAccent else AurisOnSurface,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable(enabled = onArtistClick != null) {
-                                        onArtistClick?.invoke(state.artist, state.entryId)
-                                    }
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
-                        if (state.album.isNotBlank()) {
-                            Text(
-                                text = state.album,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = AurisOnSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+                        // ---- Seek bar -------------------------------------------------------
+                        // 10.5dp extra inset on top of the 20.5dp column padding lands on the
+                        // measured 31dp.
+                        AurisSlider(
+                            progress = state.progress,
+                            onProgressChange = onSeekFraction,
+                            contentDescription = "Seek",
+                            modifier = Modifier.padding(horizontal = 10.5.dp),
+                        )
 
+                        Spacer(Modifier.height(10.dp))
+
+                        // ---- Timestamps -----------------------------------------------------
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.5.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = state.positionMs.toTimestamp(),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = AurisOnSurface,
+                            )
+                            Text(
+                                text = state.durationMs.toTimestamp(),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = AurisOnSurface,
+                            )
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
+                        // ---- Track metadata, centred ---------------------------------------
+                        if (!compact) { PlayerTrackTitle(state.title) }
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            if (state.artist.isNotBlank()) {
+                                Text(
+                                    text = state.artist,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (onArtistClick != null) AurisAccent else AurisOnSurface,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable(enabled = onArtistClick != null) {
+                                            onArtistClick?.invoke(state.artist, state.entryId)
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                            if (state.album.isNotBlank()) {
+                                Text(
+                                    text = state.album,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = AurisOnSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+
+                    }
                 }
 
                 Spacer(Modifier.height(18.dp))

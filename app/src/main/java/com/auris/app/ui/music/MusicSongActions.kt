@@ -17,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -84,7 +86,7 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = AurisBackground) {
         BackHandler(pages.size > 1) { back() }
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
+        Column(Modifier.fillMaxWidth()) {
             if (pages.size > 1) Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 Text(page.substringAfter(":"), style = MaterialTheme.typography.titleLarge)
@@ -93,26 +95,26 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
             message?.let { Text(it, Modifier.padding(20.dp), color = AurisAccent) }
             if (page == "Queue") {
                 QueueSheet(queue, playback, { player.playQueueItem(it.index) }, player::moveQueueItemBy, player::clearUpcoming)
-            } else Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            } else Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
                 when (page) {
                     "Song options" -> {
-                        Row(Modifier.padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                             MediaArtwork(row.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
-                            Column(Modifier.padding(start = 16.dp)) {
-                                Text(row.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                row.subtitle?.let { Text(it, color = AurisOnSurfaceVariant) }
+                            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                                Text(row.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                row.subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = AurisOnSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                             }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(Triple("Share", Icons.Filled.Share, {
                                 context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${row.title}\nhttps://music.youtube.com/watch?v=${row.id}")
                                 }, "Share song"))
                             }), Triple("Queue", Icons.AutoMirrored.Filled.QueueMusic, { open("Queue") }),
                                 Triple("Playlist", Icons.Filled.PlaylistAdd, { open("Playlists") })).forEach { (label, icon, action) ->
-                                Surface(onClick = action, shape = ArtworkShapeSmall, color = AurisSurfaceOpaque, modifier = Modifier.weight(1f)) {
-                                    Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(icon, null); Spacer(Modifier.height(8.dp)); Text(label)
+                                Surface(onClick = action, shape = MaterialTheme.shapes.medium, color = AurisSurfaceOpaque, modifier = Modifier.weight(1f)) {
+                                    Column(Modifier.heightIn(min = 64.dp).padding(horizontal = 4.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(icon, null, Modifier.size(22.dp)); Spacer(Modifier.height(4.dp)); Text(label, style = MaterialTheme.typography.labelLarge)
                                     }
                                 }
                             }
@@ -278,13 +280,23 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
 
 @Composable
 private fun SongAction(title: String, icon: ImageVector, enabled: Boolean = true, action: () -> Unit) {
-    ListItem(headlineContent = { Text(title) }, leadingContent = { Icon(icon, null) },
-        colors = ListItemDefaults.colors(containerColor = AurisSurfaceOpaque),
-        modifier = Modifier.clickable(enabled = enabled, onClick = action).padding(vertical = 1.dp))
+    val contentColor = if (enabled) AurisOnSurface else AurisOnSurfaceVariant.copy(alpha = 0.5f)
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clickable(enabled = enabled, role = Role.Button, onClick = action)
+            .heightIn(min = 52.dp)
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Icon(icon, null, Modifier.size(24.dp), tint = if (enabled) AurisOnSurfaceVariant else contentColor)
+        Text(title, style = MaterialTheme.typography.bodyLarge, color = contentColor, modifier = Modifier.weight(1f))
+    }
 }
 
 @Composable
 private fun SongSection(title: String) {
-    HorizontalDivider(Modifier.padding(vertical = 16.dp))
-    Text(title, style = MaterialTheme.typography.titleSmall, color = AurisOnSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+    HorizontalDivider(Modifier.padding(top = 12.dp, bottom = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+    Text(title, style = MaterialTheme.typography.labelLarge, color = AurisOnSurfaceVariant,
+        modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
 }

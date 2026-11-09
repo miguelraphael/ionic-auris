@@ -1,9 +1,6 @@
 package com.auris.app.ui.auth
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,25 +9,31 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,11 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -53,7 +53,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.auris.app.ui.components.ErrorBanner
-import com.auris.app.ui.components.InlineFieldError
 import com.auris.app.ui.components.SuccessBanner
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackdrop
@@ -61,18 +60,11 @@ import com.auris.app.ui.theme.AurisBackground
 import com.auris.app.ui.theme.AurisLogo
 import com.auris.app.ui.theme.AurisOnSurface
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
+import com.auris.app.ui.theme.AurisOutline
 import com.auris.app.ui.theme.AurisRadii
-import com.auris.app.ui.theme.AurisTrack
-import com.auris.app.ui.theme.BrandIndigo
-import com.auris.app.ui.theme.BrandPurple
-import com.auris.app.ui.theme.GlassCard
-import com.auris.app.ui.theme.GlassEdge
-import com.auris.app.ui.theme.GlassField
+import com.auris.app.ui.theme.AurisSurfaceOpaque
 
-/**
- * Mandatory sign-in gate: the library syncs per user, so there is no
- * anonymous mode and no way past this screen without a session.
- */
+/** Mandatory sign-in gate; authentication and account ownership remain in the ViewModel. */
 @Composable
 fun AuthScreen(
     state: AuthUiState,
@@ -84,205 +76,95 @@ fun AuthScreen(
 ) {
     AurisBackdrop(modifier = modifier) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 24.dp),
+            modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
         ) {
-            AurisLogo(
-                includeWordmark = true,
-                size = 148.dp,
-                background = AurisBackground,
-            )
-            Spacer(Modifier.height(14.dp))
+            AurisLogo(includeWordmark = true, size = 112.dp, background = AurisBackground)
+            Spacer(Modifier.height(16.dp))
             Text(
-                text = if (state.isRegisterMode) {
-                    "Create an account to sync your library"
-                } else {
-                    "Sign in to sync your library"
-                },
-                style = MaterialTheme.typography.bodyMedium,
+                text = if (state.isRegisterMode) "Create an account to sync your library" else "Sign in to sync your library",
+                style = MaterialTheme.typography.bodyLarge,
                 color = AurisOnSurfaceVariant,
                 textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 420.dp),
             )
-
-            Spacer(Modifier.height(22.dp))
-
-            GlassCard {
-                ModeToggle(
-                    isRegisterMode = state.isRegisterMode,
-                    onToggle = onToggleMode,
-                    enabled = !state.isLoading,
-                )
-
-                Spacer(Modifier.height(16.dp))
-
+            Spacer(Modifier.height(32.dp))
+            Column(
+                modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                ModeToggle(state.isRegisterMode, onToggleMode, !state.isLoading)
                 AuthField(
-                    value = state.email,
-                    onValueChange = onEmailChange,
-                    hint = "Email",
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next,
-                    ),
-                    enabled = !state.isLoading,
-                    error = state.emailError,
+                    value = state.email, onValueChange = onEmailChange, hint = "Email",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                    enabled = !state.isLoading, error = state.emailError,
                 )
-
-                Spacer(Modifier.height(12.dp))
-
                 var passwordVisible by remember { mutableStateOf(false) }
                 AuthField(
-                    value = state.password,
-                    onValueChange = onPasswordChange,
-                    hint = "Password",
-                    visualTransformation = if (passwordVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { onSubmit() }),
-                    enabled = !state.isLoading,
-                    error = state.passwordError,
+                    value = state.password, onValueChange = onPasswordChange, hint = "Password",
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (!state.isLoading) onSubmit() }),
+                    enabled = !state.isLoading, error = state.passwordError,
                     trailing = {
-                        Icon(
-                            imageVector = if (passwordVisible) {
-                                Icons.Filled.VisibilityOff
-                            } else {
-                                Icons.Filled.Visibility
-                            },
-                            contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                            tint = AurisOnSurfaceVariant,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    onClick = { passwordVisible = !passwordVisible },
-                                ),
-                        )
+                        IconButton(
+                            onClick = { passwordVisible = !passwordVisible },
+                            enabled = !state.isLoading,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                tint = AurisOnSurfaceVariant,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                     },
                 )
-
-                if (state.error != null) {
-                    Spacer(Modifier.height(12.dp))
-                    ErrorBanner(state.error)
+                state.error?.let { ErrorBanner(it) }
+                state.notice?.let { SuccessBanner(it) }
+                Button(
+                    onClick = onSubmit, enabled = !state.isLoading,
+                    shape = RoundedCornerShape(AurisRadii.button),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AurisAccent, contentColor = AurisBackground,
+                        disabledContainerColor = AurisSurfaceOpaque, disabledContentColor = AurisOnSurfaceVariant,
+                    ),
+                ) {
+                    if (state.isLoading) {
+                        CircularProgressIndicator(Modifier.size(22.dp), color = AurisOnSurfaceVariant, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Text(if (state.isRegisterMode) "Create account" else "Sign in", style = MaterialTheme.typography.titleMedium)
                 }
-
-                if (state.notice != null) {
-                    Spacer(Modifier.height(12.dp))
-                    SuccessBanner(state.notice)
-                }
-
-                Spacer(Modifier.height(20.dp))
-
-                PrimaryButton(
-                    label = if (state.isRegisterMode) "Create account" else "Sign in",
-                    isLoading = state.isLoading,
-                    onClick = onSubmit,
-                )
             }
         }
     }
 }
 
-/** Primary call to action, filled with the indigo-to-purple brand sweep. */
 @Composable
-private fun PrimaryButton(
-    label: String,
-    isLoading: Boolean,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(AurisRadii.button))
-            .background(
-                if (isLoading) {
-                    Brush.horizontalGradient(listOf(AurisTrack, AurisTrack))
-                } else {
-                    Brush.horizontalGradient(listOf(BrandIndigo, BrandPurple))
-                },
-            )
-            .clickable(
-                enabled = !isLoading,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = onClick,
-            )
-            .padding(vertical = 14.dp),
-        contentAlignment = Alignment.Center,
+private fun ModeToggle(isRegisterMode: Boolean, onToggle: () -> Unit, enabled: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(AurisRadii.chip))
+            .background(AurisSurfaceOpaque).padding(4.dp).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(22.dp),
-                strokeWidth = 2.5.dp,
-                color = AurisAccent,
-            )
-        } else {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                color = Color.White,
-            )
+        listOf(false to "Sign in", true to "Create account").forEach { (register, label) ->
+            val selected = register == isRegisterMode
+            Box(
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else AurisSurfaceOpaque)
+                    .selectable(selected = selected, enabled = enabled, role = Role.Tab,
+                        onClick = { if (!selected) onToggle() }).padding(horizontal = 8.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) AurisOnSurface else AurisOnSurfaceVariant, textAlign = TextAlign.Center)
+            }
         }
-    }
-}
-
-@Composable
-private fun ModeToggle(
-    isRegisterMode: Boolean,
-    onToggle: () -> Unit,
-    enabled: Boolean,
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ModeChip(
-            label = "Sign in",
-            selected = !isRegisterMode,
-            onClick = { if (isRegisterMode) onToggle() },
-            enabled = enabled,
-        )
-        ModeChip(
-            label = "Create account",
-            selected = isRegisterMode,
-            onClick = { if (!isRegisterMode) onToggle() },
-            enabled = enabled,
-        )
-    }
-}
-
-@Composable
-private fun ModeChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    enabled: Boolean,
-) {
-    Surface(
-        shape = RoundedCornerShape(AurisRadii.chip),
-        color = if (selected) AurisAccent.copy(alpha = 0.18f) else AurisTrack,
-        modifier = Modifier.clickable(
-            enabled = enabled,
-            indication = null,
-            interactionSource = remember { MutableInteractionSource() },
-            onClick = onClick,
-        ),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (selected) AurisAccent else AurisOnSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
-        )
     }
 }
 
@@ -298,62 +180,25 @@ private fun AuthField(
     trailing: @Composable (() -> Unit)? = null,
     error: String? = null,
 ) {
-    // Cursor pinned to the end; see ExtensionSearchField for the reversal this avoids.
-    var field by remember(value) {
-        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
-    }
-
-    Column(Modifier.fillMaxWidth()) {
-        Surface(
-            shape = RoundedCornerShape(AurisRadii.button),
-            color = GlassField,
-            border = BorderStroke(
-                width = 1.dp,
-                color = if (error != null) MaterialTheme.colorScheme.error else GlassEdge,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.weight(1f)) {
-                    if (field.text.isEmpty()) {
-                        Text(
-                            text = hint,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = AurisOnSurfaceVariant,
-                        )
-                    }
-                    BasicTextField(
-                        value = field,
-                        onValueChange = { next ->
-                            field = next
-                            onValueChange(next.text)
-                        },
-                        singleLine = true,
-                        enabled = enabled,
-                        textStyle = TextStyle(
-                            color = AurisOnSurface,
-                            fontSize = MaterialTheme.typography.bodyLarge.fontSize,
-                        ),
-                        cursorBrush = SolidColor(AurisAccent),
-                        visualTransformation = visualTransformation,
-                        keyboardOptions = keyboardOptions,
-                        keyboardActions = keyboardActions,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                if (trailing != null) {
-                    Spacer(Modifier.width(10.dp))
-                    trailing()
-                }
-            }
-        }
-
-        if (error != null) {
-            InlineFieldError(error)
-        }
-    }
+    // Preserve the existing cursor-at-end behavior when ViewModel values change.
+    var field by remember(value) { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    OutlinedTextField(
+        value = field,
+        onValueChange = { field = it; onValueChange(it.text) },
+        label = { Text(hint) },
+        singleLine = true, enabled = enabled, isError = error != null,
+        visualTransformation = visualTransformation, keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions, trailingIcon = trailing,
+        supportingText = if (error != null) { { Text(error) } } else null,
+        shape = RoundedCornerShape(AurisRadii.button),
+        modifier = Modifier.fillMaxWidth(),
+        textStyle = MaterialTheme.typography.bodyLarge,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = AurisSurfaceOpaque, unfocusedContainerColor = AurisSurfaceOpaque,
+            disabledContainerColor = AurisSurfaceOpaque, errorContainerColor = AurisSurfaceOpaque,
+            focusedBorderColor = AurisOnSurfaceVariant, unfocusedBorderColor = AurisOutline,
+            focusedLabelColor = AurisOnSurface, unfocusedLabelColor = AurisOnSurfaceVariant,
+            cursorColor = AurisAccent,
+        ),
+    )
 }

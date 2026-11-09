@@ -31,7 +31,7 @@ rounded:
 
 ## Overview
 
-User-approved direction: Apple Music-inspired styling, dark mode only. Native Android behavior remains authoritative. Artwork, clear titles, and readable metadata lead; neutral chrome supports them. Auris retains its name and multicolor logo; interactive chrome is neutral.
+User-approved direction: Apple Music-inspired styling, dark mode only. Native Android behavior remains authoritative. Opening Now Playing from an album retains the album and its parent artist for system Back; render only the top collection dialog and suppress collection dialogs while the player route is active. Artwork, clear titles, and readable metadata lead; neutral chrome supports them. Auris retains its name and multicolor logo; interactive chrome is neutral.
 
 ## Colors
 
@@ -43,7 +43,7 @@ Reuse the bundled SF Pro family and Material typography roles. Large titles are 
 
 ## Layout
 
-Retain existing media journeys and screen structure. Full-width controls share alignment with their content. Floating navigation uses 20dp horizontal insets, a 64dp bar, and 11sp labels. Preserve system insets and Android Back behavior. Interactive targets remain at least 48dp.
+Retain existing media journeys and screen structure. Full-width controls share alignment with their content. Floating navigation uses 16dp horizontal insets, an 80dp charcoal dock with 16dp corners, and the shared 12sp label style. Native navigation items use off-white selected icons and labels over a neutral elevated indicator; unselected items stay secondary gray. The dock sits 12dp above the system navigation inset, preserving the mini-player’s existing vertical position. Preserve system insets and Android Back behavior. Interactive targets remain at least 48dp.
 
 ## Elevation & Depth
 
@@ -59,7 +59,9 @@ Shared theme and component tokens apply across the app. Search and segmented con
 
 Now Playing uses a 240ms cover scale transition between 96% (paused) and 100% (playing), plus a 150ms transport-state crossfade. Shared press feedback compresses over 100ms and releases over 150ms without bounce. Compose animations honor Android duration scaling; zero scale settles immediately. No decorative motion loops.
 
-On shorter player viewports (available height below 700dp), identify the track before showing the smaller cover. Keep close, utility, transport, and volume controls outside the scrollable artwork/metadata area. Artist and album occupy independent two-line text blocks. Library and episode progress indicators are passive, never seek controls.
+On shorter player viewports (available height below 700dp), identify the track before showing the smaller cover. Keep artwork, close, utility, transport, and volume controls stationary; only the seek/timestamp/metadata region may scroll when necessary. Artist and album occupy independent two-line text blocks. Library and episode progress indicators are passive, never seek controls.
+
+Authentication uses a centered form capped at 420dp, a 112dp logo, neutral full-width mode tabs, persistent Material field labels, and a 52dp minimum primary action. Keep IME-safe vertical scrolling and 48dp password visibility controls; preserve per-field validation and credential values across mode changes.
 
 ## Do's and Don'ts
 

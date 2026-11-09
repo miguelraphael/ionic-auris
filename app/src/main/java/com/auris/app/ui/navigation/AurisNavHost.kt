@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import com.auris.app.ui.music.MusicRowSaver
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -121,6 +124,7 @@ fun AurisNavHost(
     musicSource: MusicSource? = null,
     modifier: Modifier = Modifier,
 ) {
+    val activeEntry = navController.currentBackStackEntryAsState()
     val sourcePreferences = remember {
         navController.context.applicationContext.getSharedPreferences("catalogue_sources", android.content.Context.MODE_PRIVATE)
     }
@@ -321,7 +325,7 @@ fun AurisNavHost(
             var homeSongOptions by remember { mutableStateOf<MusicRow?>(null) }
             homeSongOptions?.let { song -> com.auris.app.ui.music.MusicSongActions(song, music) { homeSongOptions = null } }
 
-            var selectedAlbum by remember { mutableStateOf<MusicRow?>(null) }
+            var selectedAlbum by rememberSaveable(stateSaver = MusicRowSaver) { mutableStateOf<MusicRow?>(null) }
             var albumTracks by remember { mutableStateOf(emptyList<MusicRow>()) }
             var albumLoading by remember { mutableStateOf(false) }
             var albumError by remember { mutableStateOf<String?>(null) }
@@ -360,7 +364,7 @@ fun AurisNavHost(
                 }
             }
 
-            var selectedArtist by remember { mutableStateOf<MusicRow?>(null) }
+            var selectedArtist by rememberSaveable(stateSaver = MusicRowSaver) { mutableStateOf<MusicRow?>(null) }
             var artistDetails by remember { mutableStateOf<com.auris.app.data.remote.music.MusicArtistDetails?>(null) }
             var artistRows by remember { mutableStateOf<List<MusicRow>>(emptyList()) }
             var isArtistLoading by remember { mutableStateOf(false) }
@@ -399,7 +403,7 @@ fun AurisNavHost(
                 onOpenAlbum = { selectedAlbum = it },
                 onOpenArtist = { selectedArtist = it },
             )
-            selectedAlbum?.let { album ->
+            selectedAlbum?.takeIf { activeEntry.value?.destination?.route == TopLevelDestination.MUSIC.route }?.let { album ->
                 com.auris.app.ui.music.MusicAlbumPage(
                     title = album.title, tracks = albumTracks, loading = albumLoading, message = albumError ?: musicState.message,
                     onBack = { selectedAlbum = null },
@@ -414,7 +418,7 @@ fun AurisNavHost(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
                             artworkUrl = musicState.nowPlayingArtworkUrl, isPlaying = musicState.isPlaying,
                             isLoading = musicState.isResolving || musicState.isBuffering,
-                            onClick = { if (!musicState.isResolving) { selectedAlbum = null; navController.navigate(Routes.PLAYER) } },
+                            onClick = { if (!musicState.isResolving) { navController.navigate(Routes.PLAYER) { launchSingleTop = true } } },
                             onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
                             canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
                             canGoNext = !musicState.isResolving && musicState.canGoNext,
@@ -423,7 +427,7 @@ fun AurisNavHost(
                     },
                 )
             }
-            selectedArtist?.let { artistRow ->
+            selectedArtist?.takeIf { activeEntry.value?.destination?.route == TopLevelDestination.MUSIC.route && selectedAlbum == null }?.let { artistRow ->
                 MusicArtistPage(
                     name = artistDetails?.name ?: artistRow.artistHint().orEmpty().ifBlank { artistRow.title },
                     artwork = artistDetails?.photoUrl ?: artistRows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: artistRow.artworkUrl,
@@ -446,7 +450,7 @@ fun AurisNavHost(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
                             artworkUrl = musicState.nowPlayingArtworkUrl, isPlaying = musicState.isPlaying,
                             isLoading = musicState.isResolving || musicState.isBuffering,
-                            onClick = { if (!musicState.isResolving) { selectedArtist = null; navController.navigate(Routes.PLAYER) } },
+                            onClick = { if (!musicState.isResolving) { navController.navigate(Routes.PLAYER) { launchSingleTop = true } } },
                             onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
                             canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
                             canGoNext = !musicState.isResolving && musicState.canGoNext,
@@ -677,7 +681,7 @@ fun AurisNavHost(
             val musicState by music.state.collectAsStateWithLifecycle()
 
             var optionsSong by remember { mutableStateOf<MusicRow?>(null) }
-            var selectedAlbum by remember { mutableStateOf<MusicRow?>(null) }
+            var selectedAlbum by rememberSaveable(stateSaver = MusicRowSaver) { mutableStateOf<MusicRow?>(null) }
             var albumTracks by remember { mutableStateOf(emptyList<MusicRow>()) }
             var albumLoading by remember { mutableStateOf(false) }
             var albumError by remember { mutableStateOf<String?>(null) }
@@ -716,7 +720,7 @@ fun AurisNavHost(
                 }
             }
 
-            var selectedArtist by remember { mutableStateOf<MusicRow?>(null) }
+            var selectedArtist by rememberSaveable(stateSaver = MusicRowSaver) { mutableStateOf<MusicRow?>(null) }
             var artistDetails by remember { mutableStateOf<com.auris.app.data.remote.music.MusicArtistDetails?>(null) }
             var artistRows by remember { mutableStateOf<List<MusicRow>>(emptyList()) }
             var isArtistLoading by remember { mutableStateOf(false) }
@@ -752,7 +756,7 @@ fun AurisNavHost(
                 onOptions = { optionsSong = it },
                 onOpenPlayer = { navController.navigate(Routes.PLAYER) },
             )
-            selectedAlbum?.let { album ->
+            selectedAlbum?.takeIf { activeEntry.value?.destination?.route == Routes.MUSIC_BROWSE }?.let { album ->
                 com.auris.app.ui.music.MusicAlbumPage(
                     title = album.title, tracks = albumTracks, loading = albumLoading, message = albumError ?: musicState.message,
                     onBack = { selectedAlbum = null },
@@ -767,7 +771,7 @@ fun AurisNavHost(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
                             artworkUrl = musicState.nowPlayingArtworkUrl, isPlaying = musicState.isPlaying,
                             isLoading = musicState.isResolving || musicState.isBuffering,
-                            onClick = { if (!musicState.isResolving) { selectedAlbum = null; navController.navigate(Routes.PLAYER) } },
+                            onClick = { if (!musicState.isResolving) { navController.navigate(Routes.PLAYER) { launchSingleTop = true } } },
                             onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
                             canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
                             canGoNext = !musicState.isResolving && musicState.canGoNext,
@@ -776,7 +780,7 @@ fun AurisNavHost(
                     },
                 )
             }
-            selectedArtist?.let { artistRow ->
+            selectedArtist?.takeIf { activeEntry.value?.destination?.route == Routes.MUSIC_BROWSE && selectedAlbum == null }?.let { artistRow ->
                 MusicArtistPage(
                     name = artistDetails?.name ?: artistRow.artistHint().orEmpty().ifBlank { artistRow.title },
                     artwork = artistDetails?.photoUrl ?: artistRows.firstOrNull { it.artworkUrl != null }?.artworkUrl ?: artistRow.artworkUrl,
@@ -799,7 +803,7 @@ fun AurisNavHost(
                             title = musicState.nowPlayingTitle ?: "Now playing", artist = musicState.nowPlayingArtist,
                             artworkUrl = musicState.nowPlayingArtworkUrl, isPlaying = musicState.isPlaying,
                             isLoading = musicState.isResolving || musicState.isBuffering,
-                            onClick = { if (!musicState.isResolving) { selectedArtist = null; navController.navigate(Routes.PLAYER) } },
+                            onClick = { if (!musicState.isResolving) { navController.navigate(Routes.PLAYER) { launchSingleTop = true } } },
                             onTogglePlayPause = music::togglePlayPause, onPrevious = music::previous, onNext = music::next,
                             canGoPrevious = !musicState.isResolving && musicState.canGoPrevious,
                             canGoNext = !musicState.isResolving && musicState.canGoNext,
