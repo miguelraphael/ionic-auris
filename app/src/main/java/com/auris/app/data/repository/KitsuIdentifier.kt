@@ -197,7 +197,7 @@ class KitsuIdentifier(
      * Only additive fields are written, so identification can never make an entry *worse* than
      * it was before.
      */
-    private fun apply(entry: LibraryEntryEntity, metadata: KitsuMetadata): LibraryEntryEntity =
+    internal fun apply(entry: LibraryEntryEntity, metadata: KitsuMetadata): LibraryEntryEntity =
         entry.copy(
             description = entry.description?.takeIf { it.isNotBlank() } ?: metadata.synopsis,
             kitsuId = metadata.kitsuId.toString(),
