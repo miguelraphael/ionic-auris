@@ -1,10 +1,9 @@
-Auris 1.0.1 — Unified Music, Anime, and Manga player for Android (Android 8.0 or newer).
+Auris 1.0.2 — Read progress, adaptive mini-player, and matched dock colors (Android 8.0 or newer).
 
-- Dark Neutral Navigation Bar: Aligned floating dock tokens with DESIGN.md (neutral elevated surface pill indicator, subtle 1dp outline rim, and off-white selection tint).
-- Seamless Manga Reading: Read any chapter immediately from the catalogue preview without adding it to your Library, with automatic chapter persistence when saving to Library.
-- Apple Music-Inspired Now Playing: Expanded artwork proportion, fixed 48dp dismiss chevron, bold typography, tabular timestamps, and GPU-accelerated Canvas playback and volume sliders.
-- Multi-Source Manga Integration: Default Weeb Central catalogue browsing with source switching across MangaDex, Asura Scans, and AllManga.
-- Unified Media Detail & Library: Rich metadata with English secondary titles, Kitsu community ratings, playlists, and single-tap playback queueing.
-- In-App Updater: Built-in GitHub release update checker in Settings > About Auris.
+- Episode and chapter rows now show a clear read state: a progress bar while you're partway through, and the Watched indicator when complete — no more guessing what's been read.
+- The mini-player is now measured from its real height, so it never clips on small screens, large font scales, or 3-button navigation; "Show all" stays on one line too.
+- The floating dock's charcoal and selected states now match the detail pages and mini-player; the song sheet no longer puts a black slab behind them.
 
-Built with native Jetpack Compose, Media3, Room, and Material 3 dark-neutral aesthetic.
+The security, authentication, navigation, and playback changes from previous releases remain included. Older debug previews (`com.auris.app.debug`) are a separate installation; local data is not automatically transferred between packages.
+
+This remains a preview. Provider availability varies by network; backend authorization and broader playback/device checks remain separate from the regression checks.
