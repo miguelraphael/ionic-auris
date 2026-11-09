@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,16 +50,26 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.navigationBarsPadding
 import com.auris.app.ui.components.FloatingNavigationLayout
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.auris.app.AurisApplication
 import com.auris.app.data.local.entity.LibraryEntryEntity
+import com.auris.app.data.local.entity.PlaylistEntity
+import com.auris.app.data.local.entity.PlaylistTrackEntity
 import com.auris.app.data.remote.music.nowPlayingArtworkUrl
+import com.auris.app.data.repository.PlaylistRepository
 import com.auris.app.ui.components.MediaArtwork
 import com.auris.app.ui.components.SkeletonShelf
 import com.auris.app.ui.components.SlowNetworkHint
@@ -106,10 +117,23 @@ fun MusicHomeScreen(
     onOptions: (MusicRow) -> Unit = {},
     onOpenAlbum: (MusicRow) -> Unit = {},
     onOpenArtist: (MusicRow) -> Unit = {},
+    /**
+     * Playback for the local "Your playlists" detail's Play all / track taps. The default
+     * falls back to single-track [onPlay]; the NavHost should wire full queue playback
+     * (`playPlaylist`) for complete behavior.
+     */
+    onPlayTracks: (List<MusicRow>, Int) -> Unit = { rows, index -> rows.getOrNull(index)?.let { onPlay(it) } },
 ) {
     val heroArtwork = state.shelves.firstOrNull()?.rows?.firstOrNull()?.artworkUrl
     val palette = rememberArtworkPaletteValue(artworkKey = heroArtwork)
     val showNowPlaying = state.nowPlayingId != null
+    val context = LocalContext.current
+    val playlistRepository = remember {
+        (context.applicationContext as AurisApplication).container.playlistRepository
+    }
+    val playlists by playlistRepository.observePlaylists().collectAsStateWithLifecycle(initialValue = emptyList())
+    // Saveable so the open playlist survives rotation; cleared on Back, restoring Home.
+    var selectedPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
 
     ArtworkGradientBackground(
         palette = palette,
@@ -168,6 +192,19 @@ fun MusicHomeScreen(
                     }
                 }
 
+                if (playlists.isNotEmpty()) {
+                    item(key = "your-playlists") {
+                        ShelfHeader("Your playlists")
+                        playlists.forEach { playlist ->
+                            YourPlaylistRow(
+                                playlist = playlist,
+                                repository = playlistRepository,
+                                onOpen = { selectedPlaylistId = playlist.id },
+                            )
+                        }
+                    }
+                }
+
                 items(state.shelves, key = { it.title }) { shelf ->
                     ShelfHeader(shelf.title)
                     LazyRow(
@@ -214,7 +251,7 @@ fun MusicHomeScreen(
                 }
 
                 if (!state.isHomeLoading && state.homeError == null &&
-                    state.shelves.isEmpty() && savedMusic.isEmpty()
+                    state.shelves.isEmpty() && savedMusic.isEmpty() && playlists.isEmpty()
                 ) {
                     item(key = "empty") {
                         StateEmpty(
@@ -261,6 +298,16 @@ fun MusicHomeScreen(
                 )
             }
         }
+    }
+
+    playlists.firstOrNull { it.id == selectedPlaylistId }?.let { playlist ->
+        LocalPlaylistDetail(
+            playlist = playlist,
+            repository = playlistRepository,
+            onBack = { selectedPlaylistId = null },
+            onPlayTracks = onPlayTracks,
+            onOptions = onOptions,
+        )
     }
 }
 
@@ -536,3 +583,71 @@ private fun BrowseAllRow(onClick: () -> Unit) {
 
 /** 152dp keeps two cards and a sliver of the third visible on a 6.4" phone. */
 private val CARD_WIDTH = 152.dp
+
+/**
+ * One local playlist entry under "Your playlists".
+ *
+ * Mirrors the sheet's SongPlaylistRow 56dp-art pattern (first-track artwork or the
+ * neutral fallback, name, "N songs") minus its Add/Rename/Delete actions, leaving the
+ * single 48dp-minimum tap target that opens the local detail.
+ */
+@Composable
+private fun YourPlaylistRow(
+    playlist: PlaylistEntity,
+    repository: PlaylistRepository,
+    onOpen: () -> Unit,
+) {
+    val tracks by repository.observeTracks(playlist.id).collectAsStateWithLifecycle(initialValue = emptyList())
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MediaArtwork(tracks.firstOrNull()?.artworkUrl, null, Modifier.size(56.dp), shape = ArtworkShapeSmall)
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(playlist.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${tracks.size} songs", color = AurisOnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/**
+ * Local playlist detail, rendered as the same [MusicAlbumPage] the NavHost uses for
+ * remote `Kind.PLAYLIST` rows (`isPlaylist = true`) so the header ("Playlist · N songs"),
+ * Play button and track rows match. Tracks come from the local repository rather than
+ * `collectionRows`, which cannot resolve a local playlist UUID. The page is a dialog:
+ * Back dismisses it back onto Home, as with the remote MusicRowSaver path.
+ */
+@Composable
+private fun LocalPlaylistDetail(
+    playlist: PlaylistEntity,
+    repository: PlaylistRepository,
+    onBack: () -> Unit,
+    onPlayTracks: (List<MusicRow>, Int) -> Unit,
+    onOptions: (MusicRow) -> Unit,
+) {
+    val tracks by repository.observeTracks(playlist.id).collectAsStateWithLifecycle(initialValue = emptyList())
+    val rows = tracks.map { it.toMusicRow() }
+    MusicAlbumPage(
+        title = playlist.name,
+        tracks = rows,
+        loading = false,
+        message = null,
+        onBack = onBack,
+        onPlayAll = { onPlayTracks(rows, 0) },
+        onPlay = { index -> onPlayTracks(rows, index) },
+        onOptions = onOptions,
+        isPlaylist = true,
+        artworkUrl = rows.firstOrNull()?.artworkUrl,
+    )
+}
+
+private fun PlaylistTrackEntity.toMusicRow(): MusicRow = MusicRow(
+    kind = MusicRow.Kind.TRACK,
+    title = title,
+    subtitle = artist,
+    artworkUrl = artworkUrl,
+    id = trackId,
+)

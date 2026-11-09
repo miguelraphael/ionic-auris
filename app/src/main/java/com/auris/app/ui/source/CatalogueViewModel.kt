@@ -1,11 +1,9 @@
 package com.auris.app.ui.source
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.auris.app.data.repository.ExtensionContentRepository
-import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.core.model.MediaType
 import com.auris.app.source.ExtensionSourceRegistry
 import kotlinx.coroutines.currentCoroutineContext
@@ -39,7 +37,6 @@ class CatalogueViewModel(
     private var sourceKey: String,
     private val mediaType: MediaType,
     private val extensionContentRepository: ExtensionContentRepository,
-    private val libraryRepository: LibraryRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -182,40 +179,39 @@ class CatalogueViewModel(
         private val sourceKey: String,
         private val mediaType: MediaType,
         private val extensionContentRepository: ExtensionContentRepository,
-        private val libraryRepository: LibraryRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CatalogueViewModel(extensionLoader, sourceKey, mediaType, extensionContentRepository, libraryRepository) as T
+            CatalogueViewModel(extensionLoader, sourceKey, mediaType, extensionContentRepository) as T
     }
 
     companion object {
         /** Long enough to avoid a request per keystroke, short enough to feel immediate. */
         const val SEARCH_DEBOUNCE_MS = 350L
-        private const val TAG = "AurisCatalogue"
 
         fun factory(
             extensionLoader: ExtensionLoader,
             sourceKey: String,
             mediaType: MediaType = MediaType.ANIME,
             extensionContentRepository: ExtensionContentRepository,
-            libraryRepository: LibraryRepository,
-        ): ViewModelProvider.Factory = Factory(extensionLoader, sourceKey, mediaType, extensionContentRepository, libraryRepository)
+        ): ViewModelProvider.Factory = Factory(extensionLoader, sourceKey, mediaType, extensionContentRepository)
     }
 
     /**
-     * One-shot navigation event carrying the persisted entry id.
+     * One-shot navigation event carrying a transient preview payload.
      *
      * A SharedFlow with a buffer (not a Channel, not a StateFlow): the event must
      * survive until the UI collects it, must not replay to a new collector, and
-     * must never hold a reference to navigation itself — the ViewModel owns the
-     * upsert, the composable owns the `navController.navigate()` call.
+     * must never hold a reference to navigation itself — the composable owns the
+     * `navController.navigate()` call. Nothing is persisted here: tapping a
+     * catalogue card only previews the title, and the detail screen saves on
+     * explicit user action.
      */
-    private val _openDetail = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    val openDetail: SharedFlow<String> = _openDetail.asSharedFlow()
+    private val _openDetail = MutableSharedFlow<PreviewDetail>(extraBufferCapacity = 1)
+    val openDetail: SharedFlow<PreviewDetail> = _openDetail.asSharedFlow()
 
     /**
-     * Persists the tapped catalogue title and emits its entry id.
+     * Emits a transient preview for the tapped catalogue title without persisting.
      *
      * Non-suspend on purpose: the UI calls this as a plain callback and the
      * coroutine stays inside `viewModelScope`, so no suspend lambda ever crosses
@@ -226,35 +222,15 @@ class CatalogueViewModel(
             val builtIn = source?.takeIf { candidate -> extensionContentRepository.builtInSources.any { it.id == candidate.id } }
             val loaded = SourceResolver.resolveLoaded(extensionLoader, _state.value.sourceKey)
             if (builtIn == null && loaded == null) return@launch
-            val candidate = extensionContentRepository.entryForSourceItem(
-                sourceItem = item,
-                sourcePackageName = loaded?.packageName ?: "builtin",
-                sourceAniyomiId = loaded?.aniyomiId ?: 0L,
-                mediaType = builtIn?.mediaType ?: mediaType,
-            ).let { if (builtIn != null) it.copy(sourceId = builtIn.id) else it }
-            val saved = runCatching {
-                val existing = libraryRepository.findBySource(
-                    mediaType = candidate.mediaType,
-                    sourceId = candidate.sourceId,
-                    sourceKey = candidate.sourceKey,
+            _openDetail.emit(
+                PreviewDetail(
+                    item = item,
+                    sourceId = builtIn?.id ?: loaded!!.aniyomiId.toString(),
+                    sourcePackageName = loaded?.packageName ?: "builtin",
+                    sourceAniyomiId = loaded?.aniyomiId ?: 0L,
+                    mediaType = builtIn?.mediaType ?: mediaType,
                 )
-                if (existing != null) {
-                    libraryRepository.upsert(
-                        existing.copy(
-                            title = candidate.title,
-                            author = candidate.author,
-                            subtitle = candidate.subtitle,
-                            artworkUrl = candidate.artworkUrl ?: existing.artworkUrl,
-                            releaseYear = candidate.releaseYear ?: existing.releaseYear,
-                        )
-                    )
-                } else {
-                    libraryRepository.upsert(candidate)
-                }
-            }.onFailure {
-                Log.w(TAG, "Catalogue tap upsert failed for ${candidate.sourceKey}", it)
-            }.getOrNull() ?: return@launch
-            _openDetail.emit(saved.id)
+            )
         }
     }
 
@@ -262,3 +238,19 @@ class CatalogueViewModel(
         super.onCleared()
     }
 }
+
+/**
+ * A catalogue title that has not been saved yet.
+ *
+ * Carries everything the detail screen needs to preview and later save the
+ * title: the source item plus the resolved source identity. No library row
+ * exists for it until [com.auris.app.ui.detail.MediaDetailViewModel.savePreview]
+ * upserts one on explicit user action.
+ */
+data class PreviewDetail(
+    val item: com.auris.app.source.SourceItem,
+    val sourceId: String,
+    val sourcePackageName: String,
+    val sourceAniyomiId: Long,
+    val mediaType: MediaType,
+)

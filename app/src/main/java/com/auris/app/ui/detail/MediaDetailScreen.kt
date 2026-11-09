@@ -34,6 +34,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -118,6 +121,12 @@ data class MediaDetailUiState(
     /** Transient one-shot message, e.g. "no playable stream for this episode". */
     val message: String? = null,
     val error: String? = null,
+    /** True when rendering a catalogue title that has not been saved yet. */
+    val isPreview: Boolean = false,
+    /** True after the preview's explicit Save has persisted it. */
+    val isSaved: Boolean = false,
+    /** The persisted row id created by an explicit Save, if any. */
+    val savedEntryId: String? = null,
 ) {
     /** The artwork whose colours drive the gradient: wide cover first, then poster. */
     val gradientArtworkUrl: String? get() = coverUrl ?: posterUrl
@@ -149,6 +158,8 @@ fun MediaDetailScreen(
     /** Returns to wherever this title was opened from; no nav pill is drawn here. */
     onBack: () -> Unit = {},
     onSeasonClick: (SourceSeason) -> Unit = {},
+    /** Persists an unsaved preview; a no-op for already-saved entries. */
+    onSave: () -> Unit = {},
 ) {
     val palette = rememberArtworkPaletteValue(artworkKey = state.gradientArtworkUrl)
 
@@ -170,6 +181,7 @@ fun MediaDetailScreen(
                     state = state,
                     palette = palette,
                     onBack = onBack,
+                    onSave = onSave,
                 )
             }
 
@@ -260,8 +272,9 @@ fun MediaDetailScreen(
                     isCurrent = unit.index == state.currentUnitIndex,
                     // Tapping an episode whose stream is still resolving does nothing: a second
                     // tap would launch a second resolution and the first stream would be
-                    // orphaned once the second completed.
-                    enabled = !state.isResolvingStream,
+                    // orphaned once the second completed. An unsaved preview is inert until
+                    // Save persists the row the player needs.
+                    enabled = !state.isResolvingStream && !(state.isPreview && !state.isSaved),
                     posterUrl = state.posterUrl,
                     onClick = { onUnitClick(unit) },
                 )
@@ -277,6 +290,7 @@ private fun DetailHero(
     state: MediaDetailUiState,
     palette: ArtworkPalette,
     onBack: () -> Unit,
+    onSave: () -> Unit,
 ) {
     val backdropUrl = state.coverUrl ?: state.posterUrl
     Column {
@@ -421,6 +435,26 @@ private fun DetailHero(
 
             Spacer(Modifier.height(12.dp))
             MetadataChips(state)
+
+            // Explicit Save: a preview is not in the library until this tap. Shown
+            // only while unsaved; after Save the button is removed and the
+            // transient "Saved to Library ✓" notice confirms the write.
+            if (state.isPreview && !state.isSaved) {
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = onSave,
+                    shape = RoundedCornerShape(AurisRadii.button),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AurisAccent,
+                        contentColor = AurisBackground,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.LibraryAdd, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Save to Library", style = MaterialTheme.typography.labelLarge)
+                }
+            }
 
             Spacer(Modifier.height(16.dp))
             Surface(shape = RoundedCornerShape(AurisRadii.artworkSmall), color = AurisSurface) {

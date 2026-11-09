@@ -39,6 +39,8 @@ object Routes {
      */
     const val PLAYER = "player"
     const val ANIME_DETAIL = "anime/{entryId}"
+    /** A catalogue title that has not been saved yet; the payload lives in the NavHost holder. */
+    const val ANIME_PREVIEW = "anime/preview/{previewId}"
     const val MANGA_READER = "manga/reader/{entryId}/{unitIndex}"
     const val EXTENSIONS = "settings/extensions"
     const val SEARCH = "search"
@@ -56,6 +58,7 @@ object Routes {
     const val CATALOGUE = "catalogue/{sourceKey}"
 
     fun animeDetail(entryId: String) = "anime/$entryId"
+    fun animePreview(previewId: String) = "anime/preview/$previewId"
     fun mangaReader(entryId: String, unitIndex: Int) = "manga/reader/$entryId/$unitIndex"
     fun episodePlayer(entryId: String, unitIndex: Int) = "play/episode/$entryId/$unitIndex"
     const val diagnostics = DIAGNOSTICS

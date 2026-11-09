@@ -6,10 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.auris.app.core.model.MediaType
 import com.auris.app.data.local.entity.LibraryEntryEntity
 import com.auris.app.data.local.entity.LibraryUnitEntity
+import com.auris.app.data.remote.kitsu.KitsuMetadata
 import com.auris.app.data.repository.ExtensionContentRepository
 import com.auris.app.data.repository.KitsuIdentifier
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.source.*
+import com.auris.app.ui.source.PreviewDetail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,6 +25,13 @@ import kotlinx.coroutines.launch
 
 /**
  * Drives the media detail screen: entry metadata, Kitsu identification, and extension units.
+ *
+ * ### Two modes: saved and preview
+ * With a [preview], the screen renders a catalogue title that has no library row yet:
+ * title/poster are seeded from the [PreviewDetail] item, Kitsu is fetched via
+ * [KitsuIdentifier.findBestMatch] **without writing**, and units come from the fetch-only
+ * [ExtensionContentRepository.fetchUnits]. The row is written only by [savePreview].
+ * Without a preview the existing saved-entry flow observes Room exactly as before.
  *
  * ### Three independent concerns, deliberately not serialised
  * Room metadata, the Kitsu lookup and the extension unit fetch are launched **separately**.
@@ -40,6 +49,7 @@ class MediaDetailViewModel(
     private val libraryRepository: LibraryRepository,
     private val identifier: KitsuIdentifier,
     private val contentRepository: ExtensionContentRepository,
+    private val preview: PreviewDetail? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MediaDetailUiState())
@@ -67,35 +77,183 @@ class MediaDetailViewModel(
     /** Latest entry, needed by [onUnitClick] which is invoked outside a `collect`. */
     private var currentEntry: LibraryEntryEntity? = null
 
+    /** Transient row shape for a preview; never written to Room until [savePreview]. */
+    private var previewEntry: LibraryEntryEntity? = null
+
+    /** Transient Kitsu enrichment held until [savePreview] overlays it onto the row. */
+    private var transientMetadata: KitsuMetadata? = null
+
     init {
-        // Entry and stored units are observed as one stream so the screen can never render an
-        // entry against a unit list belonging to a different entry.
+        if (preview != null) {
+            seedPreview(preview)
+        } else {
+            // Entry and stored units are observed as one stream so the screen can never render an
+            // entry against a unit list belonging to a different entry.
+            viewModelScope.launch {
+                combine(
+                    libraryRepository.observeEntry(entryId),
+                    libraryRepository.observeUnits(entryId),
+                ) { entry, units -> entry to units }
+                    .collect { (entry, units) ->
+                        if (entry == null) {
+                            _state.value = _state.value.copy(
+                                error = "This entry is no longer in your library",
+                            )
+                            return@collect
+                        }
+
+                        currentEntry = entry
+                        _state.value = _state.value.withEntry(entry, units)
+
+                        if (!identificationStarted) {
+                            identificationStarted = true
+                            identifyIfNeeded(entry)
+                        }
+                        if (!unitsStarted) {
+                            unitsStarted = true
+                            refreshUnits()
+                            loadSeasons(entry)
+                        }
+                    }
+            }
+        }
+    }
+
+    /** Seeds the preview from the source item and fetches without writing. */
+    private fun seedPreview(detail: PreviewDetail) {
+        previewEntry = contentRepository.entryForSourceItem(
+            sourceItem = detail.item,
+            sourcePackageName = detail.sourcePackageName,
+            sourceAniyomiId = detail.sourceAniyomiId,
+            mediaType = detail.mediaType,
+        ).copy(sourceId = detail.sourceId)
+
+        _state.value = MediaDetailUiState(
+            mediaType = detail.mediaType,
+            title = detail.item.title,
+            posterUrl = detail.item.thumbnailUrl,
+            totalUnits = detail.item.episodeCount,
+            isMetadataLoading = true,
+            isUnitsLoading = true,
+            isPreview = true,
+            isSaved = false,
+        )
+        fetchPreviewMetadata()
+        refreshPreviewUnits()
+        previewEntry?.let { loadSeasons(it) }
+        checkSavedPreview()
+    }
+
+    /**
+     * A re-opened title may already be in the library (saved, backed out, re-tapped from
+     * the catalogue). Surface that so the preview shows Saved instead of Save again.
+     * `isPreview` stays true — this is still the preview route — but `isSaved` flips
+     * so the Save button is gone and unit/season gates open via [currentEntry].
+     */
+    private fun checkSavedPreview() {
+        val entry = previewEntry ?: return
         viewModelScope.launch {
-            combine(
-                libraryRepository.observeEntry(entryId),
-                libraryRepository.observeUnits(entryId),
-            ) { entry, units -> entry to units }
-                .collect { (entry, units) ->
-                    if (entry == null) {
-                        _state.value = _state.value.copy(
-                            error = "This entry is no longer in your library",
-                        )
-                        return@collect
-                    }
+            val existing = runCatching {
+                libraryRepository.findBySource(entry.mediaType, entry.sourceId, entry.sourceKey)
+            }.getOrNull() ?: return@launch
+            currentEntry = existing
+            _state.value = _state.value.copy(
+                isSaved = true,
+                savedEntryId = existing.id,
+            )
+        }
+    }
 
-                    currentEntry = entry
-                    _state.value = _state.value.withEntry(entry, units)
+    private fun fetchPreviewMetadata() {
+        val entry = previewEntry ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isMetadataLoading = true)
+            // Fetch-only: findBestMatch reads Kitsu and never writes. The enriched
+            // fields are held in transientMetadata until savePreview overlays them.
+            val match = runCatching { identifier.findBestMatch(entry) }.getOrNull()
+            identificationDone = true
+            if (match == null) {
+                _state.value = _state.value.copy(
+                    isMetadataLoading = false,
+                    metadataUnavailable = true,
+                )
+            } else {
+                transientMetadata = match.metadata
+                val meta = match.metadata
+                _state.value = _state.value.copy(
+                    isMetadataLoading = false,
+                    synopsis = meta.synopsis,
+                    posterUrl = meta.posterUrl ?: _state.value.posterUrl,
+                    coverUrl = meta.coverUrl,
+                    originalTitle = meta.originalTitle,
+                    averageRating = meta.averageRating,
+                    status = meta.status.name,
+                    subtype = meta.subtype,
+                    totalUnits = meta.unitCount ?: _state.value.totalUnits,
+                )
+            }
+        }
+    }
 
-                    if (!identificationStarted) {
-                        identificationStarted = true
-                        identifyIfNeeded(entry)
-                    }
-                    if (!unitsStarted) {
-                        unitsStarted = true
-                        refreshUnits()
-                        loadSeasons(entry)
-                    }
+    private fun refreshPreviewUnits() {
+        val entry = previewEntry ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isUnitsLoading = true, error = null)
+            // Fetch-only: never refreshUnits, which would persist units for a row
+            // that does not exist yet.
+            contentRepository.fetchUnits(entry)
+                .onSuccess { units ->
+                    _state.value = _state.value.copy(isUnitsLoading = false, units = units)
                 }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        isUnitsLoading = false,
+                        error = error.toUserMessage(),
+                    )
+                }
+        }
+    }
+
+    /** Persists the preview on explicit Save; the only write in preview mode. */
+    fun savePreview() {
+        val detail = preview ?: return
+        if (_state.value.isSaved) return
+        viewModelScope.launch {
+            try {
+                var row = contentRepository.entryForSourceItem(
+                    sourceItem = detail.item,
+                    sourcePackageName = detail.sourcePackageName,
+                    sourceAniyomiId = detail.sourceAniyomiId,
+                    mediaType = detail.mediaType,
+                ).copy(sourceId = detail.sourceId)
+                transientMetadata?.let { row = identifier.apply(row, it) }
+                // Re-check: a row saved since this preview was seeded (or a double-tap
+                // racing the seed check) must flip to saved without upserting again.
+                val existing = libraryRepository.findBySource(row.mediaType, row.sourceId, row.sourceKey)
+                if (existing != null) {
+                    currentEntry = existing
+                    previewEntry = existing
+                    _state.value = _state.value.copy(
+                        isSaved = true,
+                        savedEntryId = existing.id,
+                        message = "Saved to Library ✓",
+                    )
+                    return@launch
+                }
+                val saved = libraryRepository.upsert(row)
+                currentEntry = saved
+                previewEntry = saved
+                _state.value = _state.value.copy(
+                    isSaved = true,
+                    savedEntryId = saved.id,
+                    message = "Saved to Library ✓",
+                )
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                _state.value = _state.value.copy(
+                    message = error.message ?: "Could not save to library.",
+                )
+            }
         }
     }
 
@@ -116,6 +274,8 @@ class MediaDetailViewModel(
 
     fun openSeason(season: SourceSeason, onOpen: (String) -> Unit) {
         if (season.isCurrent) return
+        // A preview has no persisted row to attach a season to; Save first.
+        if (_state.value.isPreview && !_state.value.isSaved) return
         val current = currentEntry ?: return
         viewModelScope.launch {
             try {
@@ -185,6 +345,10 @@ class MediaDetailViewModel(
      * network is down, and clearing it would turn a transient error into data loss.
      */
     fun refreshUnits() {
+        if (_state.value.isPreview) {
+            refreshPreviewUnits()
+            return
+        }
         val entry = currentEntry ?: return
 
         viewModelScope.launch {
@@ -219,6 +383,8 @@ class MediaDetailViewModel(
         onNavigateToUnit: (Int) -> Unit,
         onPlay: (SourceUnit, List<StreamTarget>) -> Unit,
     ) {
+        // Playback and reading need the persisted row Save creates.
+        if (_state.value.isPreview && !_state.value.isSaved) return
         val entry = currentEntry ?: return
 
         if (entry.mediaType == MediaType.MANGA) {
@@ -231,6 +397,12 @@ class MediaDetailViewModel(
 
     /** User-triggered retry for both Kitsu and the extension. */
     fun retry() {
+        if (_state.value.isPreview) {
+            previewEntry?.let { loadSeasons(it) }
+            fetchPreviewMetadata()
+            refreshPreviewUnits()
+            return
+        }
         currentEntry?.let { entry ->
             loadSeasons(entry)
             if (entry.kitsuId == null && entry.mediaType != MediaType.MUSIC) {
@@ -299,10 +471,11 @@ class MediaDetailViewModel(
         private val libraryRepository: LibraryRepository,
         private val identifier: KitsuIdentifier,
         private val contentRepository: ExtensionContentRepository,
+        private val preview: PreviewDetail? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            MediaDetailViewModel(entryId, libraryRepository, identifier, contentRepository) as T
+            MediaDetailViewModel(entryId, libraryRepository, identifier, contentRepository, preview) as T
     }
 
     companion object {
@@ -313,5 +486,13 @@ class MediaDetailViewModel(
             contentRepository: ExtensionContentRepository,
         ): ViewModelProvider.Factory =
             Factory(entryId, libraryRepository, identifier, contentRepository)
+
+        fun previewFactory(
+            preview: PreviewDetail,
+            libraryRepository: LibraryRepository,
+            identifier: KitsuIdentifier,
+            contentRepository: ExtensionContentRepository,
+        ): ViewModelProvider.Factory =
+            Factory("", libraryRepository, identifier, contentRepository, preview)
     }
 }

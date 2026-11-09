@@ -2,22 +2,16 @@ package com.auris.app.ui.source
 
 import androidx.lifecycle.viewModelScope
 import com.auris.app.core.model.MediaType
-import com.auris.app.data.local.LibraryDao
-import com.auris.app.data.local.SyncDao
 import com.auris.app.data.repository.ExtensionContentRepository
-import com.auris.app.data.repository.LibraryRepository
-import com.auris.app.data.sync.SyncScheduler
 import com.auris.app.source.*
 import eu.kanade.tachiyomi.source.model.FilterList
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
-import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import java.lang.reflect.Proxy
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CatalogueSourceSwitchTest {
@@ -62,19 +56,32 @@ class CatalogueSourceSwitchTest {
         } finally { gate.complete(Unit) }
     }
 
+    @Test fun tapEmitsPreviewWithoutPersisting() = runBlocking {
+        val model = create(listOf(TestSource("a")))
+        await(model) { !it.isLoading && it.items.isNotEmpty() }
+        val item = model.state.value.items.first()
+        // The ViewModel holds no library repository, so a tap cannot persist by
+        // construction: it can only hand the detail screen a transient payload.
+        var preview: PreviewDetail? = null
+        val collector = launch { preview = model.openDetail.first() }
+        delay(300)
+        model.onItemClick(item)
+        withTimeout(5000) { while (preview == null) delay(50) }
+        assertEquals(item.title, preview!!.item.title)
+        assertEquals(item.url, preview!!.item.url)
+        assertEquals("a", preview!!.sourceId)
+        assertEquals(MediaType.ANIME, preview!!.mediaType)
+        collector.cancel()
+    }
+
     private fun create(sources: List<MediaSource>): CatalogueViewModel {
         val registry = object : ExtensionSourceRegistry { override val sources = emptyList<LoadedSource>() }
-        val library = LibraryRepository(proxy<LibraryDao>(), proxy<SyncDao>(),
-            SyncScheduler(android.content.ContextWrapper(null)), Dispatchers.IO, Json)
         val content = ExtensionContentRepository(registry, { _, _ -> }, builtInSources = sources)
-        return CatalogueViewModel(registry, "builtin-a", MediaType.ANIME, content, library).also { vm = it }
+        return CatalogueViewModel(registry, "builtin-a", MediaType.ANIME, content).also { vm = it }
     }
 
     private suspend fun await(model: CatalogueViewModel, predicate: (CatalogueUiState) -> Boolean) =
         withContext(Dispatchers.Default) { withTimeout(5000) { model.state.first(predicate) } }
-
-    private inline fun <reified T> proxy(): T = Proxy.newProxyInstance(T::class.java.classLoader,
-        arrayOf(T::class.java)) { _, method, _ -> error("Unexpected database operation: ${method.name}") } as T
 
     private open class TestSource(override val id: String) : MediaSource {
         override val name = id

@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.auris.app.ui.music.MusicRowSaver
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
@@ -54,6 +55,7 @@ import com.auris.app.data.repository.ExtensionRepository
 import com.auris.app.ui.settings.SettingsScreen
 import com.auris.app.ui.source.CatalogueScreen
 import com.auris.app.ui.source.CatalogueViewModel
+import com.auris.app.ui.source.PreviewDetail
 import com.auris.app.ui.settings.SettingsViewModel
 import com.auris.app.data.remote.music.MusicSource
 import com.auris.app.data.remote.music.MusicArtistDetails
@@ -170,6 +172,10 @@ fun AurisNavHost(
         }
     }
 
+    // Unsaved catalogue previews, keyed by a per-tap id carried in the preview route.
+    // A map (not a single slot) keeps each back-stack entry on its own title.
+    val previewItems = remember { mutableStateMapOf<String, PreviewDetail>() }
+
     NavHost(
         navController = navController,
         startDestination = TopLevelDestination.HOME.route,
@@ -258,12 +264,15 @@ fun AurisNavHost(
                     sourceKey = selectedSource(MediaType.ANIME, com.auris.app.data.remote.anime.AllAnimeSource.KEY),
                     mediaType = MediaType.ANIME,
                     extensionContentRepository = extensionContentRepository,
-                    libraryRepository = libraryRepository,
                 ),
             )
             val animeState by animeCatalogue.state.collectAsStateWithLifecycle()
             LaunchedEffect(animeCatalogue) {
-                animeCatalogue.openDetail.collectLatest { id -> navController.navigate(Routes.animeDetail(id)) }
+                animeCatalogue.openDetail.collectLatest { preview ->
+                    val previewId = java.util.UUID.randomUUID().toString()
+                    previewItems[previewId] = preview
+                    navController.navigate(Routes.animePreview(previewId))
+                }
             }
             CatalogueScreen(
                 state = animeState,
@@ -287,12 +296,15 @@ fun AurisNavHost(
                     sourceKey = selectedSource(MediaType.MANGA, com.auris.app.data.remote.manga.MangaDexSource.KEY),
                     mediaType = MediaType.MANGA,
                     extensionContentRepository = extensionContentRepository,
-                    libraryRepository = libraryRepository,
                 ),
             )
             val mangaState by mangaCatalogue.state.collectAsStateWithLifecycle()
             LaunchedEffect(mangaCatalogue) {
-                mangaCatalogue.openDetail.collectLatest { id -> navController.navigate(Routes.animeDetail(id)) }
+                mangaCatalogue.openDetail.collectLatest { preview ->
+                    val previewId = java.util.UUID.randomUUID().toString()
+                    previewItems[previewId] = preview
+                    navController.navigate(Routes.animePreview(previewId))
+                }
             }
             CatalogueScreen(
                 state = mangaState,
@@ -860,16 +872,17 @@ fun AurisNavHost(
                     extensionLoader = extensionLoader,
                     sourceKey = sourceKey,
                     extensionContentRepository = extensionContentRepository,
-                    libraryRepository = libraryRepository,
                 ),
             )
             val catalogueState by catalogueViewModel.state.collectAsStateWithLifecycle()
 
-            // The ViewModel owns the upsert and emits the persisted id; navigation
+            // The ViewModel emits a transient preview (nothing is persisted); navigation
             // itself stays here in the UI layer — no NavController in the ViewModel.
             LaunchedEffect(catalogueViewModel) {
-                catalogueViewModel.openDetail.collectLatest { entryId ->
-                    navController.navigate(Routes.animeDetail(entryId))
+                catalogueViewModel.openDetail.collectLatest { preview ->
+                    val previewId = java.util.UUID.randomUUID().toString()
+                    previewItems[previewId] = preview
+                    navController.navigate(Routes.animePreview(previewId))
                 }
             }
 
@@ -940,6 +953,57 @@ fun AurisNavHost(
                             // resolves it again on arrival so it owns the player/stream pairing
                             // and the headers travel with it.
                             navController.navigate(Routes.episodePlayer(entryId, unit.index))
+                        },
+                    )
+                },
+                onRetry = viewModel::retry,
+                bottomPadding = 32.dp + WindowInsets.navigationBars
+                    .asPaddingValues()
+                    .calculateBottomPadding(),
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        // Unsaved catalogue preview: same screen, transient data, explicit Save.
+        composable(
+            route = Routes.ANIME_PREVIEW,
+            arguments = listOf(navArgument("previewId") { type = NavType.StringType }),
+        ) { navEntry ->
+            val previewId = navEntry.arguments?.getString("previewId").orEmpty()
+            val preview = previewItems[previewId]
+
+            if (preview == null) {
+                // Stale or restored entry whose transient payload is gone.
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                return@composable
+            }
+
+            val viewModel: MediaDetailViewModel = viewModel(
+                key = "preview-$previewId",
+                factory = MediaDetailViewModel.previewFactory(
+                    preview = preview,
+                    libraryRepository = libraryRepository,
+                    identifier = kitsuIdentifier,
+                    contentRepository = extensionContentRepository,
+                ),
+            )
+            val state by viewModel.state.collectAsStateWithLifecycle()
+
+            MediaDetailScreen(
+                state = state,
+                onSave = viewModel::savePreview,
+                onSeasonClick = { season -> viewModel.openSeason(season) { id ->
+                    navController.navigate(Routes.animeDetail(id))
+                } },
+                onUnitClick = { unit ->
+                    val savedId = state.savedEntryId ?: return@MediaDetailScreen
+                    viewModel.onUnitClick(
+                        unit = unit,
+                        onNavigateToUnit = { index ->
+                            navController.navigate(Routes.mangaReader(savedId, index))
+                        },
+                        onPlay = { played, _ ->
+                            navController.navigate(Routes.episodePlayer(savedId, played.index))
                         },
                     )
                 },
