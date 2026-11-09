@@ -13,30 +13,35 @@
 
 ---
 
-Auris is built from scratch in Kotlin and Jetpack Compose. It bridges music streaming, anime playback, and manga reading into a single cohesive experience with zero telemetry, local-first SQLite persistence, and artwork-led dynamic palettes.
+Auris is built from scratch in Kotlin and Jetpack Compose. It bridges music streaming, anime playback, and manga reading into a single cohesive experience with zero telemetry, local-first SQLite persistence, and Supabase-housed sync.
+
+Current release: **1.0.2** (versionCode 19). See [Releases](https://github.com/miguelraphael/ionic-auris/releases) and `docs/RELEASE_NOTES.md`.
 
 ## Pillars
 
 ### Music
-- **Fullscreen Now Playing**: Proportional artwork presentation, 48dp dismiss chevron, tabular timestamp counters, and dynamic gradients extracted from album covers.
-- **GPU-Accelerated Controls**: Canvas playback and volume sliders render directly on the draw phase, bypassing Compose layout passes during audio ticks.
-- **Browse & Queueing**: Search YouTube Music catalogues, manage play queues, create playlists, and organize library collections.
+- **Catalogue and on-device audio**: YouTube Music's InnerTube (`WEB_REMIX`) catalog, with audio streams extracted on-device via NewPipe. No login required to browse.
+- **Playback**: Media3 media-session service, background queue with rapid start, queue advance on track end, and automatic Recently Played recording for every played track.
+- **Fullscreen Now Playing**: Proportional artwork presentation, 48dp dismiss chevron, tabular timestamps, and artwork-led dynamic tinting.
+- **Local playlists (Room)**: Full CRUD — create, list, rename, delete, add/remove tracks — persisted in SQLite with v5→v6 migration and SharedPreferences import. Entries are stored by session-independent video id (never stream URLs).
 
 ### Anime
-- **Stream Discovery**: Stream episodes directly through integrated extensions, with clean stream resolution and adaptive format support.
-- **Metadata Enrichment**: Kitsu integration identifies community ratings, synopses, and English/original titles alongside seasonal listings.
+- **Stream discovery**: Integrated extensions plus built-in AllAnime (HLS `.m3u8` playback) and other anime sources. Animepahe was removed after persistent Cloudflare challenges blocked stream retrieval; the stream extractor handles token forms and domain resilience.
+- **Explicit Library save**: browsing a catalogue title opens a preview; a title is only added to the library when you tap **Save to Library** — no silent "visit = add".
+- **Metadata enrichment**: Kitsu community ratings, synopses, and English/original title lines on detail screens (ratings are repaired and persisted when a saved row lacks one).
 
 ### Manga
-- **Ephemeral Preview Reader**: Read chapters directly from catalogue browsing without cluttering your library.
-- **Reading Controls**: Top-to-bottom long-strip paging, automatic system-bar hiding for full-screen immersion, and instant chapter synchronization when saved.
-- **Multi-Source Support**: Weeb Central, MangaDex, Asura Scans, and AllManga integrations.
+- **Read without saving**: chapters open directly from catalogue preview; the chapter is persisted only when you explicitly save.
+- **Long-strip reader**: continuous vertical chapters with bounded decoding, automatic system-bar hiding, and instant chapter synchronization when saved.
+- **Multi-source support**: Weeb Central (default), MangaDex, MangaPill, Asura Scans, and AllManga. Image delivery uses Referer/User-Agent headers per CDN.
 
 ## Architectural Principles
 
-- **Local-First (Room)**: Room is the single source of truth. UI state observes reactive `Flow` streams from SQLite; network calls populate the database rather than passing raw payloads to the screen.
+- **Local-First (Room)**: Room is the single source of truth. UI state observes reactive `Flow` streams from SQLite; network calls populate the database rather than passing raw payloads to the screen. Local playlists use their own tables with a `playlist_tracks` junction and cascade deletes.
 - **Background Outbox Sync**: Mutations write immediately to the local outbox and sync to Supabase in the background with automatic retry and conflict quarantine.
+- **Auth gate**: The library syncs per user — there is no anonymous mode, and sign-out stops music playback (and removes the notification) on the device.
 - **Artwork-Led Palette**: Screen backdrops sample dynamic color roles extracted from active album and media covers, preserving contrast across pure dark surfaces.
-- **Native Android Expectations**: 48dp minimum touch targets, predictive system Back support, edge-to-edge window insets, and no ported Cupertino controls.
+- **Native Android Expectations**: 48dp minimum touch targets, predictive system Back support (album/artist context survives round-trips through Now Playing), edge-to-edge window insets, and no ported Cupertino controls.
 
 ## Installation
 
@@ -66,6 +71,12 @@ cp local.properties.example local.properties
 ./gradlew :app:assembleDebug
 ./gradlew :app:testDebugUnitTest
 ```
+
+### Verification status
+- **Unit tests**: 541 JVM tests pass (7 skipped, 0 failures) — targeted suites for playlists, detail preview, Kitsu, and music/player all green.
+- **Build/lint**: `assembleDebug` and `lintDebug` pass with 0 errors (pre-existing warnings only).
+- **Signed release**: built by CI for `v*` tags; `docs/RELEASE_NOTES.md` is the release-notes source.
+- **Device**: RMX3636 (Android 15) physical checks pass for launch, migration, and playback-stable playback.
 
 ## Module Structure
 
