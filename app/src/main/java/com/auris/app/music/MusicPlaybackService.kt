@@ -25,8 +25,9 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
@@ -68,6 +69,7 @@ class MusicPlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private var session: MediaSession? = null
     private var equalizer: android.media.audiofx.Equalizer? = null
+    private var hadSession = false
 
     override fun onCreate() {
         super.onCreate()
@@ -169,7 +171,50 @@ class MusicPlaybackService : MediaSessionService() {
                     loadSuggestions()
                 }
             }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                // A track that ends before its successor is inserted enters ENDED; a
+                // late insert alone never resumes the player.
+                val exo = player ?: return
+                if (playbackState == Player.STATE_ENDED && exo.hasNextMediaItem()) {
+                    exo.play()
+                }
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                val exo = player ?: return
+                // A dead stream stops the player instead of advancing; skip it when
+                // the queue continues (never when the user asked for repeat).
+                if (exo.repeatMode == Player.REPEAT_MODE_OFF && exo.hasNextMediaItem()) {
+                    exo.seekToNextMediaItem()
+                    exo.play()
+                }
+            }
         })
+
+        scope.launch {
+            val container = (application as AurisApplication).container
+            container.authRepository.session.collect { next ->
+                if (shouldStopOnSessionChange(hadSession, next != null)) stopForSignOut()
+                hadSession = next != null
+            }
+        }
+    }
+
+    private fun stopForSignOut() {
+        sleepTimer.set(0)
+        smartJob?.cancel()
+        smartJob = null
+        val exo = player
+        exo?.stop()
+        exo?.clearMediaItems()
+        equalizer?.release()
+        equalizer = null
+        exo?.release()
+        session?.release()
+        player = null
+        session = null
+        hadSession = false
+        stopForeground(android.app.Service.STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun publishModes() {
@@ -231,15 +276,21 @@ class MusicPlaybackService : MediaSessionService() {
                     val stream = source.resolveAudioStream(track.videoId).getOrNull()?.stream
                         ?.takeIf { it.isPlayable() } ?: continue
                     currentCoroutineContext().ensureActive()
+                    if (exo !== player) return@launch
                     // A new selection replaces the queue while recommendations are resolving.
                     if (exo.currentMediaItem?.mediaId != seed.mediaId ||
                         (!smartShuffle && exo.repeatMode != Player.REPEAT_MODE_OFF)) return@launch
                     if ((0 until exo.mediaItemCount).any { exo.getMediaItemAt(it).mediaId == track.videoId }) continue
                     val item = buildMediaItem(track.videoId, track.title, track.artist, track.album,
                         track.largeArtworkUrl ?: track.artworkUrl, stream.url, stream.mimeType)
+                    currentCoroutineContext().ensureActive()
+                    if (exo !== player) return@launch
                     exo.addMediaItem(item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon()
                         .setExtras(Bundle().apply { putBoolean(SMART_ITEM, true) }).build()).build())
                 }
+                if (exo !== player) return@launch
+                // Suggestions that arrive after the queue ended sit unplayed otherwise.
+                resumeIfEnded(exo)
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -349,6 +400,30 @@ fun buildMediaItem(
             .build(),
     )
     .build()
+
+/**
+ * True when a real session was present and just became null (sign-out, delete, expiry).
+ * The cold-start null is not a sign-out: [com.auris.app.data.repository.AuthRepository.session]
+ * awaits initialized, so the first null cannot mean the user signed out during playback.
+ */
+internal fun shouldStopOnSessionChange(hadSession: Boolean, hasSession: Boolean): Boolean =
+    hadSession && !hasSession
+
+/**
+ * Re-drives a player that reached ENDED before a late-inserted next item arrived.
+ *
+ * ExoPlayer does not resume on its own after media items are added to an ENDED
+ * player, so without this the queue stalls: the late item sits unplayed and the
+ * track never reaches Recently Played. The next item must exist before resuming —
+ * otherwise nothing would advance, only the ended track would replay.
+ * Returns true when a resume was issued.
+ */
+internal fun resumeIfEnded(player: Player): Boolean {
+    if (player.playbackState != Player.STATE_ENDED || !player.hasNextMediaItem()) return false
+    player.prepare()
+    player.play()
+    return true
+}
 
 /**
  * The default hint, used when the resolver does not name a container.

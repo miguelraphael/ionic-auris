@@ -18,6 +18,7 @@ import com.auris.app.data.remote.music.youtubeThumbnailUrl
 import com.auris.app.data.repository.LibraryRepository
 import com.auris.app.music.MusicPlaybackService
 import com.auris.app.music.buildMediaItem
+import com.auris.app.music.resumeIfEnded
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
@@ -513,14 +514,7 @@ class MusicBrowseViewModel(
         homeRequested = false
 
         // Persist the first track so the library grid shows it and progress is restorable.
-        runCatching {
-            val existing = libraryRepository.findBySource(com.auris.app.core.model.MediaType.MUSIC,
-                tracks[startIndex].track.videoId, MusicLibraryMapper.SOURCE_KEY)
-            libraryRepository.upsert(
-                MusicLibraryMapper.toEntry(tracks[startIndex].track, isCurrent = true)
-                    .copy(isFavorite = existing?.isFavorite ?: false),
-            )
-        }
+        upsertRecentTrack(libraryRepository, tracks[startIndex].track)
         return true
     }
 
@@ -672,7 +666,13 @@ class MusicBrowseViewModel(
                             playable.track.artist, playable.track.album,
                             playable.track.largeArtworkUrl ?: playable.track.artworkUrl,
                             playable.streamUrl, playable.mimeType)
-                        controller?.let { it.addMediaItem(index.coerceAtMost(it.mediaItemCount), item) }
+                        controller?.let {
+                            it.addMediaItem(index.coerceAtMost(it.mediaItemCount), item)
+                            resumeIfEnded(it)
+                        }
+                        // A queued track is history-worthy the moment it is inserted; only
+                        // the first track previously reached the library.
+                        viewModelScope.launch { upsertRecentTrack(libraryRepository, playable.track) }
                     })
             } catch (error: CancellationException) {
                 started.cancel(error)
@@ -737,6 +737,22 @@ private data class PlayableTrack(
     val streamUrl: String,
     val mimeType: String,
 )
+
+/**
+ * Persists one played or queued track into Recently Played, preserving a favorite
+ * already set on it. Best-effort, like the original inline upsert it replaces:
+ * a library failure must never interrupt playback.
+ */
+internal suspend fun upsertRecentTrack(libraryRepository: LibraryRepository, track: MusicTrack) {
+    runCatching {
+        val existing = libraryRepository.findBySource(
+            com.auris.app.core.model.MediaType.MUSIC, track.videoId, MusicLibraryMapper.SOURCE_KEY)
+        libraryRepository.upsert(
+            MusicLibraryMapper.toEntry(track, isCurrent = true)
+                .copy(isFavorite = existing?.isFavorite ?: false),
+        )
+    }
+}
 
 /**
  * Maps a collection item into display rows.
