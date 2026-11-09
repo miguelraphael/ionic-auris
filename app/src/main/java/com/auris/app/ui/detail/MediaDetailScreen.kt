@@ -41,6 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -118,6 +119,8 @@ data class MediaDetailUiState(
     val units: List<SourceUnit> = emptyList(),
     val watchedUnitIndices: Set<Int> = emptySet(),
     val currentUnitIndex: Int = 0,
+    /** Entry-level progress (0..1); fallback for unit rows without a duration. */
+    val entryProgress: Float = 0f,
     /** True while a tapped episode's stream is being resolved before playback can start. */
     val isResolvingStream: Boolean = false,
     /** Transient one-shot message, e.g. "no playable stream for this episode". */
@@ -268,6 +271,7 @@ fun MediaDetailScreen(
                     unit = unit,
                     isWatched = unit.index in state.watchedUnitIndices,
                     isCurrent = unit.index == state.currentUnitIndex,
+                    entryProgress = state.entryProgress,
                     // Tapping an episode whose stream is still resolving does nothing: a second
                     // tap would launch a second resolution and the first stream would be
                     // orphaned once the second completed. An unsaved preview is inert until
@@ -659,6 +663,7 @@ private fun UnitRow(
     unit: SourceUnit,
     isWatched: Boolean,
     isCurrent: Boolean,
+    entryProgress: Float = 0f,
     enabled: Boolean,
     posterUrl: String?,
     onClick: () -> Unit,
@@ -720,6 +725,27 @@ private fun UnitRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            // Passive in-progress bar: hidden once watched so the check stays the single
+            // "done" signal, and hidden at zero so unwatched rows stay clean.
+            val unitProgress = if (!isWatched && unit.watchPositionMs > 0) {
+                val duration = unit.watchDurationMs
+                if (duration != null && duration > 0) {
+                    (unit.watchPositionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    // No duration (most chapters): the reader stores a page index in
+                    // watchPositionMs and totalPages is not in the row, so fall back to
+                    // the entry-level fraction when present.
+                    entryProgress.coerceIn(0f, 1f)
+                }
+            } else 0f
+            if (unitProgress > 0f) {
+                LinearProgressIndicator(
+                    progress = { unitProgress },
+                    color = AurisAccent,
+                    trackColor = AurisTrack,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(4.dp),
+                )
+            }
             if (isCurrent || isWatched) {
                 Text(if (isWatched) "Watched" else "Continue watching",
                     style = MaterialTheme.typography.labelMedium, color = AurisAccent)

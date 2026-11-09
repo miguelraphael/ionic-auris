@@ -58,7 +58,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
@@ -134,6 +136,17 @@ fun MusicHomeScreen(
     val playlists by playlistRepository.observePlaylists().collectAsStateWithLifecycle(initialValue = emptyList())
     // Saveable so the open playlist survives rotation; cleared on Back, restoring Home.
     var selectedPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Measured so the list clearance below tracks the strip's real height — which grows past
+    // ~68dp at large font scales — instead of a fixed bottom padding that would clip it. 68dp
+    // is only the pre-measure fallback; onGloballyPositioned corrects it on the first frame.
+    val density = LocalDensity.current
+    var stripHeight by remember { mutableStateOf(68.dp) }
+    // Both the list and the strip inset for the navigation bars, so the clearance needed is
+    // just the strip's height above the nav pill plus the gap below it — nav-inset free, so
+    // it stays correct for 2-button and 3-button navigation alike.
+    val listBottomPadding =
+        if (showNowPlaying) FloatingNavigationLayout.playerBottom + stripHeight + FloatingNavigationLayout.playerGap
+        else FloatingNavigationLayout.playerBottom + FloatingNavigationLayout.playerGap
 
     ArtworkGradientBackground(
         palette = palette,
@@ -146,7 +159,7 @@ fun MusicHomeScreen(
                 modifier = Modifier.fillMaxSize().navigationBarsPadding(),
                 contentPadding = PaddingValues(
                     // Clear the mini player above the navigation pill when it is showing.
-                    bottom = if (showNowPlaying) 196.dp else 140.dp,
+                    bottom = listBottomPadding,
                 ),
             ) {
                 item(key = "header") {
@@ -294,7 +307,11 @@ fun MusicHomeScreen(
                     onNext = onNext,
                     canGoPrevious = !state.isResolving && state.canGoPrevious,
                     canGoNext = !state.isResolving && state.canGoNext,
-                    modifier = Modifier,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        if (coords.size.height > 0) {
+                            stripHeight = with(density) { coords.size.height.toDp() }
+                        }
+                    },
                 )
             }
         }

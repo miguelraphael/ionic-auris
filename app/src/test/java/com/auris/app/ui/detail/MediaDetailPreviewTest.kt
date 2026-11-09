@@ -177,6 +177,77 @@ class MediaDetailPreviewTest {
         assertEquals(87.3, model.state.value.averageRating!!, 0.001)
     }
 
+    @Test fun watchedUnitMapsReadStateToSourceUnit() = runBlocking {
+        val model = createSaved(
+            savedEntry(kitsuRating = 92.5).copy(progress = 1f),
+            storedUnits = listOf(
+                LibraryUnitEntity(
+                    entryId = "saved-row-id",
+                    unitIndex = 1,
+                    sourceUnitId = "ep-1",
+                    title = "Ep 1",
+                    durationMs = 1_800_000L,
+                    isWatched = true,
+                    lastPositionMs = 1_800_000L,
+                ),
+            ),
+        )
+        withTimeout(5000) { model.state.first { it.units.isNotEmpty() } }
+
+        val unit = model.state.value.units.single()
+        assertTrue(unit.isWatched)
+        assertEquals(1_800_000L, unit.watchPositionMs)
+        assertEquals(1_800_000L, unit.watchDurationMs)
+    }
+
+    @Test fun inProgressUnitMapsReadStateToSourceUnit() = runBlocking {
+        val model = createSaved(
+            savedEntry(kitsuRating = 92.5).copy(progress = 0.3f),
+            storedUnits = listOf(
+                LibraryUnitEntity(
+                    entryId = "saved-row-id",
+                    unitIndex = 2,
+                    sourceUnitId = "ep-2",
+                    title = "Ep 2",
+                    durationMs = 1_800_000L,
+                    isWatched = false,
+                    lastPositionMs = 45_000L,
+                ),
+            ),
+        )
+        withTimeout(5000) { model.state.first { it.units.isNotEmpty() } }
+
+        val state = model.state.value
+        val unit = state.units.single()
+        assertFalse(unit.isWatched)
+        assertEquals(45_000L, unit.watchPositionMs)
+        assertEquals(1_800_000L, unit.watchDurationMs)
+        assertEquals(0.3f, state.entryProgress, 0.001f)
+    }
+
+    @Test fun unwatchedUnitMapsReadStateToSourceUnit() = runBlocking {
+        val model = createSaved(
+            savedEntry(kitsuRating = 92.5),
+            storedUnits = listOf(
+                LibraryUnitEntity(
+                    entryId = "saved-row-id",
+                    unitIndex = 3,
+                    sourceUnitId = "ch-3",
+                    title = "Chapter 3",
+                    durationMs = null,
+                    isWatched = false,
+                    lastPositionMs = 0L,
+                ),
+            ),
+        )
+        withTimeout(5000) { model.state.first { it.units.isNotEmpty() } }
+
+        val unit = model.state.value.units.single()
+        assertFalse(unit.isWatched)
+        assertEquals(0L, unit.watchPositionMs)
+        assertNull(unit.watchDurationMs)
+    }
+
     @Test fun previewShowsEnglishTitleFromKitsu() = runBlocking {
         val model = createPreview()
         withTimeout(5000) { model.state.first { it.englishTitle != null } }
@@ -256,12 +327,16 @@ class MediaDetailPreviewTest {
         artworkUrl = "https://img.test/poster.jpeg",
     )
 
-    private fun createSaved(entry: LibraryEntryEntity, kitsu: KitsuDataSource = FakeKitsu()): MediaDetailViewModel {
+    private fun createSaved(
+        entry: LibraryEntryEntity,
+        kitsu: KitsuDataSource = FakeKitsu(),
+        storedUnits: List<LibraryUnitEntity> = emptyList(),
+    ): MediaDetailViewModel {
         val entryFlow = MutableStateFlow<LibraryEntryEntity?>(entry)
         val libraryDao = proxy<LibraryDao> { method, args ->
             when (method) {
                 "observeById" -> entryFlow
-                "observeUnits" -> MutableStateFlow(emptyList<LibraryUnitEntity>())
+                "observeUnits" -> MutableStateFlow(storedUnits)
                 "findBySourceIdentity" -> entryFlow.value
                 "belongsToOtherOwner" -> false
                 "upsert" -> { upserts += (args.first() as LibraryEntryEntity); Unit }

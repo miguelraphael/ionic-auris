@@ -115,8 +115,15 @@ internal fun MusicArtistPage(
                             }
                         }
                         if (songs.size > 5) item {
-                            TextButton(onClick = { showAllSongs = !showAllSongs }, modifier = Modifier.padding(horizontal = 20.dp).heightIn(min = 48.dp)) {
-                                Text(if (showAllSongs) "Show fewer songs" else "Show all ${songs.size} songs")
+                            TextButton(
+                                onClick = { showAllSongs = !showAllSongs },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).heightIn(min = 48.dp),
+                            ) {
+                                Text(
+                                    text = if (showAllSongs) "Show fewer songs" else "Show all ${songs.size} songs",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                     }

@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
@@ -304,12 +305,12 @@ internal fun MusicSongActions(row: MusicRow, music: MusicBrowseViewModel, onExit
             onPrevious = music::previous, onNext = music::next,
             canGoPrevious = !browse.isResolving && browse.canGoPrevious,
             canGoNext = !browse.isResolving && browse.canGoNext,
-            modifier = Modifier.padding(bottom = 12.dp),
+            modifier = Modifier.padding(bottom = com.auris.app.ui.components.FloatingNavigationLayout.playerGap),
         )
     }
     val navigate = com.auris.app.ui.components.LocalTopLevelNavigate.current
     val pageBottomBar: @Composable () -> Unit = {
-        Surface(color = AurisBackground) {
+        Surface(color = Color.Transparent) {
             Column {
                 Box(Modifier.padding(horizontal = 16.dp)) { pageMiniPlayer() }
                 com.auris.app.ui.components.FloatingNavigationBar(

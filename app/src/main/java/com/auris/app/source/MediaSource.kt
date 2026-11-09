@@ -73,6 +73,9 @@ data class SourceUnit(
     val thumbnailUrl: String? = null,
     /** Broadcast timestamp in epoch millis, or 0 when unknown. */
     val uploadTimestamp: Long = 0L,
+    val isWatched: Boolean = false,
+    val watchPositionMs: Long = 0L,
+    val watchDurationMs: Long? = null,
 )
 
 /**

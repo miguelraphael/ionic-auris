@@ -463,6 +463,7 @@ class MediaDetailViewModel(
         status = entry.status.name,
         totalUnits = entry.totalUnits.takeIf { it > 0 },
         currentUnitIndex = entry.currentUnitIndex,
+        entryProgress = entry.progress,
         units = units.map { it.toSourceUnit() },
         watchedUnitIndices = units.filter { it.isWatched }.map { it.unitIndex }.toSet(),
         // The spinner follows whether we are still waiting, so an unrelated Room emission (a
@@ -487,6 +488,9 @@ class MediaDetailViewModel(
         title = title,
         thumbnailUrl = thumbnailUrl,
         uploadTimestamp = 0L,
+        isWatched = isWatched,
+        watchPositionMs = lastPositionMs,
+        watchDurationMs = durationMs,
     )
 
     private fun Throwable.toUserMessage(): String =
