@@ -189,9 +189,9 @@ class MediaDetailPreviewTest {
         val existing = savedRow()
         val model = createPreview(existing = existing)
 
-        // Pump the scheduler so checkSavedPreview() lands deterministically.
-        withTimeout(5000) { testScheduler.advanceUntilIdle(); model.state.value }
-        val state = model.state.value
+        val state = withContext(Dispatchers.Default) {
+            withTimeout(5000) { model.state.first { it.isSaved } }
+        }
         // Still the preview route, but already saved: no Save button.
         assertTrue(state.isPreview)
         assertTrue(state.isSaved)

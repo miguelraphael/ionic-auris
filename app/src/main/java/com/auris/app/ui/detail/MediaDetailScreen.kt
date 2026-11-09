@@ -274,9 +274,9 @@ fun MediaDetailScreen(
                     entryProgress = state.entryProgress,
                     // Tapping an episode whose stream is still resolving does nothing: a second
                     // tap would launch a second resolution and the first stream would be
-                    // orphaned once the second completed. An unsaved preview is inert until
-                    // Save persists the row the player needs.
-                    enabled = !state.isResolvingStream && !(state.isPreview && !state.isSaved),
+                    // orphaned once the second completed. Unsaved manga and anime previews can
+                    // be read/watched without saving, while music remains save-gated.
+                    enabled = !state.isResolvingStream && (state.isSaved || state.mediaType != MediaType.MUSIC),
                     posterUrl = state.posterUrl,
                     onClick = { onUnitClick(unit) },
                 )
