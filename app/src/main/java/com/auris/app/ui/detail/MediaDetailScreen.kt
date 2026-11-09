@@ -253,10 +253,6 @@ fun MediaDetailScreen(
                 }
             }
 
-            state.message?.let { message ->
-                item(key = "message") { TransientNotice(message) }
-            }
-
             if (state.error != null) {
                 item(key = "error") { DetailError(state.error, onRetry) }
             }
@@ -473,6 +469,11 @@ private fun DetailHero(
             if (state.metadataUnavailable) {
                 Spacer(Modifier.height(12.dp))
                 MetadataUnavailableNote()
+            }
+
+            state.message?.let { message ->
+                Spacer(Modifier.height(12.dp))
+                TransientNotice(message)
             }
         }
     }
@@ -768,7 +769,7 @@ private fun TransientNotice(message: String) {
         color = AurisSurface,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp),
+            .padding(vertical = 4.dp),
     ) {
         Text(
             text = message,

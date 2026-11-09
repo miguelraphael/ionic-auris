@@ -36,6 +36,7 @@ import java.lang.reflect.Proxy
 class MediaDetailPreviewTest {
     private val dispatcher = UnconfinedTestDispatcher()
     private val upserts = mutableListOf<LibraryEntryEntity>()
+    private val kitsuWrites = mutableListOf<LibraryEntryEntity>()
     private val persistedUnits = mutableListOf<List<LibraryUnitEntity>>()
     private var sessionUserId: String? = "user-1"
     private var vm: MediaDetailViewModel? = null
@@ -130,6 +131,7 @@ class MediaDetailPreviewTest {
         assertTrue(state.isPreview)
         assertTrue(state.isSaved)
         assertEquals(existing.id, state.savedEntryId)
+        assertEquals("Saved to Library ✓", state.message)
         assertTrue("preview entry must not upsert", upserts.isEmpty())
     }
 
@@ -144,6 +146,34 @@ class MediaDetailPreviewTest {
         assertTrue("already-saved row must not upsert again", upserts.isEmpty())
         assertTrue(model.state.value.isSaved)
         assertEquals(existing.id, model.state.value.savedEntryId)
+    }
+
+    @Test fun savedRouteProjectsPersistedRating() = runBlocking {
+        val model = createSaved(savedEntry(kitsuRating = 92.5))
+        withTimeout(5000) { model.state.first { it.title == "Frieren" } }
+
+        val state = model.state.value
+        assertEquals(92.5, state.averageRating!!, 0.001)
+        assertTrue("gate must stay closed when rating already persisted", kitsuWrites.isEmpty())
+    }
+
+    @Test fun savedRouteDerivesSavedMessage() = runBlocking {
+        val model = createSaved(savedEntry(kitsuRating = 92.5))
+        withTimeout(5000) { model.state.first { it.title == "Frieren" } }
+
+        val state = model.state.value
+        assertTrue(state.isSaved)
+        assertEquals("saved-row-id", state.savedEntryId)
+        assertEquals("Saved to Library ✓", state.message)
+    }
+
+    @Test fun ratingNullEntryIsRepairedAndPersisted() = runBlocking {
+        val model = createSaved(savedEntry(kitsuRating = null))
+        withTimeout(5000) { model.state.first { it.averageRating != null } }
+
+        val written = kitsuWrites.single()
+        assertEquals(87.3, written.kitsuRating!!, 0.001)
+        assertEquals(87.3, model.state.value.averageRating!!, 0.001)
     }
 
     @Test fun unitClickEnabledForAlreadySavedPreview() = runTest {
@@ -168,6 +198,80 @@ class MediaDetailPreviewTest {
         sourceKey = "/anime/frieren",
         title = "Frieren",
     )
+
+    private fun savedEntry(kitsuRating: Double?) = LibraryEntryEntity(
+        id = "saved-row-id",
+        mediaType = MediaType.ANIME,
+        sourceId = "test-anime",
+        sourceKey = "/anime/frieren",
+        title = "Frieren",
+        description = "A synopsis.",
+        kitsuId = "46474",
+        kitsuRating = kitsuRating,
+        artworkUrl = "https://img.test/poster.jpeg",
+    )
+
+    private fun createSaved(entry: LibraryEntryEntity): MediaDetailViewModel {
+        val entryFlow = MutableStateFlow<LibraryEntryEntity?>(entry)
+        val libraryDao = proxy<LibraryDao> { method, args ->
+            when (method) {
+                "observeById" -> entryFlow
+                "observeUnits" -> MutableStateFlow(emptyList<LibraryUnitEntity>())
+                "findBySourceIdentity" -> entryFlow.value
+                "belongsToOtherOwner" -> false
+                "upsert" -> { upserts += (args.first() as LibraryEntryEntity); Unit }
+                else -> error("Unexpected DAO call: $method")
+            }
+        }
+        val syncDao = proxy<SyncDao> { method, _ ->
+            when (method) {
+                "currentSession" -> sessionUserId?.let { SyncSessionEntity(userId = it) }
+                "enqueue" -> 1L
+                else -> error("Unexpected sync call: $method")
+            }
+        }
+        val context = android.content.ContextWrapper(null)
+        val library = LibraryRepository(libraryDao, syncDao, SyncScheduler(context), Dispatchers.Unconfined, Json, requestSync = {})
+        val source = object : MediaSource {
+            override val id = "test-anime"
+            override val name = "Test Anime"
+            override val mediaType = MediaType.ANIME
+            override val baseUrl = "https://example.test"
+            override suspend fun configuration() = emptyMap<String, String>()
+            override suspend fun updateConfiguration(values: Map<String, String>) = Unit
+            override suspend fun popular(page: Int) = SourcePage(emptyList(), false)
+            override suspend fun latest(page: Int) = popular(page)
+            override suspend fun search(page: Int, query: String, filters: FilterList) = popular(page)
+            override suspend fun details(entry: SourceItem) = entry
+            override suspend fun units(entry: SourceItem) = listOf(
+                SourceUnit(url = "ep-1", index = 1, title = "Ep 1"),
+                SourceUnit(url = "ep-2", index = 2, title = "Ep 2"),
+            )
+            override suspend fun streams(entry: SourceItem, unit: SourceUnit) = emptyList<StreamTarget>()
+        }
+        val registry = object : ExtensionSourceRegistry { override val sources = emptyList<LoadedSource>() }
+        val content = ExtensionContentRepository(
+            registry,
+            persistUnits = { _, units -> persistedUnits += units },
+            log = { _, _ -> },
+            builtInSources = listOf(source),
+        )
+        val identifier = KitsuIdentifier(
+            client = FakeKitsu(),
+            write = { enriched ->
+                kitsuWrites += enriched
+                // Simulate Room: the upsert re-emits via observeById.
+                entryFlow.value = enriched
+            },
+            log = { _, _ -> },
+        )
+        return MediaDetailViewModel(
+            entryId = entry.id,
+            libraryRepository = library,
+            identifier = identifier,
+            contentRepository = content,
+        ).also { vm = it }
+    }
 
     private fun createPreview(existing: LibraryEntryEntity? = null): MediaDetailViewModel {
         // The proxy receives args with the continuation appended; upsert records its entity.

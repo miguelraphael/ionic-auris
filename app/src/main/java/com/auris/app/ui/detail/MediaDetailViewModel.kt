@@ -160,6 +160,7 @@ class MediaDetailViewModel(
             _state.value = _state.value.copy(
                 isSaved = true,
                 savedEntryId = existing.id,
+                message = "Saved to Library ✓",
             )
         }
     }
@@ -300,7 +301,7 @@ class MediaDetailViewModel(
      * because Kitsu does not catalogue it.
      */
     private fun identifyIfNeeded(entry: LibraryEntryEntity) {
-        if (entry.kitsuId != null && !entry.description.isNullOrBlank()) {
+        if (entry.kitsuId != null && !entry.description.isNullOrBlank() && entry.kitsuRating != null) {
             identificationDone = true
             _state.value = _state.value.copy(isMetadataLoading = false)
             return
@@ -405,7 +406,7 @@ class MediaDetailViewModel(
         }
         currentEntry?.let { entry ->
             loadSeasons(entry)
-            if (entry.kitsuId == null && entry.mediaType != MediaType.MUSIC) {
+            if ((entry.kitsuId == null || entry.kitsuRating == null) && entry.mediaType != MediaType.MUSIC) {
                 identifyIfNeeded(entry)
             }
         }
@@ -445,6 +446,11 @@ class MediaDetailViewModel(
         isMetadataLoading = entry.kitsuId == null && !identificationDone,
         metadataUnavailable = metadataUnavailable,
         error = error,
+        // Saved route: the row exists by definition. Derive saved state from it so
+        // re-opening a saved title still reports saved (state-backed, survives re-entry).
+        isSaved = true,
+        savedEntryId = entry.id,
+        message = "Saved to Library ✓",
     )
 
     /** Room rows store the source-relative id; the screen needs the display shape. */
