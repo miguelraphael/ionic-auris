@@ -217,6 +217,136 @@ class AllAnimeSourceTest {
     }
 
     @Test
+    fun searchHandlesNullSeason() = runBlocking {
+        val json = """
+            {
+              "data": {
+                "shows": {
+                  "edges": [
+                    {
+                      "_id": "null_season_id",
+                      "name": "Unknown Season Show",
+                      "thumbnail": "https://img.allanime.day/nullseason.jpg",
+                      "season": null
+                    },
+                    {
+                      "_id": "normal_id",
+                      "name": "Normal Show",
+                      "thumbnail": "https://img.allanime.day/normal.jpg",
+                      "season": { "year": 2021 }
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+
+        val page = source.search(1, "One Piece", FilterList())
+        assertEquals(2, page.items.size)
+        val nullSeason = page.items.first { it.url == "null_season_id" }
+        assertEquals("Unknown Season Show", nullSeason.title)
+        assertNull(nullSeason.year)
+        val normal = page.items.first { it.url == "normal_id" }
+        assertEquals(2021, normal.year)
+    }
+
+    @Test
+    fun popularHandlesNullAiredStart() = runBlocking {
+        val json = """
+            {
+              "data": {
+                "queryPopular": {
+                  "recommendations": [
+                    {
+                      "anyCard": {
+                        "_id": "null_aired_id",
+                        "name": "Unknown Year Show",
+                        "thumbnail": "https://img.allanime.day/nullyear.jpg",
+                        "airedStart": null
+                      }
+                    },
+                    {
+                      "anyCard": {
+                        "_id": "normal_popular_id",
+                        "name": "Known Year Show",
+                        "thumbnail": "https://img.allanime.day/knownyear.jpg",
+                        "airedStart": { "year": 2023 }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+
+        val page = source.popular(1)
+        assertEquals(2, page.items.size)
+        val nullAired = page.items.first { it.url == "null_aired_id" }
+        assertEquals("Unknown Year Show", nullAired.title)
+        assertNull(nullAired.year)
+        val normal = page.items.first { it.url == "normal_popular_id" }
+        assertEquals(2023, normal.year)
+    }
+
+    @Test
+    fun detailsHandlesNullStudios() = runBlocking {
+        val json = """
+            {
+              "data": {
+                "show": {
+                  "_id": "naruto_id",
+                  "thumbnail": "https://img.allanime.day/large.jpg",
+                  "description": "A story about a ninja who wants to become Hokage.",
+                  "studios": null,
+                  "availableEpisodes": { "sub": 500 },
+                  "season": { "year": 2007 }
+                }
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+
+        val entry = SourceItem("naruto_id", "Naruto", null)
+        val detailed = source.details(entry)
+
+        assertEquals("A story about a ninja who wants to become Hokage.", detailed.author)
+        assertEquals(500, detailed.episodeCount)
+        assertEquals(2007, detailed.year)
+        assertEquals("https://img.allanime.day/large.jpg", detailed.thumbnailUrl)
+    }
+
+    @Test
+    fun unitsHandlesNullSubFallsBackToDub() = runBlocking {
+        val json = """
+            {
+              "data": {
+                "show": {
+                  "_id": "show_1",
+                  "availableEpisodesDetail": {
+                    "sub": null,
+                    "dub": ["2", "1"]
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+
+        val entry = SourceItem("show_1", "Test Show", null)
+        val units = source.units(entry)
+
+        assertEquals(2, units.size)
+        assertEquals("Episode 1", units[0].title)
+        assertEquals("Episode 2", units[1].title)
+    }
+
+    @Test
     fun decryptUrlSupportsMultiplePrefixes() {
         val original = "/apivtwo/clock?id=test123"
         val mask56 = 56

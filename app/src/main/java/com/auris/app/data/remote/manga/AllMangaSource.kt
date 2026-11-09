@@ -39,6 +39,12 @@ class AllMangaSource(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    private val JsonElement?.jsonObjectOrNull: JsonObject?
+        get() = this as? JsonObject
+
+    private val JsonElement?.jsonArrayOrNull: JsonArray?
+        get() = this as? JsonArray
+
     override suspend fun popular(page: Int): SourcePage {
         require(page > 0)
         return queryMangas(page, query = "")
@@ -72,17 +78,17 @@ class AllMangaSource(
         }.toString()
 
         val jsonStr = queryApi(variables, extensions)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
-        val edges = root["data"]?.jsonObject?.get("mangas")?.jsonObject?.get("edges")?.jsonArray
+        val root = json.parseToJsonElement(jsonStr).jsonObjectOrNull ?: return SourcePage(emptyList(), false)
+        val edges = root["data"].jsonObjectOrNull?.get("mangas").jsonObjectOrNull?.get("edges").jsonArrayOrNull
             ?: return SourcePage(emptyList(), false)
 
         val items = edges.mapNotNull { element ->
-            val manga = element.jsonObject
+            val manga = element.jsonObjectOrNull ?: return@mapNotNull null
             val id = manga["_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val title = manga["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val thumb = manga["thumbnail"]?.jsonPrimitive?.contentOrNull
-            val year = manga["airedStart"]?.jsonObject?.get("year")?.jsonPrimitive?.intOrNull
-                ?: manga["season"]?.jsonObject?.get("year")?.jsonPrimitive?.intOrNull
+            val year = manga["airedStart"].jsonObjectOrNull?.get("year")?.jsonPrimitive?.intOrNull
+                ?: manga["season"].jsonObjectOrNull?.get("year")?.jsonPrimitive?.intOrNull
                 ?: manga["year"]?.jsonPrimitive?.intOrNull
             SourceItem(
                 url = id,
@@ -114,9 +120,9 @@ class AllMangaSource(
             is JsonPrimitive -> elem.contentOrNull
             else -> null
         }
-        val chaptersDetail = manga["availableChaptersDetail"]?.jsonObject
-        val subCount = chaptersDetail?.get("sub")?.jsonArray?.size ?: 0
-        val rawCount = chaptersDetail?.get("raw")?.jsonArray?.size ?: 0
+        val chaptersDetail = manga["availableChaptersDetail"].jsonObjectOrNull
+        val subCount = chaptersDetail?.get("sub").jsonArrayOrNull?.size ?: 0
+        val rawCount = chaptersDetail?.get("raw").jsonArrayOrNull?.size ?: 0
         val epCount = subCount.takeIf { it > 0 } ?: rawCount.takeIf { it > 0 } ?: entry.episodeCount
 
         return entry.copy(
@@ -129,11 +135,11 @@ class AllMangaSource(
 
     override suspend fun units(entry: SourceItem): List<SourceUnit> {
         val manga = fetchMangaDetails(entry.url)
-        val chaptersDetail = manga["availableChaptersDetail"]?.jsonObject
+        val chaptersDetail = manga["availableChaptersDetail"].jsonObjectOrNull
             ?: throw IOException("No chapters detail available for manga: ${entry.url}")
 
-        val subList = chaptersDetail["sub"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
-        val rawList = chaptersDetail["raw"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        val subList = chaptersDetail["sub"].jsonArrayOrNull?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        val rawList = chaptersDetail["raw"].jsonArrayOrNull?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
         val chapterStrings = if (subList.isNotEmpty()) subList else rawList
 
         if (chapterStrings.isEmpty()) {
@@ -172,17 +178,18 @@ class AllMangaSource(
         }.toString()
 
         val jsonStr = queryApi(variables, extensions)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
-        val edges = root["data"]?.jsonObject?.get("chapterPages")?.jsonObject?.get("edges")?.jsonArray
+        val root = json.parseToJsonElement(jsonStr).jsonObjectOrNull
+            ?: throw IOException("No chapter pages found for chapter $chapterString")
+        val edges = root["data"].jsonObjectOrNull?.get("chapterPages").jsonObjectOrNull?.get("edges").jsonArrayOrNull
             ?: throw IOException("No chapter pages found for chapter $chapterString")
         if (edges.isEmpty()) {
             throw IOException("No chapter pages found for chapter $chapterString")
         }
-        val pictureUrls = edges[0].jsonObject["pictureUrls"]?.jsonArray
+        val pictureUrls = edges.firstOrNull()?.jsonObjectOrNull?.get("pictureUrls").jsonArrayOrNull
             ?: throw IOException("No pictureUrls found for chapter $chapterString")
 
         val pages = pictureUrls.mapIndexedNotNull { index, element ->
-            val obj = element.jsonObject
+            val obj = element.jsonObjectOrNull ?: return@mapIndexedNotNull null
             val num = obj["num"]?.jsonPrimitive?.intOrNull ?: index
             val rawUrl = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
             val imageUrl = formatImageUrl(rawUrl) ?: return@mapIndexedNotNull null
@@ -206,8 +213,9 @@ class AllMangaSource(
             put("_id", id)
         }
         val jsonStr = postApi(query, variables)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
-        return root["data"]?.jsonObject?.get("manga")?.jsonObject
+        val root = json.parseToJsonElement(jsonStr).jsonObjectOrNull
+            ?: throw IOException("AllManga details not found: $id")
+        return root["data"].jsonObjectOrNull?.get("manga").jsonObjectOrNull
             ?: throw IOException("AllManga details not found: $id")
     }
 

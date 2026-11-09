@@ -37,6 +37,12 @@ class AllAnimeSource(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    private val JsonElement?.jsonObjectOrNull: JsonObject?
+        get() = this as? JsonObject
+
+    private val JsonElement?.jsonArrayOrNull: JsonArray?
+        get() = this as? JsonArray
+
     override suspend fun popular(page: Int): SourcePage {
         require(page > 0)
         val variables = buildJsonObject {
@@ -53,16 +59,16 @@ class AllAnimeSource(
         }.toString()
 
         val jsonStr = queryApi(variables, extensions)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
-        val recs = root["data"]?.jsonObject?.get("queryPopular")?.jsonObject?.get("recommendations")?.jsonArray
+        val root = json.parseToJsonElement(jsonStr).jsonObjectOrNull ?: return SourcePage(emptyList(), false)
+        val recs = root["data"].jsonObjectOrNull?.get("queryPopular").jsonObjectOrNull?.get("recommendations").jsonArrayOrNull
             ?: return SourcePage(emptyList(), false)
 
         val items = recs.mapNotNull { element ->
-            val card = element.jsonObject["anyCard"]?.jsonObject ?: return@mapNotNull null
+            val card = element.jsonObjectOrNull?.get("anyCard").jsonObjectOrNull ?: return@mapNotNull null
             val id = card["_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val title = card["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val thumb = card["thumbnail"]?.jsonPrimitive?.contentOrNull
-            val year = card["airedStart"]?.jsonObject?.get("year")?.jsonPrimitive?.intOrNull
+            val year = card["airedStart"].jsonObjectOrNull?.get("year")?.jsonPrimitive?.intOrNull
             SourceItem(
                 url = id,
                 title = title,
@@ -110,16 +116,16 @@ class AllAnimeSource(
         }.toString()
 
         val jsonStr = queryApi(variables, extensions)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
-        val edges = root["data"]?.jsonObject?.get("shows")?.jsonObject?.get("edges")?.jsonArray
+        val root = json.parseToJsonElement(jsonStr).jsonObjectOrNull ?: return SourcePage(emptyList(), false)
+        val edges = root["data"].jsonObjectOrNull?.get("shows").jsonObjectOrNull?.get("edges").jsonArrayOrNull
             ?: return SourcePage(emptyList(), false)
 
         val items = edges.mapNotNull { element ->
-            val show = element.jsonObject
+            val show = element.jsonObjectOrNull ?: return@mapNotNull null
             val id = show["_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val title = show["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val thumb = show["thumbnail"]?.jsonPrimitive?.contentOrNull
-            val year = show["season"]?.jsonObject?.get("year")?.jsonPrimitive?.intOrNull
+            val year = show["season"].jsonObjectOrNull?.get("year")?.jsonPrimitive?.intOrNull
             SourceItem(
                 url = id,
                 title = title,
@@ -144,17 +150,17 @@ class AllAnimeSource(
         }.toString()
 
         val jsonStr = queryApi(variables, extensions)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
-        val show = root["data"]?.jsonObject?.get("show")?.jsonObject ?: return entry
+        val root = json.parseToJsonElement(jsonStr).jsonObjectOrNull ?: return entry
+        val show = root["data"].jsonObjectOrNull?.get("show").jsonObjectOrNull ?: return entry
 
         val thumb = show["thumbnail"]?.jsonPrimitive?.contentOrNull ?: entry.thumbnailUrl
         val desc = show["description"]?.jsonPrimitive?.contentOrNull?.let {
             Jsoup.parseBodyFragment(it).text()
         }
-        val author = show["studios"]?.jsonArray?.firstOrNull()?.jsonPrimitive?.contentOrNull
-        val epCount = show["availableEpisodes"]?.jsonObject?.get("sub")?.jsonPrimitive?.intOrNull
-            ?: show["availableEpisodes"]?.jsonObject?.get("dub")?.jsonPrimitive?.intOrNull
-        val year = show["season"]?.jsonObject?.get("year")?.jsonPrimitive?.intOrNull ?: entry.year
+        val author = show["studios"].jsonArrayOrNull?.firstOrNull()?.jsonPrimitive?.contentOrNull
+        val epCount = show["availableEpisodes"].jsonObjectOrNull?.get("sub")?.jsonPrimitive?.intOrNull
+            ?: show["availableEpisodes"].jsonObjectOrNull?.get("dub")?.jsonPrimitive?.intOrNull
+        val year = show["season"].jsonObjectOrNull?.get("year")?.jsonPrimitive?.intOrNull ?: entry.year
 
         return entry.copy(
             thumbnailUrl = thumb,
@@ -176,13 +182,14 @@ class AllAnimeSource(
         }.toString()
 
         val jsonStr = queryApi(variables, extensions)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
-        val show = root["data"]?.jsonObject?.get("show")?.jsonObject
+        val root = json.parseToJsonElement(jsonStr).jsonObjectOrNull
+            ?: throw IOException("AllAnime show not found: ${entry.url}")
+        val show = root["data"].jsonObjectOrNull?.get("show").jsonObjectOrNull
             ?: throw IOException("AllAnime show not found: ${entry.url}")
 
-        val epsDetail = show["availableEpisodesDetail"]?.jsonObject
-        val subList = epsDetail?.get("sub")?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
-        val dubList = epsDetail?.get("dub")?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        val epsDetail = show["availableEpisodesDetail"].jsonObjectOrNull
+        val subList = epsDetail?.get("sub").jsonArrayOrNull?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        val dubList = epsDetail?.get("dub").jsonArrayOrNull?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
         val epStrings = if (subList.isNotEmpty()) subList else dubList
 
         if (epStrings.isEmpty()) {
@@ -220,14 +227,14 @@ class AllAnimeSource(
         }.toString()
 
         val jsonStr = queryApi(variables, extensions)
-        val root = json.parseToJsonElement(jsonStr).jsonObject
-        val sourceUrls = root["data"]?.jsonObject?.get("episode")?.jsonObject?.get("sourceUrls")?.jsonArray
+        val root = json.parseToJsonElement(jsonStr).jsonObjectOrNull ?: return emptyList()
+        val sourceUrls = root["data"].jsonObjectOrNull?.get("episode").jsonObjectOrNull?.get("sourceUrls").jsonArrayOrNull
             ?: return emptyList()
 
         val targets = mutableListOf<StreamTarget>()
 
         for (item in sourceUrls) {
-            val obj = item.jsonObject
+            val obj = item.jsonObjectOrNull ?: continue
             val rawUrl = obj["sourceUrl"]?.jsonPrimitive?.contentOrNull ?: continue
             val sourceName = obj["sourceName"]?.jsonPrimitive?.contentOrNull ?: "Server"
             val decryptedUrl = decryptUrl(rawUrl)
@@ -278,11 +285,11 @@ class AllAnimeSource(
                 client.newCall(request).execute().use { resp ->
                     if (!resp.isSuccessful) return@use emptyList()
                     val body = resp.body?.string() ?: return@use emptyList()
-                    val root = json.parseToJsonElement(body).jsonObject
-                    val links = root["links"]?.jsonArray ?: return@use emptyList()
+                    val root = json.parseToJsonElement(body).jsonObjectOrNull ?: return@use emptyList()
+                    val links = root["links"].jsonArrayOrNull ?: return@use emptyList()
                     val list = mutableListOf<StreamTarget>()
                     for (item in links) {
-                        val linkObj = item.jsonObject
+                        val linkObj = item.jsonObjectOrNull ?: continue
                         val streamUrl = linkObj["link"]?.jsonPrimitive?.contentOrNull ?: continue
                         val isHls = linkObj["hls"]?.jsonPrimitive?.booleanOrNull ?: streamUrl.contains(".m3u8")
                         val res = linkObj["resolutionStr"]?.jsonPrimitive?.contentOrNull
@@ -294,7 +301,7 @@ class AllAnimeSource(
                             "AllAnime · $sourceName"
                         }
                         val headers = mutableMapOf<String, String>()
-                        val rawHeaders = linkObj["headers"]?.jsonObject
+                        val rawHeaders = linkObj["headers"].jsonObjectOrNull
                         if (rawHeaders != null) {
                             for ((k, v) in rawHeaders) {
                                 v.jsonPrimitive.contentOrNull?.let { headers[k] = it }

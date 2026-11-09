@@ -291,4 +291,129 @@ class AllMangaSourceTest {
         assertEquals("https://ytimgf.youtube-anime.com/ch1/p2.jpg", page2.url)
         assertEquals("https://ytimgf.youtube-anime.com/ch1/p2.jpg", page2.imageUrl)
     }
+
+    @Test
+    fun searchHandlesNullAiredStartAndSeason() = runBlocking {
+        val json = """
+            {
+              "data": {
+                "mangas": {
+                  "edges": [
+                    {
+                      "_id": "null_year_id",
+                      "name": "Unknown Year Manga",
+                      "thumbnail": "mcovers/unknown.jpg",
+                      "airedStart": null,
+                      "season": null
+                    },
+                    {
+                      "_id": "normal_manga_id",
+                      "name": "Normal Manga",
+                      "thumbnail": "mcovers/normal.jpg",
+                      "airedStart": { "year": 2010 }
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+
+        val page = source.search(1, "manga", FilterList())
+        assertEquals(2, page.items.size)
+        val nullYear = page.items.first { it.url == "null_year_id" }
+        assertEquals("Unknown Year Manga", nullYear.title)
+        assertNull(nullYear.year)
+        val normal = page.items.first { it.url == "normal_manga_id" }
+        assertEquals(2010, normal.year)
+    }
+
+    @Test
+    fun detailsHandlesNullChaptersDetail() = runBlocking {
+        val json = """
+            {
+              "data": {
+                "manga": {
+                  "_id": "manga_123",
+                  "name": "Berserk",
+                  "thumbnail": "mcovers/berserk.jpg",
+                  "description": "Guts is a wanderer fighting against his fate.",
+                  "authors": ["Kentarou Miura"],
+                  "status": "Releasing",
+                  "availableChaptersDetail": null
+                }
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+
+        val entry = SourceItem("manga_123", "Berserk", null, episodeCount = 7)
+        val detailed = source.details(entry)
+
+        assertEquals("Berserk", detailed.title)
+        assertEquals("Kentarou Miura", detailed.author)
+        assertEquals(7, detailed.episodeCount)
+    }
+
+    @Test
+    fun unitsHandlesNullSubFallsBackToRaw() = runBlocking {
+        val json = """
+            {
+              "data": {
+                "manga": {
+                  "_id": "manga_123",
+                  "name": "Chainsaw Man",
+                  "availableChaptersDetail": {
+                    "sub": null,
+                    "raw": ["2", "1"]
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+
+        val entry = SourceItem("manga_123", "Chainsaw Man", null)
+        val units = source.units(entry)
+
+        assertEquals(2, units.size)
+        assertEquals("Chapter 1", units[0].title)
+        assertEquals("Chapter 2", units[1].title)
+    }
+
+    @Test
+    fun pagesSkipsNullPictureUrlElements() = runBlocking {
+        val json = """
+            {
+              "data": {
+                "chapterPages": {
+                  "edges": [
+                    {
+                      "pictureUrls": [
+                        null,
+                        {
+                          "num": 1,
+                          "url": "mcovers/ch1/p1.jpg"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(json))
+
+        val entry = SourceItem("manga_123", "One Piece", null)
+        val unit = SourceUnit("manga_123<&sep>1", 1, "Chapter 1")
+        val pages = source.pages(entry, unit)
+
+        assertEquals(1, pages.size)
+        assertEquals(1, pages[0].index)
+        assertEquals("https://wp.youtube-anime.com/aln.youtube-anime.com/mcovers/ch1/p1.jpg", pages[0].url)
+    }
 }
