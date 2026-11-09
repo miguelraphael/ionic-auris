@@ -45,7 +45,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.unit.Dp
 import com.auris.app.ui.navigation.TopLevelDestination
+import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisOnSurfaceVariant
+import com.auris.app.ui.theme.AurisOutline
 import com.auris.app.ui.theme.AurisSurfaceOpaque
 import com.auris.app.ui.theme.NavPillShape
 
@@ -98,7 +100,7 @@ fun FloatingNavigationBar(
                 .background(AurisSurfaceOpaque)
                 .border(
                     width = 1.dp,
-                    color = AurisOnSurfaceVariant.copy(alpha = 0.18f),
+                    color = AurisOutline,
                     shape = NavPillShape,
                 )
                 .selectableGroup(),
@@ -126,7 +128,7 @@ private fun FloatingNavItem(
 ) {
     val label = stringResource(destination.labelRes)
     val tint by animateColorAsState(
-        targetValue = if (selected) com.auris.app.ui.theme.AurisAccent else AurisOnSurfaceVariant,
+        targetValue = if (selected) AurisAccent else AurisOnSurfaceVariant,
         label = "navItemTint",
     )
     // The active icon is slightly larger — the screenshot's active glyph reads heavier.
@@ -168,7 +170,7 @@ private fun FloatingNavItem(
             Box(
                 modifier = Modifier.size(width = 40.dp, height = 32.dp)
                     .clip(NavPillShape)
-                    .background(if (selected) AurisOnSurfaceVariant.copy(alpha = 0.15f) else Color.Transparent),
+                    .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
