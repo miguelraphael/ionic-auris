@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
                         // The persisted repository, shared with Settings so a signing key
                         // entered there is the same value installs are checked against.
                         extensionRepo = container.extensionRepoStore.current(),
+                        appUpdateChecker = container.appUpdateChecker,
                     )
                 }
             }

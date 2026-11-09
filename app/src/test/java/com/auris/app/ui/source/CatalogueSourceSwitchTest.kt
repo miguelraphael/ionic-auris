@@ -62,12 +62,38 @@ class CatalogueSourceSwitchTest {
         } finally { gate.complete(Unit) }
     }
 
-    private fun create(sources: List<MediaSource>): CatalogueViewModel {
+    @Test fun initializesWithBareSourceKeyAndAllowsSwitching() = runBlocking {
+        val weebCentral = TestSource("weebcentral")
+        val mangadex = TestSource("mangadex")
+        val asura = TestSource("asurascans")
+        val allmanga = TestSource("allmanga")
+        val model = create(listOf(weebCentral, mangadex, asura, allmanga), initialKey = "weebcentral")
+        val state = await(model) { !it.isLoading && it.isSourceAvailable }
+        assertEquals("builtin-weebcentral", state.sourceKey)
+        assertEquals("weebcentral", state.sourceName)
+
+        // Switching to mangadex works
+        model.selectSource("builtin-mangadex")
+        val stateDex = await(model) { !it.isLoading && it.sourceKey == "builtin-mangadex" }
+        assertEquals("mangadex", stateDex.sourceName)
+
+        // Switching to asura works
+        model.selectSource("builtin-asurascans")
+        val stateAsura = await(model) { !it.isLoading && it.sourceKey == "builtin-asurascans" }
+        assertEquals("asurascans", stateAsura.sourceName)
+
+        // Switching to allmanga works
+        model.selectSource("builtin-allmanga")
+        val stateAll = await(model) { !it.isLoading && it.sourceKey == "builtin-allmanga" }
+        assertEquals("allmanga", stateAll.sourceName)
+    }
+
+    private fun create(sources: List<MediaSource>, initialKey: String = "builtin-a"): CatalogueViewModel {
         val registry = object : ExtensionSourceRegistry { override val sources = emptyList<LoadedSource>() }
         val library = LibraryRepository(proxy<LibraryDao>(), proxy<SyncDao>(),
             SyncScheduler(android.content.ContextWrapper(null)), Dispatchers.IO, Json)
         val content = ExtensionContentRepository(registry, { _, _ -> }, builtInSources = sources)
-        return CatalogueViewModel(registry, "builtin-a", MediaType.ANIME, content, library).also { vm = it }
+        return CatalogueViewModel(registry, initialKey, MediaType.MANGA, content, library).also { vm = it }
     }
 
     private suspend fun await(model: CatalogueViewModel, predicate: (CatalogueUiState) -> Boolean) =
@@ -78,7 +104,7 @@ class CatalogueSourceSwitchTest {
 
     private open class TestSource(override val id: String) : MediaSource {
         override val name = id
-        override val mediaType = MediaType.ANIME
+        override val mediaType = MediaType.MANGA
         override val baseUrl = "https://example.test"
         override suspend fun configuration() = emptyMap<String, String>()
         override suspend fun updateConfiguration(values: Map<String, String>) = Unit

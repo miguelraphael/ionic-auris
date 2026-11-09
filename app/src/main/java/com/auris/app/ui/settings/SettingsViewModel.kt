@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.auris.app.data.local.entity.ExtensionEntity
+import com.auris.app.data.remote.updater.AppUpdateChecker
+import com.auris.app.data.remote.updater.AppUpdateResult
 import com.auris.app.data.repository.AuthRepository
 import com.auris.app.data.repository.ExtensionRepoStore
 import com.auris.app.data.repository.ExtensionRepository
@@ -25,8 +27,8 @@ import kotlinx.coroutines.launch
  * app knows:
  * - [Verified] means the repository publishes a key and the APK matches it. Strong.
  * - [Pinned] means the repository published no key, so the first fingerprint seen was recorded.
-     That protects against a later swap but says nothing about the repo's honesty at install
-     time, so it must not be presented as verified.
+ *   That protects against a later swap but says nothing about the repo's honesty at install
+ *   time, so it must not be presented as verified.
  * - [Unrecorded] means the extension predates signature checking. Nothing is claimed.
  */
 enum class ExtensionTrust {
@@ -44,6 +46,18 @@ data class ExtensionSecurity(
     val fingerprintShort: String?,
 )
 
+sealed interface UpdateCheckStatus {
+    data object Idle : UpdateCheckStatus
+    data object Checking : UpdateCheckStatus
+    data class UpdateAvailable(
+        val version: String,
+        val htmlUrl: String,
+        val bodySnippet: String? = null,
+    ) : UpdateCheckStatus
+    data class UpToDate(val version: String) : UpdateCheckStatus
+    data class Error(val message: String) : UpdateCheckStatus
+}
+
 data class SettingsUiState(
     val repoUrl: String = ExtensionRepo.DEFAULT.baseUrl,
     val repoName: String = ExtensionRepo.DEFAULT.name,
@@ -59,6 +73,7 @@ data class SettingsUiState(
     val message: String? = null,
     /** Guards the irreversible delete against double-taps. */
     val isDeletingAccount: Boolean = false,
+    val updateStatus: UpdateCheckStatus = UpdateCheckStatus.Idle,
 ) {
     /** True when nothing at all has been pinned yet, so the screen can explain rather than list. */
     val isEmpty: Boolean get() = extensions.isEmpty()
@@ -76,6 +91,7 @@ class SettingsViewModel(
     private val extensionRepository: ExtensionRepository,
     private val repoStore: ExtensionRepoStore,
     private val authRepository: AuthRepository,
+    private val appUpdateChecker: AppUpdateChecker? = null,
 ) : ViewModel() {
 
     private val message = MutableStateFlow<String?>(null)
@@ -107,6 +123,8 @@ class SettingsViewModel(
                 _state.value = _state.value.copy(accountEmail = session?.email)
             }
             .launchIn(viewModelScope)
+
+        checkForUpdates(force = false)
     }
 
     private fun publish(installed: List<ExtensionEntity>) {
@@ -249,7 +267,8 @@ class SettingsViewModel(
     }
 
     /** Forgets the custom repository and returns to the built-in default. */
-    fun resetRepo() {        repoStore.reset()
+    fun resetRepo() {
+        repoStore.reset()
         _state.value = _state.value.copy(
             repoEditing = false,
             message = "Repository reset to the default.",
@@ -259,6 +278,45 @@ class SettingsViewModel(
     fun consumeMessage() {
         message.value = null
         _state.value = _state.value.copy(message = null)
+    }
+
+    /**
+     * Checks for updates against GitHub releases.
+     *
+     * Manual checks (force = true) bypass the 24-hour rate limit.
+     */
+    fun checkForUpdates(force: Boolean = true) {
+        val checker = appUpdateChecker ?: return
+        if (_state.value.updateStatus is UpdateCheckStatus.Checking) return
+        _state.value = _state.value.copy(updateStatus = UpdateCheckStatus.Checking)
+        viewModelScope.launch {
+            when (val result = checker.checkForUpdates(force = force)) {
+                is AppUpdateResult.Available -> {
+                    _state.value = _state.value.copy(
+                        updateStatus = UpdateCheckStatus.UpdateAvailable(
+                            version = result.version,
+                            htmlUrl = result.htmlUrl,
+                            bodySnippet = result.bodySnippet,
+                        ),
+                    )
+                }
+                is AppUpdateResult.UpToDate -> {
+                    _state.value = _state.value.copy(
+                        updateStatus = UpdateCheckStatus.UpToDate(result.version),
+                    )
+                }
+                is AppUpdateResult.Throttled -> {
+                    _state.value = _state.value.copy(
+                        updateStatus = UpdateCheckStatus.Idle,
+                    )
+                }
+                is AppUpdateResult.Error -> {
+                    _state.value = _state.value.copy(
+                        updateStatus = UpdateCheckStatus.Error(result.message),
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -299,10 +357,11 @@ class SettingsViewModel(
         private val extensionRepository: ExtensionRepository,
         private val repoStore: ExtensionRepoStore,
         private val authRepository: AuthRepository,
+        private val appUpdateChecker: AppUpdateChecker? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SettingsViewModel(extensionRepository, repoStore, authRepository) as T
+            SettingsViewModel(extensionRepository, repoStore, authRepository, appUpdateChecker) as T
     }
 
     companion object {
@@ -310,8 +369,9 @@ class SettingsViewModel(
             extensionRepository: ExtensionRepository,
             repoStore: ExtensionRepoStore,
             authRepository: AuthRepository,
+            appUpdateChecker: AppUpdateChecker? = null,
         ): ViewModelProvider.Factory =
-            Factory(extensionRepository, repoStore, authRepository)
+            Factory(extensionRepository, repoStore, authRepository, appUpdateChecker)
     }
 }
 

@@ -3,6 +3,7 @@ package com.auris.app.ui.settings
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -40,11 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.auris.app.BuildConfig
 import com.auris.app.ui.components.PermissionDeniedCard
 import com.auris.app.ui.theme.AurisAccent
 import com.auris.app.ui.theme.AurisBackdrop
@@ -80,7 +83,10 @@ fun SettingsScreen(
     onNsfwVisibleChange: (Boolean) -> Unit = {},
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
+    onCheckForUpdates: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+
     AurisBackdrop(modifier = modifier) {
         LazyColumn(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 130.dp),
@@ -171,6 +177,70 @@ fun SettingsScreen(
                     title = "Logs and app state",
                     subtitle = "Export redacted diagnostics",
                     onClick = onOpenDiagnostics,
+                )
+            }
+
+            item { SectionTitle("About Auris") }
+
+            item {
+                SettingRow(
+                    title = "App version",
+                    subtitle = "v${BuildConfig.VERSION_NAME}",
+                    onClick = null,
+                )
+            }
+
+            when (val status = state.updateStatus) {
+                is UpdateCheckStatus.Checking -> {
+                    item {
+                        SettingRow(
+                            title = "Checking for updates…",
+                            subtitle = "Connecting to GitHub",
+                            onClick = null,
+                        )
+                    }
+                }
+                is UpdateCheckStatus.UpdateAvailable -> {
+                    item {
+                        UpdateAvailableCard(
+                            status = status,
+                            onViewRelease = {
+                                runCatching {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(status.htmlUrl)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            },
+                        )
+                    }
+                }
+                is UpdateCheckStatus.UpToDate -> {
+                    item {
+                        SettingRow(
+                            title = "Auris is up to date (v${status.version})",
+                            subtitle = "You are on the latest version",
+                            onClick = null,
+                        )
+                    }
+                }
+                is UpdateCheckStatus.Error -> {
+                    item {
+                        InfoBanner(
+                            text = "Could not check for updates: ${status.message}",
+                            isWarning = true,
+                        )
+                    }
+                }
+                is UpdateCheckStatus.Idle -> {
+                    // Non-intrusive: no extra banner
+                }
+            }
+
+            item {
+                BrandButton(
+                    text = if (state.updateStatus is UpdateCheckStatus.Checking) "Checking…" else "Check for updates",
+                    onClick = onCheckForUpdates,
                 )
             }
         }
@@ -479,7 +549,54 @@ private fun ExtensionSecurityRow(extension: ExtensionSecurity) {
     }
 }
 
-// ---- Music -------------------------------------------------------------------
+// ---- Updater -----------------------------------------------------------------
+
+@Composable
+private fun UpdateAvailableCard(
+    status: UpdateCheckStatus.UpdateAvailable,
+    onViewRelease: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(AurisRadii.artworkLarge),
+        color = AurisSurface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = AurisAccent,
+                    modifier = Modifier.size(20.dp),
+                )
+                Text(
+                    text = "Update available: ${status.version}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AurisOnSurface,
+                )
+            }
+            if (!status.bodySnippet.isNullOrBlank()) {
+                Text(
+                    text = status.bodySnippet,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AurisOnSurfaceVariant,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            BrandButton(
+                text = "View Release on GitHub",
+                onClick = onViewRelease,
+            )
+        }
+    }
+}
 
 // ---- Shared pieces -----------------------------------------------------------
 

@@ -116,6 +116,7 @@ fun AurisNavHost(
     /** Process-scoped so the player survives navigation between episodes. */
     episodePlayer: EpisodePlayer? = null,
     appStateCollector: com.auris.app.diagnostics.AppStateCollector? = null,
+    appUpdateChecker: com.auris.app.data.remote.updater.AppUpdateChecker? = null,
     /**
      * The music surface: catalogue and audio, behind one seam.
      *
@@ -130,7 +131,9 @@ fun AurisNavHost(
     }
     fun selectedSource(type: MediaType, default: String): String =
         sourcePreferences.getString(type.name, default)?.takeIf { key ->
-            extensionContentRepository.builtInSources.any { it.mediaType == type && "builtin-${it.id}" == key }
+            extensionContentRepository.builtInSources.any {
+                it.mediaType == type && ("builtin-${it.id}" == key || it.id == key)
+            }
         } ?: default
 
     // One ViewModel for both the Music home and the browse/search screen, hosted by the
@@ -284,7 +287,7 @@ fun AurisNavHost(
                 key = "manga-catalogue",
                 factory = CatalogueViewModel.factory(
                     extensionLoader = extensionLoader,
-                    sourceKey = selectedSource(MediaType.MANGA, com.auris.app.data.remote.manga.MangaDexSource.KEY),
+                    sourceKey = selectedSource(MediaType.MANGA, com.auris.app.data.remote.manga.WeebCentralSource.KEY),
                     mediaType = MediaType.MANGA,
                     extensionContentRepository = extensionContentRepository,
                     libraryRepository = libraryRepository,
@@ -820,12 +823,16 @@ fun AurisNavHost(
         // Settings. Diagnostics moved under it: a diagnostics screen reached from an
         // extensions button was a placeholder for a settings screen that did not exist yet.
         composable(Routes.SETTINGS) {
+            val updateChecker = appUpdateChecker ?: remember {
+                com.auris.app.data.remote.updater.AppUpdateChecker(navController.context.applicationContext)
+            }
             val settingsViewModel: SettingsViewModel = viewModel(
                 key = "settings",
                 factory = SettingsViewModel.factory(
                     extensionRepository = extensionRepository,
                     repoStore = extensionRepoStore,
                     authRepository = authRepository,
+                    appUpdateChecker = updateChecker,
                 ),
             )
             val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
@@ -833,7 +840,7 @@ fun AurisNavHost(
             SettingsScreen(
                 state = settingsState,
                 onRepoUrlChange = settingsViewModel::setRepoUrl,
-                onBeginRepoEdit = settingsViewModel::cancelRepoEdit,
+                onBeginRepoEdit = settingsViewModel::beginRepoEdit,
                 onCancelRepoEdit = settingsViewModel::cancelRepoEdit,
                 onFingerprintChange = settingsViewModel::setSigningKeyFingerprint,
                 onResetRepo = settingsViewModel::resetRepo,
@@ -841,6 +848,7 @@ fun AurisNavHost(
                 onOpenDiagnostics = { navController.navigate(Routes.diagnostics) },
                 onSignOut = settingsViewModel::signOut,
                 onDeleteAccount = settingsViewModel::deleteAccount,
+                onCheckForUpdates = { settingsViewModel.checkForUpdates(force = true) },
             )
         }
 

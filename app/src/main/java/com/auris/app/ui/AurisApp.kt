@@ -98,6 +98,7 @@ fun AurisApp(
     authRepository: com.auris.app.data.repository.AuthRepository,
     /** Process-scoped connectivity; absent in previews, where the app is treated as online. */
     networkMonitor: com.auris.app.core.network.NetworkMonitor? = null,
+    appUpdateChecker: com.auris.app.data.remote.updater.AppUpdateChecker? = null,
     modifier: Modifier = Modifier,
 ) {
     // Gate readiness first: the initial null is "not loaded yet", which is
@@ -200,6 +201,7 @@ fun AurisApp(
                     authRepository = authRepository,
                     extensionsViewModelFactory = extensionsViewModelFactory,
                     extensionRepo = extensionRepo,
+                    appUpdateChecker = appUpdateChecker,
                     modifier = Modifier.fillMaxSize(),
                 )
 

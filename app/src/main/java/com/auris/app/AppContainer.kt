@@ -96,6 +96,7 @@ interface AppContainer {
     val supabaseLibraryDataSource: SupabaseLibraryDataSource
     val supabaseClient: SupabaseClient
     val json: Json
+    val appUpdateChecker: com.auris.app.data.remote.updater.AppUpdateChecker
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -354,6 +355,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             remote = supabaseLibraryDataSource,
             appScope = applicationScope,
             ioDispatcher = ioDispatcher,
+        )
+    }
+
+    override val appUpdateChecker: com.auris.app.data.remote.updater.AppUpdateChecker by lazy {
+        com.auris.app.data.remote.updater.AppUpdateChecker(
+            context = context.applicationContext,
+            httpClient = httpClient,
         )
     }
 }

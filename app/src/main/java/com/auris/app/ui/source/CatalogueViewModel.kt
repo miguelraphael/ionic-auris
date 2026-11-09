@@ -42,11 +42,19 @@ class CatalogueViewModel(
     private val libraryRepository: LibraryRepository,
 ) : ViewModel() {
 
+    private val initialKey = extensionContentRepository.builtInSources.firstOrNull {
+        it.id == sourceKey || "builtin-${it.id}" == sourceKey
+    }?.let { "builtin-${it.id}" } ?: sourceKey
+
     private val _state = MutableStateFlow(
-        CatalogueUiState(sourceKey = sourceKey, sourceLanguage = "", mediaType = mediaType,
+        CatalogueUiState(
+            sourceKey = initialKey,
+            sourceLanguage = "",
+            mediaType = mediaType,
             sources = extensionContentRepository.builtInSources.filter { it.mediaType == mediaType }.map {
                 BrowsableSource("builtin-${it.id}", it.name, "", "builtin", it.mediaType)
-            }),
+            },
+        ),
     )
     val state: StateFlow<CatalogueUiState> = _state.asStateFlow()
 
@@ -54,13 +62,15 @@ class CatalogueViewModel(
     private var loadJob: Job? = null
 
     init {
+        sourceKey = initialKey
         resolveAndLoad()
     }
 
     private fun resolveAndLoad() {
         viewModelScope.launch {
-            val resolved = extensionContentRepository.builtInSources.firstOrNull { "builtin-${it.id}" == sourceKey }
-                ?: SourceResolver.resolve(extensionLoader, sourceKey)
+            val resolved = extensionContentRepository.builtInSources.firstOrNull {
+                "builtin-${it.id}" == sourceKey || it.id == sourceKey
+            } ?: SourceResolver.resolve(extensionLoader, sourceKey)
 
             if (resolved == null) {
                 _state.value = _state.value.copy(
@@ -93,13 +103,21 @@ class CatalogueViewModel(
     }
 
     fun selectSource(key: String) {
-        if (key == sourceKey || _state.value.sources.none { it.key == key }) return
+        val targetKey = extensionContentRepository.builtInSources.firstOrNull {
+            it.id == key || "builtin-${it.id}" == key
+        }?.let { "builtin-${it.id}" } ?: key
+        if (targetKey == sourceKey || _state.value.sources.none { it.key == targetKey }) return
         loadJob?.cancel()
-        sourceKey = key
+        sourceKey = targetKey
         source = null
         currentPage = 1
-        _state.value = _state.value.copy(sourceKey = key, items = emptyList(),
-            hasNextPage = false, isLoading = true, error = null)
+        _state.value = _state.value.copy(
+            sourceKey = targetKey,
+            items = emptyList(),
+            hasNextPage = false,
+            isLoading = true,
+            error = null,
+        )
         resolveAndLoad()
     }
 
