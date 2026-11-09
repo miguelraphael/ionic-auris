@@ -49,13 +49,14 @@ internal fun MusicArtistPage(
                     item {
                         Box {
                             MediaArtwork(artwork, null, Modifier.fillMaxWidth().height(220.dp))
-                            FilledTonalIconButton(onClick = onBack, modifier = Modifier.padding(top = statusTop + 8.dp, start = 16.dp)) {
+                            FilledTonalIconButton(onClick = onBack, modifier = Modifier.padding(top = statusTop + 8.dp, start = 16.dp).size(48.dp)) {
                                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back")
                             }
                         }
                         Column(Modifier.padding(20.dp)) {
-                            Text(name, style = MaterialTheme.typography.headlineLarge)
+                            Text(name, style = MaterialTheme.typography.headlineLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text("Artist", color = AurisOnSurfaceVariant)
+                            Button(onClick = onPlayAll, enabled = !loading && rows.any { it.kind == MusicRow.Kind.TRACK }, shape = ArtworkShapeSmall, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(48.dp)) { Text("Play songs") }
                             if (!bio.isNullOrBlank()) {
                                 var expanded by remember { mutableStateOf(false) }
                                 Surface(
@@ -63,7 +64,7 @@ internal fun MusicArtistPage(
                                     color = AurisSurface,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(top = 12.dp)
+                                        .padding(top = 20.dp)
                                         .clickable { expanded = !expanded }
                                 ) {
                                     Column(Modifier.animateContentSize(tween(AurisMotion.Standard, easing = AurisMotion.Ease)).padding(14.dp)) {
@@ -89,7 +90,6 @@ internal fun MusicArtistPage(
                                     }
                                 }
                             }
-                            Button(onClick = onPlayAll, enabled = !loading && rows.any { it.kind == MusicRow.Kind.TRACK }, shape = ArtworkShapeSmall, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(48.dp)) { Text("Play songs") }
                         }
                         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                         message?.let { Text(it, Modifier.padding(20.dp)) }
@@ -108,7 +108,7 @@ internal fun MusicArtistPage(
                             }
                         }
                         if (songs.size > 5) item {
-                            TextButton(onClick = { showAllSongs = !showAllSongs }, modifier = Modifier.padding(horizontal = 20.dp)) {
+                            TextButton(onClick = { showAllSongs = !showAllSongs }, modifier = Modifier.padding(horizontal = 20.dp).heightIn(min = 48.dp)) {
                                 Text(if (showAllSongs) "Show fewer songs" else "Show all ${songs.size} songs")
                             }
                         }
