@@ -223,8 +223,9 @@ class MediaDetailPreviewTest {
     @Test fun unitClickEnabledForAlreadySavedPreview() = runTest {
         val existing = savedRow()
         val model = createPreview(existing = existing)
-        testScheduler.advanceUntilIdle()
-        withTimeout(5000) { model.state.first { it.isSaved && it.units.isNotEmpty() } }
+        withContext(Dispatchers.Default) {
+            withTimeout(5000) { model.state.first { it.isSaved && it.units.isNotEmpty() } }
+        }
 
         var played = false
         model.onUnitClick(
